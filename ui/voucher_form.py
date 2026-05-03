@@ -228,12 +228,7 @@ class VoucherEntryPage(QWidget):
         self.amount_edit = AmountEdit()
         self.amount_edit.setMinimumWidth(160)
         self.amount_edit.valueChanged.connect(self._update_balance_smart)
-
-        # Connect calculator to this amount field
-        self.amount_edit.focusInEvent = lambda e, w=self.amount_edit: (
-            self._connect_calc(w),
-            AmountEdit.focusInEvent(w, e)
-        )
+        self.amount_edit.focused.connect(self.calculator.connect_to)
 
         amt_row.addWidget(self.amount_edit)
 
@@ -315,13 +310,6 @@ class VoucherEntryPage(QWidget):
         return page
 
     # ── Logic ─────────────────────────────────────────────────────────────────
-
-    def _connect_calc(self, widget):
-        try:
-            self.calculator.result_ready.disconnect()
-        except TypeError:
-            pass
-        self.calculator.result_ready.connect(widget.paste_amount)
 
     def _select_type(self, vtype: str):
         self._current_type = vtype

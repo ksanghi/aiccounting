@@ -42,6 +42,8 @@ def make_separator() -> QFrame:
 class AmountEdit(QDoubleSpinBox):
     """Numeric spinbox formatted as Indian currency ₹1,23,456.78"""
 
+    focused = pyqtSignal(object)  # emits self when this field receives focus
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDecimals(2)
@@ -52,6 +54,10 @@ class AmountEdit(QDoubleSpinBox):
         self.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self.setFixedHeight(32)
         self.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+    def focusInEvent(self, event):
+        self.focused.emit(self)
+        super().focusInEvent(event)
 
     def paste_amount(self, value: float):
         self.setValue(value)
@@ -266,6 +272,14 @@ class CalculatorWidget(QDialog):
         except ValueError:
             pass
 
+    def connect_to(self, widget):
+        """Point result_ready at widget.paste_amount (called via AmountEdit.focused signal)."""
+        try:
+            self.result_ready.disconnect()
+        except TypeError:
+            pass
+        self.result_ready.connect(widget.paste_amount)
+
     def keyPressEvent(self, e):
         key_map = {
             Qt.Key.Key_0: "0", Qt.Key.Key_1: "1", Qt.Key.Key_2: "2",
@@ -323,8 +337,11 @@ class QuickAddLedgerDialog(QDialog):
 
         # Group
         self.group_combo = QComboBox()
-        ledgers = tree.get_all_ledgers()
-        groups = sorted({l["group_name"] for l in ledgers})
+        rows = self.tree.db.execute(
+            "SELECT name FROM account_groups WHERE company_id=? ORDER BY name",
+            (self.tree.company_id,)
+        ).fetchall()
+        groups = [r["name"] for r in rows]
         self.group_combo.addItems(groups)
         form.addRow(make_label("Under Group", required=True), self.group_combo)
 
