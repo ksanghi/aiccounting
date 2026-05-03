@@ -1,0 +1,616 @@
+"""
+Shared Widgets
+  - CalculatorWidget  : floating calculator (Ctrl+K anywhere)
+  - LedgerSearchEdit  : auto-complete ledger search with inline add (F2)
+  - QuickAddLedger    : modal to create a ledger on the fly
+  - AmountEdit        : numeric input with comma formatting
+  - FieldLabel        : styled label with optional required star
+  - StatusPill        : coloured badge (Dr / Cr / voucher type)
+"""
+from PyQt6.QtWidgets import (
+    QWidget, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLineEdit, QPushButton, QLabel, QCompleter, QComboBox,
+    QFrame, QSizePolicy, QFormLayout, QApplication, QMessageBox,
+    QDoubleSpinBox
+)
+from PyQt6.QtCore import (
+    Qt, QStringListModel, pyqtSignal, QTimer, QEvent, QPoint
+)
+from PyQt6.QtGui import QFont, QKeySequence, QShortcut, QColor, QPalette
+
+from ui.theme import THEME
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def make_label(text: str, required=False, dim=False) -> QLabel:
+    lbl = QLabel(text + (" *" if required else ""))
+    lbl.setObjectName("field_label")
+    if dim:
+        lbl.setStyleSheet(f"color: {THEME['text_dim']};")
+    return lbl
+
+
+def make_separator() -> QFrame:
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.HLine)
+    return line
+
+
+# ── Amount Edit ───────────────────────────────────────────────────────────────
+
+class AmountEdit(QDoubleSpinBox):
+    """Numeric spinbox formatted as Indian currency ₹1,23,456.78"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDecimals(2)
+        self.setMaximum(99_99_99_999.99)
+        self.setMinimum(0.0)
+        self.setGroupSeparatorShown(True)
+        self.setPrefix("₹ ")
+        self.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.setFixedHeight(32)
+        self.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+    def paste_amount(self, value: float):
+        self.setValue(value)
+
+
+# ── Status Pill ───────────────────────────────────────────────────────────────
+
+class StatusPill(QLabel):
+    """Small colour-coded badge."""
+
+    def __init__(self, text: str, colour: str, parent=None):
+        super().__init__(text, parent)
+        self.setStyleSheet(f"""
+            background-color: {colour}22;
+            color: {colour};
+            border: 1px solid {colour}55;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: bold;
+        """)
+        self.setFixedHeight(20)
+
+
+# ── Calculator ────────────────────────────────────────────────────────────────
+
+class CalculatorWidget(QDialog):
+    """
+    Floating calculator.  Opens with Ctrl+K.
+    Has a "Paste to field" button that sends the result
+    to the last focused AmountEdit.
+    """
+    result_ready = pyqtSignal(float)   # emitted when user hits Paste
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+        self.setWindowTitle("Calculator")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._expr = ""
+        self._build_ui()
+        self.setFixedSize(260, 340)
+
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # Container card
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {THEME['bg_card']};
+                border: 1px solid {THEME['border_focus']};
+                border-radius: 12px;
+            }}
+        """)
+        layout = QVBoxLayout(card)
+        layout.setSpacing(6)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        # Title bar
+        title_row = QHBoxLayout()
+        title = QLabel("⌨  Calculator")
+        title.setStyleSheet(f"color: {THEME['text_secondary']}; font-size:10px; font-weight:bold;")
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("btn_icon")
+        close_btn.setFixedSize(20, 20)
+        close_btn.clicked.connect(self.hide)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        title_row.addWidget(close_btn)
+        layout.addLayout(title_row)
+
+        # Display
+        self.display = QLabel("0")
+        self.display.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.display.setFixedHeight(52)
+        self.display.setStyleSheet(f"""
+            background: {THEME['bg_input']};
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 22px;
+            font-weight: bold;
+            color: {THEME['text_primary']};
+        """)
+        self.expr_label = QLabel("")
+        self.expr_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.expr_label.setStyleSheet(f"color: {THEME['text_dim']}; font-size: 10px; padding-right: 4px;")
+        layout.addWidget(self.expr_label)
+        layout.addWidget(self.display)
+
+        # Button grid
+        grid = QGridLayout()
+        grid.setSpacing(5)
+
+        btn_defs = [
+            ("C",   0, 0, THEME["danger"]),
+            ("⌫",   0, 1, THEME["warning"]),
+            ("%",   0, 2, THEME["text_secondary"]),
+            ("÷",   0, 3, THEME["accent"]),
+            ("7",   1, 0, None),
+            ("8",   1, 1, None),
+            ("9",   1, 2, None),
+            ("×",   1, 3, THEME["accent"]),
+            ("4",   2, 0, None),
+            ("5",   2, 1, None),
+            ("6",   2, 2, None),
+            ("−",   2, 3, THEME["accent"]),
+            ("1",   3, 0, None),
+            ("2",   3, 1, None),
+            ("3",   3, 2, None),
+            ("+",   3, 3, THEME["accent"]),
+            ("±",   4, 0, None),
+            ("0",   4, 1, None),
+            (".",   4, 2, None),
+            ("=",   4, 3, THEME["success"]),
+        ]
+
+        for (label, row, col, colour) in btn_defs:
+            btn = QPushButton(label)
+            btn.setFixedHeight(38)
+            c = colour or THEME["bg_hover"]
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {c}{'33' if not colour else '22' if colour != THEME['bg_hover'] else ''};
+                    color: {colour if colour else THEME['text_primary']};
+                    border: 1px solid {c}{'44' if colour else THEME['border']};
+                    border-radius: 7px;
+                    font-size: 14px;
+                    font-weight: {'bold' if colour else 'normal'};
+                }}
+                QPushButton:hover {{
+                    background-color: {c}44;
+                }}
+                QPushButton:pressed {{
+                    background-color: {c}66;
+                }}
+            """)
+            btn.clicked.connect(lambda _, l=label: self._on_btn(l))
+            grid.addWidget(btn, row, col)
+
+        layout.addLayout(grid)
+
+        # Paste button
+        paste_btn = QPushButton("⬆  Paste to amount field")
+        paste_btn.setObjectName("btn_primary")
+        paste_btn.clicked.connect(self._paste)
+        layout.addWidget(paste_btn)
+
+        outer.addWidget(card)
+
+        # Drag support
+        self._drag_pos = None
+        card.mousePressEvent   = self._mouse_press
+        card.mouseMoveEvent    = self._mouse_move
+        card.mouseReleaseEvent = self._mouse_release
+
+    def _mouse_press(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def _mouse_move(self, e):
+        if self._drag_pos and e.buttons() == Qt.MouseButton.LeftButton:
+            self.move(e.globalPosition().toPoint() - self._drag_pos)
+
+    def _mouse_release(self, _):
+        self._drag_pos = None
+
+    def _on_btn(self, label: str):
+        if label == "C":
+            self._expr = ""
+            self.display.setText("0")
+            self.expr_label.setText("")
+        elif label == "⌫":
+            self._expr = self._expr[:-1]
+            self.display.setText(self._expr or "0")
+        elif label == "=":
+            self._evaluate()
+        elif label == "±":
+            if self._expr and self._expr[0] == "-":
+                self._expr = self._expr[1:]
+            else:
+                self._expr = "-" + self._expr
+            self.display.setText(self._expr or "0")
+        elif label == "%":
+            try:
+                val = eval(self._expr.replace("×", "*").replace("÷", "/").replace("−", "-"))
+                self._expr = str(val / 100)
+                self.display.setText(self._expr)
+            except Exception:
+                pass
+        else:
+            map_ = {"×": "*", "÷": "/", "−": "-"}
+            self._expr += map_.get(label, label)
+            self.display.setText(self._expr)
+
+    def _evaluate(self):
+        try:
+            expr = self._expr.replace("×", "*").replace("÷", "/").replace("−", "-")
+            result = eval(expr)
+            self.expr_label.setText(self._expr + " =")
+            self._expr = str(round(result, 2))
+            self.display.setText(f"{result:,.2f}")
+        except Exception:
+            self.display.setText("Error")
+            self._expr = ""
+
+    def _paste(self):
+        try:
+            val = float(self._expr or "0")
+            self.result_ready.emit(val)
+            self.hide()
+        except ValueError:
+            pass
+
+    def keyPressEvent(self, e):
+        key_map = {
+            Qt.Key.Key_0: "0", Qt.Key.Key_1: "1", Qt.Key.Key_2: "2",
+            Qt.Key.Key_3: "3", Qt.Key.Key_4: "4", Qt.Key.Key_5: "5",
+            Qt.Key.Key_6: "6", Qt.Key.Key_7: "7", Qt.Key.Key_8: "8",
+            Qt.Key.Key_9: "9", Qt.Key.Key_Period: ".", Qt.Key.Key_Plus: "+",
+            Qt.Key.Key_Minus: "−", Qt.Key.Key_Asterisk: "×",
+            Qt.Key.Key_Slash: "÷", Qt.Key.Key_Percent: "%",
+            Qt.Key.Key_Return: "=", Qt.Key.Key_Enter: "=",
+            Qt.Key.Key_Backspace: "⌫", Qt.Key.Key_Escape: None,
+        }
+        label = key_map.get(e.key())
+        if label is None:
+            self.hide()
+        elif label:
+            self._on_btn(label)
+
+
+# ── Quick Add Ledger Dialog ───────────────────────────────────────────────────
+
+class QuickAddLedgerDialog(QDialog):
+    """
+    Opened with F2 during ledger search.
+    Creates a new ledger and returns its id + name.
+    """
+    ledger_created = pyqtSignal(int, str)   # id, name
+
+    def __init__(self, tree, initial_name: str = "", parent=None):
+        super().__init__(parent)
+        self.tree = tree
+        self.setWindowTitle("New Ledger")
+        self.setMinimumWidth(420)
+        self.setModal(True)
+        self._build_ui(initial_name)
+
+    def _build_ui(self, initial_name: str):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Header
+        hdr = QLabel("+ Add Ledger Account")
+        hdr.setStyleSheet(f"font-size:14px; font-weight:bold; color:{THEME['accent']};")
+        layout.addWidget(hdr)
+        layout.addWidget(make_separator())
+
+        form = QFormLayout()
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Name
+        self.name_edit = QLineEdit(initial_name)
+        self.name_edit.setPlaceholderText("e.g. HDFC Current Account")
+        form.addRow(make_label("Ledger Name", required=True), self.name_edit)
+
+        # Group
+        self.group_combo = QComboBox()
+        ledgers = tree.get_all_ledgers()
+        groups = sorted({l["group_name"] for l in ledgers})
+        self.group_combo.addItems(groups)
+        form.addRow(make_label("Under Group", required=True), self.group_combo)
+
+        # Opening balance
+        self.ob_edit = AmountEdit()
+        form.addRow(make_label("Opening Balance"), self.ob_edit)
+
+        # Opening type
+        self.ob_type = QComboBox()
+        self.ob_type.addItems(["Dr", "Cr"])
+        form.addRow(make_label("Opening Type"), self.ob_type)
+
+        # GSTIN
+        self.gstin_edit = QLineEdit()
+        self.gstin_edit.setPlaceholderText("Optional — auto-fills state code")
+        self.gstin_edit.textChanged.connect(self._on_gstin_change)
+        form.addRow(make_label("GSTIN"), self.gstin_edit)
+
+        # PAN
+        self.pan_edit = QLineEdit()
+        self.pan_edit.setPlaceholderText("Optional")
+        form.addRow(make_label("PAN"), self.pan_edit)
+
+        # TDS
+        tds_row = QHBoxLayout()
+        self.tds_combo = QComboBox()
+        self.tds_combo.addItem("Not applicable")
+        for sec, info in {
+            "194C": "Contractor", "194H": "Commission",
+            "194I": "Rent", "194J": "Professional",
+            "194A": "Interest", "194Q": "Purchases"
+        }.items():
+            self.tds_combo.addItem(f"{sec} — {info}", sec)
+        self.tds_rate = QDoubleSpinBox()
+        self.tds_rate.setSuffix(" %")
+        self.tds_rate.setMaximum(30)
+        self.tds_rate.setValue(10)
+        self.tds_rate.setFixedWidth(80)
+        self.tds_rate.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.tds_combo.currentIndexChanged.connect(self._on_tds_change)
+        tds_row.addWidget(self.tds_combo, 3)
+        tds_row.addWidget(self.tds_rate, 1)
+        form.addRow(make_label("TDS Section"), tds_row)
+        self._on_tds_change(0)
+
+        layout.addLayout(form)
+        layout.addWidget(make_separator())
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Create Ledger")
+        save.setObjectName("btn_primary")
+        save.clicked.connect(self._save)
+        btn_row.addWidget(cancel)
+        btn_row.addWidget(save)
+        layout.addLayout(btn_row)
+
+        self.name_edit.setFocus()
+
+    def _on_gstin_change(self, text: str):
+        """Auto-set group hint based on GSTIN state."""
+        pass  # extend later
+
+    def _on_tds_change(self, idx: int):
+        self.tds_rate.setEnabled(idx > 0)
+
+    def _save(self):
+        name  = self.name_edit.text().strip()
+        group = self.group_combo.currentText()
+        if not name:
+            self.name_edit.setProperty("error", "true")
+            self.name_edit.setStyleSheet(f"border: 1px solid {THEME['border_error']};")
+            return
+
+        kwargs = {
+            "opening_balance": self.ob_edit.value(),
+            "opening_type":    self.ob_type.currentText(),
+        }
+        if self.gstin_edit.text().strip():
+            kwargs["gstin"]      = self.gstin_edit.text().strip()
+            kwargs["state_code"] = self.gstin_edit.text().strip()[:2]
+        if self.pan_edit.text().strip():
+            kwargs["pan"] = self.pan_edit.text().strip()
+        if self.tds_combo.currentIndex() > 0:
+            kwargs["is_tds_applicable"] = True
+            kwargs["tds_section"]       = self.tds_combo.currentData()
+            kwargs["tds_rate"]          = self.tds_rate.value()
+
+        try:
+            lid = self.tree.add_ledger(name, group, **kwargs)
+            self.ledger_created.emit(lid, name)
+            self.accept()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", str(e))
+
+
+# ── Ledger Search Edit ────────────────────────────────────────────────────────
+
+class LedgerSearchEdit(QWidget):
+    """
+    Auto-complete ledger search field.
+    F2      → open QuickAddLedger dialog
+    Ctrl+K  → open calculator
+    Emits ledger_selected(id, name) when a match is chosen.
+    """
+    ledger_selected = pyqtSignal(int, str, dict)   # id, name, full ledger dict
+    add_requested   = pyqtSignal(str)              # user wants to create ledger
+
+    def __init__(self, tree, calculator: CalculatorWidget,
+                 placeholder="Type ledger name…", parent=None):
+        super().__init__(parent)
+        self.tree       = tree
+        self.calculator = calculator
+        self._ledger_map: dict[str, dict] = {}
+        self._selected_id: int | None = None
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(placeholder)
+        self.search.setFixedHeight(32)
+
+        self._add_btn = QPushButton("F2")
+        self._add_btn.setObjectName("btn_icon")
+        self._add_btn.setFixedSize(28, 32)
+        self._add_btn.setToolTip("F2 — Create new ledger on the fly")
+        self._add_btn.clicked.connect(self._open_add_dialog)
+
+        layout.addWidget(self.search)
+        layout.addWidget(self._add_btn)
+
+        # Completer
+        self._model = QStringListModel()
+        self._completer = QCompleter(self._model, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.setMaxVisibleItems(10)
+        self._completer.activated.connect(self._on_completion)
+        self.search.setCompleter(self._completer)
+
+        # Shortcuts
+        self._f2 = QShortcut(QKeySequence("F2"), self.search)
+        self._f2.activated.connect(self._open_add_dialog)
+
+        self.search.textChanged.connect(self._on_text_changed)
+        self.reload_ledgers()
+
+    def reload_ledgers(self):
+        """Refresh from DB — call after a ledger is created."""
+        ledgers = self.tree.get_all_ledgers()
+        self._ledger_map = {l["name"]: l for l in ledgers}
+        self._model.setStringList(sorted(self._ledger_map.keys()))
+
+    def _on_text_changed(self, text: str):
+        if text not in self._ledger_map:
+            self._selected_id = None
+
+    def _on_completion(self, text: str):
+        ldg = self._ledger_map.get(text)
+        if ldg:
+            self._selected_id = ldg["id"]
+            self.search.setText(text)
+            self.ledger_selected.emit(ldg["id"], text, ldg)
+
+    def _open_add_dialog(self):
+        initial = self.search.text().strip()
+        dlg = QuickAddLedgerDialog(self.tree, initial_name=initial, parent=self)
+        dlg.ledger_created.connect(self._on_ledger_created)
+        dlg.exec()
+
+    def _on_ledger_created(self, lid: int, name: str):
+        self.reload_ledgers()
+        self.search.setText(name)
+        ldg = self._ledger_map.get(name, {"id": lid, "name": name})
+        self._selected_id = lid
+        self.ledger_selected.emit(lid, name, ldg)
+
+    @property
+    def selected_id(self) -> int | None:
+        # Try exact match if user didn't pick from completer
+        if self._selected_id is None:
+            ldg = self._ledger_map.get(self.search.text().strip())
+            if ldg:
+                return ldg["id"]
+        return self._selected_id
+
+    @property
+    def selected_ledger(self) -> dict | None:
+        return self._ledger_map.get(self.search.text().strip())
+
+    def clear(self):
+        self.search.clear()
+        self._selected_id = None
+
+    def set_ledger(self, name: str):
+        self.search.setText(name)
+        ldg = self._ledger_map.get(name)
+        if ldg:
+            self._selected_id = ldg["id"]
+
+
+# ── Voucher Line Row widget ───────────────────────────────────────────────────
+
+class VoucherLineRow(QWidget):
+    """One line in the voucher entry table: ledger | Dr | Cr | narration | delete"""
+    delete_requested = pyqtSignal(object)  # self
+
+    def __init__(self, tree, calculator, row_num: int, parent=None):
+        super().__init__(parent)
+        self.row_num = row_num
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(6)
+
+        # Row number
+        num = QLabel(str(row_num))
+        num.setFixedWidth(20)
+        num.setStyleSheet(f"color: {THEME['text_dim']}; font-size:10px;")
+        num.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(num)
+
+        # Ledger search
+        self.ledger_search = LedgerSearchEdit(tree, calculator, "Search ledger…")
+        self.ledger_search.setMinimumWidth(220)
+        layout.addWidget(self.ledger_search, 3)
+
+        # Dr amount
+        self.dr_edit = AmountEdit()
+        self.dr_edit.setFixedWidth(120)
+        self.dr_edit.setToolTip("Debit amount (Ctrl+K for calculator)")
+        layout.addWidget(self.dr_edit, 1)
+
+        # Cr amount
+        self.cr_edit = AmountEdit()
+        self.cr_edit.setFixedWidth(120)
+        self.cr_edit.setToolTip("Credit amount (Ctrl+K for calculator)")
+        layout.addWidget(self.cr_edit, 1)
+
+        # Line narration
+        self.narration = QLineEdit()
+        self.narration.setPlaceholderText("Line note…")
+        self.narration.setFixedHeight(32)
+        layout.addWidget(self.narration, 2)
+
+        # Delete
+        del_btn = QPushButton("✕")
+        del_btn.setObjectName("btn_icon")
+        del_btn.setFixedSize(28, 28)
+        del_btn.setStyleSheet(f"color: {THEME['danger']};")
+        del_btn.clicked.connect(lambda: self.delete_requested.emit(self))
+        layout.addWidget(del_btn)
+
+        # Wire calculator to whichever amount field is focused
+        self.dr_edit.focusInEvent  = lambda e, w=self.dr_edit:  (self._set_calc_target(w), QDoubleSpinBox.focusInEvent(w, e))
+        self.cr_edit.focusInEvent  = lambda e, w=self.cr_edit:  (self._set_calc_target(w), QDoubleSpinBox.focusInEvent(w, e))
+        self._calculator = calculator
+
+    def _set_calc_target(self, widget):
+        try:
+            self._calculator.result_ready.disconnect()
+        except TypeError:
+            pass
+        self._calculator.result_ready.connect(widget.paste_amount)
+
+    @property
+    def ledger_id(self) -> int | None:
+        return self.ledger_search.selected_id
+
+    @property
+    def dr_amount(self) -> float:
+        return self.dr_edit.value()
+
+    @property
+    def cr_amount(self) -> float:
+        return self.cr_edit.value()
+
+    def to_dict(self) -> dict:
+        return {
+            "ledger_id":     self.ledger_id,
+            "ledger_name":   self.ledger_search.search.text().strip(),
+            "dr_amount":     self.dr_amount,
+            "cr_amount":     self.cr_amount,
+            "line_narration": self.narration.text().strip(),
+        }
