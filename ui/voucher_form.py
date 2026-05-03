@@ -192,11 +192,12 @@ class VoucherEntryPage(QWidget):
         self._clear_btn.setFixedHeight(36)
         self._clear_btn.clicked.connect(self._clear)
 
-        calc_btn = QPushButton("Calc (Alt+C)")
-        calc_btn.setFixedHeight(36)
-        calc_btn.setFixedWidth(100)
-        calc_btn.clicked.connect(self._show_calculator)
-        footer.addWidget(calc_btn)
+        self._calc_btn = QPushButton("🖩  Calc")
+        self._calc_btn.setFixedHeight(36)
+        self._calc_btn.setFixedWidth(90)
+        self._calc_btn.setToolTip("Open calculator (Alt+C / F9)")
+        self._calc_btn.clicked.connect(self._show_calculator)
+        footer.addWidget(self._calc_btn)
         footer.addWidget(self._clear_btn)
         footer.addWidget(self._post_btn)
 
@@ -268,26 +269,19 @@ class VoucherEntryPage(QWidget):
         hdr_frame.setObjectName("card")
         hdr_row = QHBoxLayout(hdr_frame)
         hdr_row.setContentsMargins(10, 6, 10, 6)
-        from core.config import get_dr_label, get_cr_label
-        self._dr_hdr_label = None
-        self._cr_hdr_label = None
         headers = [
-            ("#",                      0, False),
-            ("Ledger Account",         3, True),
-            (get_dr_label(short=True), 1, True),
-            (get_cr_label(short=True), 1, True),
-            ("Line Narration",         2, True),
-            ("",                       0, False),
+            ("#",              0, False),
+            ("Ledger Account", 3, True),
+            ("Amount",         1, True),
+            ("Type",           1, True),
+            ("Line Narration", 2, True),
+            ("",               0, False),
         ]
         for col_label, stretch, use_stretch in headers:
             l = QLabel(col_label)
             l.setStyleSheet(
                 f"color:{THEME['text_secondary']}; font-size:10px; font-weight:bold;"
             )
-            if col_label == get_dr_label(short=True):
-                self._dr_hdr_label = l
-            if col_label == get_cr_label(short=True):
-                self._cr_hdr_label = l
             if use_stretch:
                 hdr_row.addWidget(l, stretch)
             else:
@@ -310,23 +304,26 @@ class VoucherEntryPage(QWidget):
         layout.addWidget(scroll, 1)
 
         # Add row button
-        add_btn = QPushButton("+ Add Line  (Ctrl+Enter)")
-        add_btn.setStyleSheet(f"""
+        self._add_line_btn = QPushButton("+ Add Line  (Ctrl+Enter)")
+        self._add_line_btn.setMinimumHeight(42)
+        self._add_line_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_line_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
-                border: 1px dashed {THEME['border']};
-                border-radius: 6px;
+                border: 2px dashed {THEME['border']};
+                border-radius: 8px;
                 color: {THEME['text_secondary']};
-                padding: 7px;
-                font-size: 11px;
+                padding: 8px;
+                font-size: 12px;
             }}
             QPushButton:hover {{
                 border-color: {THEME['accent']};
                 color: {THEME['accent']};
+                background: {THEME['accent_dim']};
             }}
         """)
-        add_btn.clicked.connect(self._add_journal_row)
-        layout.addWidget(add_btn)
+        self._add_line_btn.clicked.connect(self._add_journal_row)
+        layout.addWidget(self._add_line_btn)
 
         return page
 
@@ -379,21 +376,13 @@ class VoucherEntryPage(QWidget):
             row_num=len(self._journal_rows) + 1
         )
         row.delete_requested.connect(self._remove_journal_row)
-        # Insert before the stretch
-        self._rows_layout.insertWidget(
-            self._rows_layout.count() - 1, row
-        )
+        row.amount_edit.valueChanged.connect(self._update_balance_journal)
+        row.type_toggle.currentIndexChanged.connect(self._update_balance_journal)
+        insert_pos = self._rows_layout.count() - 1
+        if insert_pos < 0:
+            insert_pos = 0
+        self._rows_layout.insertWidget(insert_pos, row)
         self._journal_rows.append(row)
-        # Hook balance update
-        row.dr_edit.valueChanged.connect(self._update_balance_journal)
-        row.cr_edit.valueChanged.connect(self._update_balance_journal)
-        # Auto-clear opposite side to prevent both-side entry on same line
-        row.dr_edit.valueChanged.connect(
-            lambda v, r=row: r.cr_edit.setValue(0) if v > 0 else None
-        )
-        row.cr_edit.valueChanged.connect(
-            lambda v, r=row: r.dr_edit.setValue(0) if v > 0 else None
-        )
 
     def _remove_journal_row(self, row: VoucherLineRow):
         if len(self._journal_rows) <= 2:
@@ -425,12 +414,16 @@ class VoucherEntryPage(QWidget):
         self._bal_dr.setText(f"{get_dr_label(short=True)}  ₹{total_dr:,.2f}")
         self._bal_cr.setText(f"{get_cr_label(short=True)}  ₹{total_cr:,.2f}")
         if abs(diff) < 0.01:
-            self._bal_diff.setText("✓ Balanced")
-            self._bal_diff.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
+            self._bal_diff.setText("Balanced ✓")
+            self._bal_diff.setStyleSheet(
+                f"color:{THEME['success']}; font-size:12px; font-weight:bold;"
+            )
         else:
             sign = "+" if diff > 0 else ""
             self._bal_diff.setText(f"Diff {sign}₹{diff:,.2f}")
-            self._bal_diff.setStyleSheet(f"color:{THEME['danger']}; font-size:11px; font-weight:bold;")
+            self._bal_diff.setStyleSheet(
+                f"color:{THEME['danger']}; font-size:12px; font-weight:bold;"
+            )
 
     def _get_date_str(self) -> str:
         return self.date_edit.date().toString("yyyy-MM-dd")
@@ -526,21 +519,25 @@ class VoucherEntryPage(QWidget):
 
     def apply_label_style(self):
         """Update all live Dr/Cr labels after a style change — no restart needed."""
-        from core.config import get_dr_label, get_cr_label
-        dr, cr = get_dr_label(short=True), get_cr_label(short=True)
-        if hasattr(self, '_dr_hdr_label') and self._dr_hdr_label:
-            self._dr_hdr_label.setText(dr)
-        if hasattr(self, '_cr_hdr_label') and self._cr_hdr_label:
-            self._cr_hdr_label.setText(cr)
+        for row in self._journal_rows:
+            if hasattr(row, '_refresh_toggle_labels'):
+                row._refresh_toggle_labels()
         self._select_type(self._current_type)
         self._update_balance_smart()
 
     def _wire_shortcuts(self):
-        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._post)
-        QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(self._add_journal_row)
-        calc_sc = QShortcut(QKeySequence("Alt+C"), self)
-        calc_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        calc_sc.activated.connect(self._show_calculator)
+        from PyQt6.QtGui import QShortcut, QKeySequence
+        from PyQt6.QtCore import Qt
+        sc_post = QShortcut(QKeySequence("Ctrl+S"), self)
+        sc_post.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        sc_post.activated.connect(self._post)
+        sc_row = QShortcut(QKeySequence("Ctrl+Return"), self)
+        sc_row.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        sc_row.activated.connect(self._add_journal_row)
+        for seq in ["Alt+C", "Ctrl+K", "F9"]:
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._show_calculator)
 
     def _show_calculator(self):
         btn_pos = self._post_btn.mapToGlobal(self._post_btn.rect().topLeft())

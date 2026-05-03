@@ -368,8 +368,10 @@ class VoucherValidator:
         if ledger_id not in self._ledger_cache:
             row = self.db.execute(
                 """SELECT l.id, l.name, l.is_bank, l.is_cash,
-                          l.is_gst_ledger, g.nature
-                   FROM ledgers l JOIN account_groups g ON l.group_id=g.id
+                          l.is_gst_ledger, g.name as group_name,
+                          g.nature
+                   FROM ledgers l
+                   JOIN account_groups g ON l.group_id=g.id
                    WHERE l.id=?""",
                 (ledger_id,)
             ).fetchone()
@@ -440,17 +442,29 @@ class VoucherValidator:
             )
 
         if vtype == "PAYMENT":
-            # Cr side must include a bank/cash account
-            if not any(is_bank_cash(l) for l in cr_ledgers):
+            payment_cr_ok = False
+            for line in draft.lines:
+                if line.cr_amount > 0:
+                    ldg = self._get_ledger(line.ledger_id)
+                    if is_bank_cash(ldg):
+                        payment_cr_ok = True
+                        break
+            if not payment_cr_ok:
                 errors.append(
-                    "Payment: credit side must include a bank or cash account."
+                    "Payment: credit side must be a bank or cash account."
                 )
 
         elif vtype == "RECEIPT":
-            # Dr side must include a bank/cash account
-            if not any(is_bank_cash(l) for l in dr_ledgers):
+            receipt_dr_ok = False
+            for line in draft.lines:
+                if line.dr_amount > 0:
+                    ldg = self._get_ledger(line.ledger_id)
+                    if is_bank_cash(ldg):
+                        receipt_dr_ok = True
+                        break
+            if not receipt_dr_ok:
                 errors.append(
-                    "Receipt: debit side must include a bank or cash account."
+                    "Receipt: debit side must be a bank or cash account."
                 )
 
         elif vtype == "JOURNAL":

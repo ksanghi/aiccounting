@@ -551,58 +551,82 @@ class LedgerSearchEdit(QWidget):
 # ── Voucher Line Row widget ───────────────────────────────────────────────────
 
 class VoucherLineRow(QWidget):
-    """One line in the voucher entry table: ledger | Dr | Cr | narration | delete"""
-    delete_requested = pyqtSignal(object)  # self
+    """One journal line: ledger | single amount | Dr/Cr toggle | narration | delete"""
+    delete_requested = pyqtSignal(object)
 
     def __init__(self, tree, calculator, row_num: int, parent=None):
         super().__init__(parent)
         self.row_num = row_num
+        self._calculator = calculator
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 2, 0, 2)
-        layout.setSpacing(6)
+        layout.setContentsMargins(0, 3, 0, 3)
+        layout.setSpacing(8)
 
         # Row number
         num = QLabel(str(row_num))
-        num.setFixedWidth(20)
-        num.setStyleSheet(f"color: {THEME['text_dim']}; font-size:10px;")
+        num.setFixedWidth(24)
+        num.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
         num.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(num)
 
         # Ledger search
-        self.ledger_search = LedgerSearchEdit(tree, calculator, "Search ledger…")
-        self.ledger_search.setMinimumWidth(220)
+        self.ledger_search = LedgerSearchEdit(tree, calculator, "Search ledger...")
+        self.ledger_search.setMinimumWidth(240)
         layout.addWidget(self.ledger_search, 3)
 
-        # Dr amount
-        self.dr_edit = AmountEdit()
-        self.dr_edit.setFixedWidth(120)
-        self.dr_edit.setToolTip("Debit amount (Alt+C for calculator)")
-        layout.addWidget(self.dr_edit, 1)
+        # Single amount field
+        self.amount_edit = AmountEdit()
+        self.amount_edit.setFixedWidth(150)
+        self.amount_edit.focused.connect(self._on_focused)
+        layout.addWidget(self.amount_edit, 1)
 
-        # Cr amount
-        self.cr_edit = AmountEdit()
-        self.cr_edit.setFixedWidth(120)
-        self.cr_edit.setToolTip("Credit amount (Alt+C for calculator)")
-        layout.addWidget(self.cr_edit, 1)
+        # Dr/Cr type toggle
+        self.type_toggle = QComboBox()
+        self.type_toggle.setFixedWidth(120)
+        self.type_toggle.setFixedHeight(34)
+        self._refresh_toggle_labels()
+        self.type_toggle.setStyleSheet(f"""
+            QComboBox {{
+                background: {THEME['accent_dim']};
+                border: 1px solid {THEME['accent']};
+                border-radius: 7px;
+                padding: 6px 10px;
+                font-size: 12px;
+                font-weight: bold;
+                color: {THEME['accent']};
+            }}
+            QComboBox:focus {{
+                border-color: {THEME['border_focus']};
+            }}
+            QComboBox QAbstractItemView {{
+                background: {THEME['bg_card']};
+                font-size: 12px;
+            }}
+        """)
+        layout.addWidget(self.type_toggle)
 
         # Line narration
         self.narration = QLineEdit()
-        self.narration.setPlaceholderText("Line note…")
-        self.narration.setFixedHeight(32)
+        self.narration.setPlaceholderText("Line note...")
+        self.narration.setFixedHeight(34)
         layout.addWidget(self.narration, 2)
 
         # Delete
         del_btn = QPushButton("✕")
         del_btn.setObjectName("btn_icon")
-        del_btn.setFixedSize(28, 28)
-        del_btn.setStyleSheet(f"color: {THEME['danger']};")
+        del_btn.setFixedSize(30, 30)
+        del_btn.setStyleSheet(f"color:{THEME['danger']}; font-size:14px;")
         del_btn.clicked.connect(lambda: self.delete_requested.emit(self))
         layout.addWidget(del_btn)
 
-        # Wire calculator to whichever amount field is focused
-        self.dr_edit.focused.connect(self._on_focused)
-        self.cr_edit.focused.connect(self._on_focused)
-        self._calculator = calculator
+    def _refresh_toggle_labels(self):
+        from core.config import get_dr_label, get_cr_label
+        current = self.type_toggle.currentIndex() if self.type_toggle.count() > 0 else 0
+        self.type_toggle.clear()
+        self.type_toggle.addItem(get_dr_label(short=True), "dr")
+        self.type_toggle.addItem(get_cr_label(short=True), "cr")
+        self.type_toggle.setCurrentIndex(current)
 
     def _on_focused(self, widget):
         self._calculator.connect_to(widget)
@@ -613,17 +637,17 @@ class VoucherLineRow(QWidget):
 
     @property
     def dr_amount(self) -> float:
-        return self.dr_edit.value()
+        return self.amount_edit.value() if self.type_toggle.currentData() == "dr" else 0.0
 
     @property
     def cr_amount(self) -> float:
-        return self.cr_edit.value()
+        return self.amount_edit.value() if self.type_toggle.currentData() == "cr" else 0.0
 
     def to_dict(self) -> dict:
         return {
-            "ledger_id":     self.ledger_id,
-            "ledger_name":   self.ledger_search.search.text().strip(),
-            "dr_amount":     self.dr_amount,
-            "cr_amount":     self.cr_amount,
+            "ledger_id":      self.ledger_id,
+            "ledger_name":    self.ledger_search.search.text().strip(),
+            "dr_amount":      self.dr_amount,
+            "cr_amount":      self.cr_amount,
             "line_narration": self.narration.text().strip(),
         }
