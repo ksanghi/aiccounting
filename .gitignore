@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Database files — NEVER commit company data
+data/companies/*.db
+data/companies/*.db-wal
+data/companies/*.db-shm
+
+# Eclipse
+.project
+.pydevproject
+.settings/
+.classpath
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# Secrets
+.env
+*.key
+api_keys.txt
