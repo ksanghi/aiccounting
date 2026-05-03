@@ -363,6 +363,13 @@ class VoucherEntryPage(QWidget):
         # Hook balance update
         row.dr_edit.valueChanged.connect(self._update_balance_journal)
         row.cr_edit.valueChanged.connect(self._update_balance_journal)
+        # Auto-clear opposite side to prevent both-side entry on same line
+        row.dr_edit.valueChanged.connect(
+            lambda v, r=row: r.cr_edit.setValue(0) if v > 0 else None
+        )
+        row.cr_edit.valueChanged.connect(
+            lambda v, r=row: r.dr_edit.setValue(0) if v > 0 else None
+        )
 
     def _remove_journal_row(self, row: VoucherLineRow):
         if len(self._journal_rows) <= 2:

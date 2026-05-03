@@ -433,7 +433,11 @@ class VoucherValidator:
         ]
 
         def is_bank_cash(ldg: dict) -> bool:
-            return bool(ldg.get("is_bank") or ldg.get("is_cash"))
+            return (
+                bool(ldg.get("is_bank")) or
+                bool(ldg.get("is_cash")) or
+                ldg.get("group_name", "") in ("Bank Accounts", "Cash-in-Hand")
+            )
 
         if vtype == "PAYMENT":
             # Cr side must include a bank/cash account
@@ -447,6 +451,35 @@ class VoucherValidator:
             if not any(is_bank_cash(l) for l in dr_ledgers):
                 errors.append(
                     "Receipt: debit side must include a bank or cash account."
+                )
+
+        elif vtype == "JOURNAL":
+            # Rule 1: Same ledger cannot appear on both Dr and Cr sides
+            dr_ids = {l.ledger_id for l in draft.lines if l.dr_amount > 0}
+            cr_ids = {l.ledger_id for l in draft.lines if l.cr_amount > 0}
+            both_sides = dr_ids & cr_ids
+            if both_sides:
+                errors.append(
+                    "Journal: same ledger cannot appear on both debit and credit sides."
+                )
+
+            # Rule 2: A single line cannot have both Dr and Cr amounts
+            both_in_line = [
+                l for l in draft.lines
+                if l.dr_amount > 0 and l.cr_amount > 0
+            ]
+            if both_in_line:
+                errors.append(
+                    "Journal: a single line cannot have both debit and credit amounts. "
+                    "Use separate lines for Dr and Cr."
+                )
+
+            # Rule 3: Must have at least one Dr and one Cr line
+            has_dr = any(l.dr_amount > 0 for l in draft.lines)
+            has_cr = any(l.cr_amount > 0 for l in draft.lines)
+            if not has_dr or not has_cr:
+                errors.append(
+                    "Journal: must have at least one debit line and one credit line."
                 )
 
         elif vtype == "CONTRA":
