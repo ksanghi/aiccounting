@@ -488,7 +488,7 @@ class VoucherEntryPage(QWidget):
 
                 builder_map = {
                     "PAYMENT":     lambda: self.engine.build_payment(vdate, dr_id, cr_id, amount, narration, reference),
-                    "RECEIPT":     lambda: self.engine.build_receipt(vdate, dr_id, cr_id, amount, narration, reference),
+                    "RECEIPT":     lambda: self.engine.build_receipt(vdate, cr_id, dr_id, amount, narration, reference),
                     "CONTRA":      lambda: self.engine.build_contra(vdate, cr_id, dr_id, amount, narration),
                     "SALES":       lambda: self.engine.build_sales(vdate, dr_id, cr_id, amount, gst_rate, narration, reference),
                     "PURCHASE":    lambda: self.engine.build_purchase(vdate, dr_id, cr_id, amount, gst_rate, narration, reference),
