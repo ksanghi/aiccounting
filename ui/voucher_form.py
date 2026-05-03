@@ -4,7 +4,7 @@ All 8 voucher types, with:
   - Smart mode  : guided fields (Payment, Receipt, Contra, Sales, Purchase)
   - Journal mode: free-form multi-line DR/CR entry
   - F2          : add ledger on the fly from any ledger field
-  - Ctrl+K      : calculator, result pastes into focused amount field
+  - Alt+C      : calculator, result pastes into focused amount field
   - Live balance display: shows Dr total, Cr total, diff in real time
 """
 from PyQt6.QtWidgets import (
@@ -63,7 +63,7 @@ class VoucherEntryPage(QWidget):
         hdr.addStretch()
 
         # Keyboard hints
-        hints = QLabel("F2 = New ledger  |  Ctrl+K = Calculator  |  Ctrl+S = Post")
+        hints = QLabel("F2 = New ledger  |  Alt+C = Calculator  |  Ctrl+S = Post")
         hints.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
         hdr.addWidget(hints)
         root.addLayout(hdr)
@@ -494,7 +494,7 @@ class VoucherEntryPage(QWidget):
     def _wire_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._post)
         QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(self._add_journal_row)
-        QShortcut(QKeySequence("Ctrl+K"), self).activated.connect(self._show_calculator)
+        QShortcut(QKeySequence("Alt+C"), self).activated.connect(self._show_calculator)
 
     def _show_calculator(self):
         btn_pos = self._post_btn.mapToGlobal(self._post_btn.rect().topLeft())

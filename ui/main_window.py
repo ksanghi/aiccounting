@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addStretch()
 
         # Calc button at bottom
-        calc_btn = QPushButton("  ⌨   Calculator   (Ctrl+K)")
+        calc_btn = QPushButton("  ⌨   Calculator   (Alt+C)")
         calc_btn.setObjectName("nav_btn")
         calc_btn.setFixedHeight(36)
         calc_btn.clicked.connect(self._show_calculator)
@@ -230,7 +230,7 @@ class MainWindow(QMainWindow):
         self.calculator.raise_()
 
     def _wire_shortcuts(self):
-        QShortcut(QKeySequence("Ctrl+K"), self).activated.connect(self._show_calculator)
+        QShortcut(QKeySequence("Alt+C"), self).activated.connect(self._show_calculator)
         # Number keys 1-9 jump to nav pages
         for i in range(min(9, 9)):
             QShortcut(QKeySequence(f"Ctrl+{i+1}"), self).activated.connect(

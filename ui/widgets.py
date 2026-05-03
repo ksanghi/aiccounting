@@ -1,6 +1,6 @@
 """
 Shared Widgets
-  - CalculatorWidget  : floating calculator (Ctrl+K anywhere)
+  - CalculatorWidget  : floating calculator (Alt+C anywhere)
   - LedgerSearchEdit  : auto-complete ledger search with inline add (F2)
   - QuickAddLedger    : modal to create a ledger on the fly
   - AmountEdit        : numeric input with comma formatting
@@ -86,7 +86,7 @@ class StatusPill(QLabel):
 
 class CalculatorWidget(QDialog):
     """
-    Floating calculator.  Opens with Ctrl+K.
+    Floating calculator.  Opens with Alt+C.
     Has a "Paste to field" button that sends the result
     to the last focused AmountEdit.
     """
@@ -447,7 +447,7 @@ class LedgerSearchEdit(QWidget):
     """
     Auto-complete ledger search field.
     F2      → open QuickAddLedger dialog
-    Ctrl+K  → open calculator
+    Alt+C  → open calculator
     Emits ledger_selected(id, name) when a match is chosen.
     """
     ledger_selected = pyqtSignal(int, str, dict)   # id, name, full ledger dict
@@ -576,13 +576,13 @@ class VoucherLineRow(QWidget):
         # Dr amount
         self.dr_edit = AmountEdit()
         self.dr_edit.setFixedWidth(120)
-        self.dr_edit.setToolTip("Debit amount (Ctrl+K for calculator)")
+        self.dr_edit.setToolTip("Debit amount (Alt+C for calculator)")
         layout.addWidget(self.dr_edit, 1)
 
         # Cr amount
         self.cr_edit = AmountEdit()
         self.cr_edit.setFixedWidth(120)
-        self.cr_edit.setToolTip("Credit amount (Ctrl+K for calculator)")
+        self.cr_edit.setToolTip("Credit amount (Alt+C for calculator)")
         layout.addWidget(self.cr_edit, 1)
 
         # Line narration
