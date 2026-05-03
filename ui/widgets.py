@@ -600,16 +600,12 @@ class VoucherLineRow(QWidget):
         layout.addWidget(del_btn)
 
         # Wire calculator to whichever amount field is focused
-        self.dr_edit.focusInEvent  = lambda e, w=self.dr_edit:  (self._set_calc_target(w), QDoubleSpinBox.focusInEvent(w, e))
-        self.cr_edit.focusInEvent  = lambda e, w=self.cr_edit:  (self._set_calc_target(w), QDoubleSpinBox.focusInEvent(w, e))
+        self.dr_edit.focused.connect(self._on_focused)
+        self.cr_edit.focused.connect(self._on_focused)
         self._calculator = calculator
 
-    def _set_calc_target(self, widget):
-        try:
-            self._calculator.result_ready.disconnect()
-        except TypeError:
-            pass
-        self._calculator.result_ready.connect(widget.paste_amount)
+    def _on_focused(self, widget):
+        self._calculator.connect_to(widget)
 
     @property
     def ledger_id(self) -> int | None:
