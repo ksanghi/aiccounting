@@ -56,8 +56,15 @@ class AmountEdit(QDoubleSpinBox):
         self.setAlignment(Qt.AlignmentFlag.AlignRight)
 
     def focusInEvent(self, event):
-        self.focused.emit(self)
         super().focusInEvent(event)
+        self.focused.emit(self)
+        QTimer.singleShot(0, self.selectAll)
+
+    def keyPressEvent(self, event):
+        if self.value() == 0 and event.text().isdigit():
+            self.setValue(0)
+            self.selectAll()
+        super().keyPressEvent(event)
 
     def paste_amount(self, value: float):
         self.setValue(value)
