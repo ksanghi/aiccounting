@@ -1,59 +1,58 @@
 """
-Theme — refined dark professional palette
+Theme — warm dark professional palette with higher contrast and larger fonts.
 All colours, fonts, and spacing defined here.
 Change THEME dict to restyle the entire app.
 """
 
 THEME = {
-    # Backgrounds
-    "bg_sidebar":    "#0F1117",
-    "bg_main":       "#1A1D27",
-    "bg_card":       "#21263A",
-    "bg_input":      "#2A2F45",
-    "bg_hover":      "#2E3450",
-    "bg_selected":   "#1E3A5F",
-    "bg_dialog":     "#1E2235",
+    # Backgrounds — warm dark, not cold grey
+    "bg_sidebar":    "#0D1117",
+    "bg_main":       "#161B22",
+    "bg_card":       "#1C2333",
+    "bg_input":      "#21283A",
+    "bg_hover":      "#273044",
+    "bg_selected":   "#1A3A5C",
+    "bg_dialog":     "#1C2333",
 
-    # Accents
-    "accent":        "#4F8EF7",
-    "accent_hover":  "#6BA3F9",
-    "accent_dim":    "#1E3A6E",
-    "success":       "#2ECC71",
-    "warning":       "#F0A500",
-    "danger":        "#E74C3C",
+    # Accents — warmer blue with teal complement
+    "accent":        "#58A6FF",
+    "accent_hover":  "#79B8FF",
+    "accent_dim":    "#1A3A5C",
+    "success":       "#3FB950",
+    "warning":       "#D29922",
+    "danger":        "#F85149",
     "danger_dim":    "#4A1515",
 
-    # Text
-    "text_primary":  "#E8EAF0",
-    "text_secondary":"#8A90A8",
-    "text_dim":      "#4A5070",
-    "text_accent":   "#4F8EF7",
+    # Text — higher contrast
+    "text_primary":  "#F0F6FC",
+    "text_secondary":"#9ECAFF",
+    "text_dim":      "#484F58",
+    "text_accent":   "#58A6FF",
 
-    # Borders
-    "border":        "#2E3450",
-    "border_focus":  "#4F8EF7",
-    "border_error":  "#E74C3C",
+    # Borders — subtle but visible
+    "border":        "#30363D",
+    "border_focus":  "#58A6FF",
+    "border_error":  "#F85149",
 
-    # Voucher type colours
-    "payment":       "#E74C3C",
-    "receipt":       "#2ECC71",
-    "contra":        "#9B59B6",
-    "journal":       "#F0A500",
-    "sales":         "#4F8EF7",
-    "purchase":      "#E67E22",
-    "debit_note":    "#E74C3C",
-    "credit_note":   "#1ABC9C",
+    # Voucher type colours — more vivid
+    "payment":       "#FF7B72",
+    "receipt":       "#3FB950",
+    "contra":        "#D2A8FF",
+    "journal":       "#E3B341",
+    "sales":         "#58A6FF",
+    "purchase":      "#FFA657",
+    "debit_note":    "#FF7B72",
+    "credit_note":   "#39D353",
 }
 
-# Font sizes
 FONT = {
-    "tiny":    9,
-    "small":   10,
-    "body":    11,
-    "medium":  12,
-    "large":   14,
-    "title":   18,
-    "display": 24,
+    "tiny":    10,
+    "small":   11,
+    "body":    12,
+    "medium":  13,
+    "large":   15,
+    "title":   20,
+    "display": 26,
 }
 
 VOUCHER_COLOURS = {
@@ -74,7 +73,7 @@ def get_stylesheet() -> str:
 /* ── Global ──────────────────────────────── */
 * {{
     font-family: 'Segoe UI', 'Calibri', sans-serif;
-    font-size: 11px;
+    font-size: 12px;
     color: {t['text_primary']};
     border: none;
     outline: none;
@@ -90,36 +89,36 @@ QMainWindow {{
 #sidebar {{
     background-color: {t['bg_sidebar']};
     border-right: 1px solid {t['border']};
-    min-width: 200px;
-    max-width: 200px;
+    min-width: 220px;
+    max-width: 220px;
 }}
 #sidebar_logo {{
     background-color: {t['bg_sidebar']};
-    padding: 18px 16px 12px 16px;
+    padding: 20px 18px 14px 18px;
     border-bottom: 1px solid {t['border']};
 }}
 #logo_text {{
-    font-size: 15px;
+    font-size: 17px;
     font-weight: bold;
     color: {t['accent']};
-    letter-spacing: 1px;
+    letter-spacing: 2px;
 }}
 #company_text {{
-    font-size: 9px;
-    color: {t['text_dim']};
-    padding-top: 2px;
+    font-size: 11px;
+    color: {t['text_secondary']};
+    padding-top: 3px;
 }}
 
 /* ── Nav buttons ─────────────────────────── */
 #nav_btn {{
     background: transparent;
     border: none;
-    border-radius: 6px;
-    padding: 9px 14px;
+    border-radius: 7px;
+    padding: 10px 16px;
     text-align: left;
-    font-size: 11px;
+    font-size: 12px;
     color: {t['text_secondary']};
-    margin: 1px 8px;
+    margin: 2px 8px;
 }}
 #nav_btn:hover {{
     background-color: {t['bg_hover']};
@@ -128,38 +127,37 @@ QMainWindow {{
 #nav_btn_active {{
     background-color: {t['accent_dim']};
     border: none;
-    border-radius: 6px;
+    border-radius: 7px;
     border-left: 3px solid {t['accent']};
-    padding: 9px 14px 9px 11px;
+    padding: 10px 16px 10px 13px;
     text-align: left;
-    font-size: 11px;
+    font-size: 12px;
     color: {t['accent']};
     font-weight: bold;
-    margin: 1px 8px;
+    margin: 2px 8px;
 }}
 #nav_section {{
     color: {t['text_dim']};
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 1.5px;
-    padding: 14px 22px 4px 22px;
+    padding: 16px 22px 5px 22px;
     font-weight: bold;
 }}
 
 /* ── Content area ────────────────────────── */
 #content_area {{
     background-color: {t['bg_main']};
-    padding: 0;
 }}
 #page_title {{
-    font-size: 18px;
+    font-size: 20px;
     font-weight: bold;
     color: {t['text_primary']};
-    padding: 20px 24px 4px 24px;
+    padding: 22px 26px 4px 26px;
 }}
 #page_subtitle {{
-    font-size: 10px;
-    color: {t['text_dim']};
-    padding: 0 24px 16px 24px;
+    font-size: 11px;
+    color: {t['text_secondary']};
+    padding: 0 26px 18px 26px;
 }}
 
 /* ── Cards ───────────────────────────────── */
@@ -167,80 +165,76 @@ QMainWindow {{
     background-color: {t['bg_card']};
     border-radius: 10px;
     border: 1px solid {t['border']};
-    padding: 16px;
+    padding: 18px;
     margin: 6px 0;
 }}
 
 /* ── Inputs ──────────────────────────────── */
-QLineEdit, QComboBox, QDateEdit, QTextEdit, QSpinBox, QDoubleSpinBox {{
+QLineEdit, QComboBox, QDateEdit, QTextEdit,
+QSpinBox, QDoubleSpinBox {{
     background-color: {t['bg_input']};
     border: 1px solid {t['border']};
-    border-radius: 6px;
-    padding: 6px 10px;
+    border-radius: 7px;
+    padding: 7px 12px;
     color: {t['text_primary']};
-    font-size: 11px;
+    font-size: 12px;
+    min-height: 34px;
     selection-background-color: {t['accent_dim']};
 }}
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus,
 QTextEdit:focus, QDoubleSpinBox:focus {{
-    border: 1px solid {t['border_focus']};
+    border: 1.5px solid {t['border_focus']};
     background-color: {t['bg_hover']};
 }}
 QLineEdit[error="true"] {{
-    border: 1px solid {t['border_error']};
+    border: 1.5px solid {t['border_error']};
 }}
 QComboBox::drop-down {{
     border: none;
-    width: 20px;
+    width: 24px;
 }}
 QComboBox::down-arrow {{
     image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {t['text_secondary']};
-    margin-right: 6px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid {t['text_secondary']};
+    margin-right: 8px;
 }}
 QComboBox QAbstractItemView {{
     background-color: {t['bg_card']};
-    border: 1px solid {t['border']};
-    border-radius: 6px;
+    border: 1px solid {t['border_focus']};
+    border-radius: 7px;
     selection-background-color: {t['accent_dim']};
-    outline: none;
+    font-size: 12px;
     padding: 4px;
 }}
 QDateEdit::up-button, QDateEdit::down-button {{
     width: 0;
 }}
-QCalendarWidget {{
-    background-color: {t['bg_card']};
-    border: 1px solid {t['border']};
-    border-radius: 8px;
-}}
 
 /* ── Labels ──────────────────────────────── */
 #field_label {{
-    font-size: 10px;
+    font-size: 11px;
     color: {t['text_secondary']};
     font-weight: bold;
     letter-spacing: 0.5px;
-    padding-bottom: 2px;
-}}
-#required_star {{
-    color: {t['danger']};
+    padding-bottom: 3px;
 }}
 
 /* ── Buttons ─────────────────────────────── */
 QPushButton {{
     background-color: {t['bg_input']};
     border: 1px solid {t['border']};
-    border-radius: 6px;
-    padding: 7px 16px;
+    border-radius: 7px;
+    padding: 8px 18px;
     color: {t['text_primary']};
-    font-size: 11px;
+    font-size: 12px;
+    min-height: 34px;
 }}
 QPushButton:hover {{
     background-color: {t['bg_hover']};
-    border-color: {t['text_secondary']};
+    border-color: {t['accent']};
+    color: {t['accent']};
 }}
 QPushButton:pressed {{
     background-color: {t['accent_dim']};
@@ -248,67 +242,76 @@ QPushButton:pressed {{
 #btn_primary {{
     background-color: {t['accent']};
     border: none;
-    border-radius: 6px;
-    padding: 8px 20px;
-    color: white;
-    font-size: 11px;
+    border-radius: 7px;
+    padding: 9px 22px;
+    color: #0D1117;
+    font-size: 12px;
     font-weight: bold;
+    min-height: 34px;
 }}
 #btn_primary:hover {{
     background-color: {t['accent_hover']};
 }}
-#btn_primary:pressed {{
-    background-color: {t['accent_dim']};
-}}
 #btn_danger {{
     background-color: {t['danger']};
     border: none;
-    border-radius: 6px;
-    padding: 8px 20px;
+    border-radius: 7px;
+    padding: 9px 22px;
     color: white;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: bold;
 }}
 #btn_danger:hover {{
-    background-color: #c0392b;
+    background-color: #da3633;
 }}
 #btn_icon {{
     background: transparent;
     border: none;
     padding: 4px;
-    border-radius: 4px;
-    font-size: 13px;
+    border-radius: 5px;
+    font-size: 14px;
     color: {t['text_secondary']};
+    min-height: 0;
 }}
 #btn_icon:hover {{
     background-color: {t['bg_hover']};
     color: {t['text_primary']};
 }}
 
+/* ── Voucher type buttons ────────────────── */
+#voucher_type_bar {{
+    background-color: {t['bg_card']};
+    border-radius: 10px;
+    border: 1px solid {t['border']};
+    padding: 10px 14px;
+}}
+
 /* ── Tables ──────────────────────────────── */
 QTableWidget {{
     background-color: {t['bg_card']};
     border: 1px solid {t['border']};
-    border-radius: 8px;
+    border-radius: 10px;
     gridline-color: {t['border']};
     selection-background-color: {t['bg_selected']};
     selection-color: {t['text_primary']};
     alternate-background-color: {t['bg_hover']};
+    font-size: 12px;
 }}
 QTableWidget::item {{
-    padding: 6px 10px;
+    padding: 8px 12px;
     border-bottom: 1px solid {t['border']};
 }}
 QTableWidget::item:selected {{
     background-color: {t['bg_selected']};
+    color: {t['text_primary']};
 }}
 QHeaderView::section {{
     background-color: {t['bg_sidebar']};
     color: {t['text_secondary']};
-    font-size: 10px;
+    font-size: 11px;
     font-weight: bold;
     letter-spacing: 0.5px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     border: none;
     border-bottom: 1px solid {t['border']};
     border-right: 1px solid {t['border']};
@@ -317,23 +320,24 @@ QHeaderView::section {{
 /* ── Scrollbars ──────────────────────────── */
 QScrollBar:vertical {{
     background: transparent;
-    width: 6px;
+    width: 7px;
     margin: 0;
 }}
 QScrollBar::handle:vertical {{
     background: {t['border']};
     border-radius: 3px;
-    min-height: 20px;
+    min-height: 24px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: {t['text_dim']};
+    background: {t['text_secondary']};
 }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {{
     height: 0;
 }}
 QScrollBar:horizontal {{
     background: transparent;
-    height: 6px;
+    height: 7px;
 }}
 QScrollBar::handle:horizontal {{
     background: {t['border']};
@@ -350,20 +354,20 @@ QFrame[frameShape="4"], QFrame[frameShape="5"] {{
 /* ── Status bar ──────────────────────────── */
 QStatusBar {{
     background-color: {t['bg_sidebar']};
-    color: {t['text_dim']};
-    font-size: 10px;
+    color: {t['text_secondary']};
+    font-size: 11px;
     border-top: 1px solid {t['border']};
-    padding: 3px 10px;
+    padding: 4px 12px;
 }}
 
 /* ── Tooltips ────────────────────────────── */
 QToolTip {{
     background-color: {t['bg_card']};
     color: {t['text_primary']};
-    border: 1px solid {t['border']};
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 10px;
+    border: 1px solid {t['border_focus']};
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 11px;
 }}
 
 /* ── Dialogs ─────────────────────────────── */
@@ -374,6 +378,7 @@ QDialog {{
 }}
 QMessageBox {{
     background-color: {t['bg_dialog']};
+    font-size: 12px;
 }}
 
 /* ── Tab widget ──────────────────────────── */
@@ -385,9 +390,9 @@ QTabWidget::pane {{
 QTabBar::tab {{
     background-color: transparent;
     color: {t['text_secondary']};
-    padding: 8px 18px;
+    padding: 9px 20px;
     border-bottom: 2px solid transparent;
-    font-size: 11px;
+    font-size: 12px;
 }}
 QTabBar::tab:selected {{
     color: {t['accent']};
@@ -398,25 +403,27 @@ QTabBar::tab:hover {{
     color: {t['text_primary']};
 }}
 
+/* ── Completer popup ─────────────────────── */
+QAbstractItemView {{
+    background-color: {t['bg_card']};
+    border: 1px solid {t['border_focus']};
+    border-radius: 7px;
+    selection-background-color: {t['accent_dim']};
+    selection-color: {t['text_primary']};
+    padding: 4px;
+    font-size: 12px;
+    outline: none;
+}}
+QAbstractItemView::item {{
+    padding: 7px 12px;
+    border-radius: 5px;
+    min-height: 28px;
+}}
+
 /* ── Splitter ────────────────────────────── */
 QSplitter::handle {{
     background-color: {t['border']};
     width: 1px;
     height: 1px;
-}}
-
-/* ── Completer popup ─────────────────────── */
-QAbstractItemView {{
-    background-color: {t['bg_card']};
-    border: 1px solid {t['border_focus']};
-    border-radius: 6px;
-    selection-background-color: {t['accent_dim']};
-    selection-color: {t['text_primary']};
-    padding: 4px;
-    outline: none;
-}}
-QAbstractItemView::item {{
-    padding: 6px 10px;
-    border-radius: 4px;
 }}
 """
