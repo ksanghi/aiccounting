@@ -270,19 +270,10 @@ class MainWindow(QMainWindow):
 
     def _refresh_all_pages(self):
         """Rebuild label text on all pages without restarting."""
-        from core.config import get_dr_label, get_cr_label
         for label, icon, widget, btn in self._pages:
             if label == "Post Voucher":
-                if hasattr(widget, 'dr_ledger'):
-                    widget.dr_ledger.search.setPlaceholderText(
-                        get_dr_label(short=True) + " account…"
-                    )
-                if hasattr(widget, 'cr_ledger'):
-                    widget.cr_ledger.search.setPlaceholderText(
-                        get_cr_label(short=True) + " account…"
-                    )
-                if hasattr(widget, '_current_type'):
-                    widget._select_type(widget._current_type)
+                if hasattr(widget, 'apply_label_style'):
+                    widget.apply_label_style()
 
     def _placeholder(self, text: str) -> QWidget:
         w = QWidget()

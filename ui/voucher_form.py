@@ -264,16 +264,22 @@ class VoucherEntryPage(QWidget):
         hdr_row = QHBoxLayout(hdr_frame)
         hdr_row.setContentsMargins(10, 6, 10, 6)
         from core.config import get_dr_label, get_cr_label
-        for label, stretch in [("#", 0), ("Ledger Account", 3),
-                                (get_dr_label(short=True) + " Amount", 1),
-                                (get_cr_label(short=True) + " Amount", 1),
-                                ("Line Narration", 2), ("", 0)]:
-            l = QLabel(label)
+        self._journal_dr_hdr = None
+        self._journal_cr_hdr = None
+        for col_label, stretch in [("#", 0), ("Ledger Account", 3),
+                                    (get_dr_label(short=True), 1),
+                                    (get_cr_label(short=True), 1),
+                                    ("Line Narration", 2), ("", 0)]:
+            l = QLabel(col_label)
             l.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:10px; font-weight:bold;")
+            if col_label == get_dr_label(short=True):
+                self._journal_dr_hdr = l
+            elif col_label == get_cr_label(short=True):
+                self._journal_cr_hdr = l
             if stretch:
                 hdr_row.addWidget(l, stretch)
             else:
-                l.setFixedWidth(20 if label == "#" else 28)
+                l.setFixedWidth(20 if col_label == "#" else 28)
                 hdr_row.addWidget(l)
         layout.addWidget(hdr_frame)
 
@@ -389,21 +395,23 @@ class VoucherEntryPage(QWidget):
         self._update_balance_journal()
 
     def _update_balance_smart(self):
+        from core.config import get_dr_label, get_cr_label
         amt = self.amount_edit.value()
         gst = self._gst_combo.currentData() if self._gst_combo.isVisible() else 0
         tax = round(amt * gst / 100, 2)
         gross = round(amt + tax, 2)
-        self._bal_dr.setText(f"Dr  ₹{gross:,.2f}")
-        self._bal_cr.setText(f"Cr  ₹{gross:,.2f}")
+        self._bal_dr.setText(f"{get_dr_label(short=True)}  ₹{gross:,.2f}")
+        self._bal_cr.setText(f"{get_cr_label(short=True)}  ₹{gross:,.2f}")
         self._bal_diff.setText("✓ Balanced" if gross > 0 else "")
         self._bal_diff.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
 
     def _update_balance_journal(self):
+        from core.config import get_dr_label, get_cr_label
         total_dr = sum(r.dr_amount for r in self._journal_rows)
         total_cr = sum(r.cr_amount for r in self._journal_rows)
         diff = round(total_dr - total_cr, 2)
-        self._bal_dr.setText(f"Dr  ₹{total_dr:,.2f}")
-        self._bal_cr.setText(f"Cr  ₹{total_cr:,.2f}")
+        self._bal_dr.setText(f"{get_dr_label(short=True)}  ₹{total_dr:,.2f}")
+        self._bal_cr.setText(f"{get_cr_label(short=True)}  ₹{total_cr:,.2f}")
         if abs(diff) < 0.01:
             self._bal_diff.setText("✓ Balanced")
             self._bal_diff.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
@@ -502,6 +510,17 @@ class VoucherEntryPage(QWidget):
         if self._current_type == "JOURNAL":
             self._add_journal_row()
             self._add_journal_row()
+        self._update_balance_smart()
+
+    def apply_label_style(self):
+        """Update all live Dr/Cr labels after a style change — no restart needed."""
+        from core.config import get_dr_label, get_cr_label
+        dr, cr = get_dr_label(short=True), get_cr_label(short=True)
+        if self._journal_dr_hdr:
+            self._journal_dr_hdr.setText(dr)
+        if self._journal_cr_hdr:
+            self._journal_cr_hdr.setText(cr)
+        self._select_type(self._current_type)
         self._update_balance_smart()
 
     def _wire_shortcuts(self):
