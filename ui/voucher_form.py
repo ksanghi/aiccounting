@@ -271,9 +271,9 @@ class VoucherEntryPage(QWidget):
         hdr_row.setContentsMargins(10, 6, 10, 6)
         headers = [
             ("#",              0, False),
+            ("Type",           0, True),
             ("Ledger Account", 3, True),
             ("Amount",         1, True),
-            ("Type",           1, True),
             ("Line Narration", 2, True),
             ("",               0, False),
         ]
@@ -455,15 +455,32 @@ class VoucherEntryPage(QWidget):
                 draft = self.engine.build_journal(vdate, lines, narration, reference)
 
             else:
+                from core.config import get_dr_label, get_cr_label
                 dr_id = self.dr_ledger.selected_id
                 cr_id = self.cr_ledger.selected_id
+
+                # Fallback — try direct name lookup in case completer did not fire signal
+                if not dr_id:
+                    dr_text = self.dr_ledger.search.text().strip()
+                    ldg = self.dr_ledger._ledger_map.get(dr_text)
+                    if ldg:
+                        dr_id = ldg["id"]
+
+                if not cr_id:
+                    cr_text = self.cr_ledger.search.text().strip()
+                    ldg = self.cr_ledger._ledger_map.get(cr_text)
+                    if ldg:
+                        cr_id = ldg["id"]
+
                 amount = self.amount_edit.value()
 
                 if not dr_id:
-                    QMessageBox.warning(self, "Missing field", "Please select a Debit account.")
+                    QMessageBox.warning(self, "Missing field",
+                        "Please select a " + get_dr_label(short=True) + " account.")
                     return
                 if not cr_id:
-                    QMessageBox.warning(self, "Missing field", "Please select a Credit account.")
+                    QMessageBox.warning(self, "Missing field",
+                        "Please select a " + get_cr_label(short=True) + " account.")
                     return
                 if amount <= 0:
                     QMessageBox.warning(self, "Missing field", "Amount must be greater than zero.")

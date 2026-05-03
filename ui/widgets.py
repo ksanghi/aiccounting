@@ -526,12 +526,19 @@ class LedgerSearchEdit(QWidget):
 
     @property
     def selected_id(self) -> int | None:
-        # Try exact match if user didn't pick from completer
-        if self._selected_id is None:
-            ldg = self._ledger_map.get(self.search.text().strip())
-            if ldg:
-                return ldg["id"]
-        return self._selected_id
+        if self._selected_id is not None:
+            return self._selected_id
+        text = self.search.text().strip()
+        # Exact match
+        ldg = self._ledger_map.get(text)
+        if ldg:
+            return ldg["id"]
+        # Case-insensitive fallback
+        text_lower = text.lower()
+        for name, l in self._ledger_map.items():
+            if name.lower() == text_lower:
+                return l["id"]
+        return None
 
     @property
     def selected_ledger(self) -> dict | None:
@@ -570,18 +577,7 @@ class VoucherLineRow(QWidget):
         num.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(num)
 
-        # Ledger search
-        self.ledger_search = LedgerSearchEdit(tree, calculator, "Search ledger...")
-        self.ledger_search.setMinimumWidth(240)
-        layout.addWidget(self.ledger_search, 3)
-
-        # Single amount field
-        self.amount_edit = AmountEdit()
-        self.amount_edit.setFixedWidth(150)
-        self.amount_edit.focused.connect(self._on_focused)
-        layout.addWidget(self.amount_edit, 1)
-
-        # Dr/Cr type toggle
+        # Dr/Cr type toggle — first so user picks direction before ledger
         self.type_toggle = QComboBox()
         self.type_toggle.setFixedWidth(120)
         self.type_toggle.setFixedHeight(34)
@@ -605,6 +601,17 @@ class VoucherLineRow(QWidget):
             }}
         """)
         layout.addWidget(self.type_toggle)
+
+        # Ledger search
+        self.ledger_search = LedgerSearchEdit(tree, calculator, "Search ledger...")
+        self.ledger_search.setMinimumWidth(240)
+        layout.addWidget(self.ledger_search, 3)
+
+        # Single amount field
+        self.amount_edit = AmountEdit()
+        self.amount_edit.setFixedWidth(150)
+        self.amount_edit.focused.connect(self._on_focused)
+        layout.addWidget(self.amount_edit, 1)
 
         # Line narration
         self.narration = QLineEdit()
