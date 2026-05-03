@@ -213,12 +213,13 @@ class VoucherEntryPage(QWidget):
         inner.setContentsMargins(16, 14, 16, 14)
 
         # Row 0: Dr ledger
-        inner.addWidget(make_label("Debit Account", required=True), 0, 0)
+        from core.config import get_dr_label, get_cr_label
+        inner.addWidget(make_label(get_dr_label(short=True) + " Account", required=True), 0, 0)
         self.dr_ledger = LedgerSearchEdit(self.tree, self.calculator, "Search Dr ledger…")
         inner.addWidget(self.dr_ledger, 0, 1)
 
         # Row 1: Cr ledger
-        inner.addWidget(make_label("Credit Account", required=True), 1, 0)
+        inner.addWidget(make_label(get_cr_label(short=True) + " Account", required=True), 1, 0)
         self.cr_ledger = LedgerSearchEdit(self.tree, self.calculator, "Search Cr ledger…")
         inner.addWidget(self.cr_ledger, 1, 1)
 
@@ -262,8 +263,10 @@ class VoucherEntryPage(QWidget):
         hdr_frame.setObjectName("card")
         hdr_row = QHBoxLayout(hdr_frame)
         hdr_row.setContentsMargins(10, 6, 10, 6)
+        from core.config import get_dr_label, get_cr_label
         for label, stretch in [("#", 0), ("Ledger Account", 3),
-                                ("Dr Amount", 1), ("Cr Amount", 1),
+                                (get_dr_label(short=True) + " Amount", 1),
+                                (get_cr_label(short=True) + " Amount", 1),
                                 ("Line Narration", 2), ("", 0)]:
             l = QLabel(label)
             l.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:10px; font-weight:bold;")
@@ -329,14 +332,17 @@ class VoucherEntryPage(QWidget):
         self._gst_combo.setVisible(has_gst)
 
         # Update Dr/Cr labels based on type
+        from core.config import get_dr_label, get_cr_label
+        dr = get_dr_label(short=True)
+        cr = get_cr_label(short=True)
         labels = {
-            "PAYMENT":     ("Expense / Party (Dr)",    "Bank / Cash (Cr)"),
-            "RECEIPT":     ("Bank / Cash (Dr)",         "Party / Income (Cr)"),
-            "CONTRA":      ("To Account (Dr)",          "From Account (Cr)"),
-            "SALES":       ("Party / Debtor (Dr)",      "Sales Account (Cr)"),
-            "PURCHASE":    ("Purchase Account (Dr)",    "Party / Creditor (Cr)"),
-            "DEBIT_NOTE":  ("Party / Creditor (Dr)",   "Purchase Return (Cr)"),
-            "CREDIT_NOTE": ("Sales Return (Dr)",        "Party / Debtor (Cr)"),
+            "PAYMENT":     (f"Expense / Party — {dr}",    f"Bank / Cash — {cr}"),
+            "RECEIPT":     (f"Bank / Cash — {dr}",         f"Party / Income — {cr}"),
+            "CONTRA":      (f"To Account — {dr}",          f"From Account — {cr}"),
+            "SALES":       (f"Party / Debtor — {dr}",      f"Sales Account — {cr}"),
+            "PURCHASE":    (f"Purchase Account — {dr}",    f"Party / Creditor — {cr}"),
+            "DEBIT_NOTE":  (f"Party / Creditor — {dr}",   f"Purchase Return — {cr}"),
+            "CREDIT_NOTE": (f"Sales Return — {dr}",        f"Party / Debtor — {cr}"),
         }
         dr_hint, cr_hint = labels.get(vtype, ("Debit Account", "Credit Account"))
         self.dr_ledger.search.setPlaceholderText(dr_hint)

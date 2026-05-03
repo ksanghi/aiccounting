@@ -19,6 +19,7 @@ from PyQt6.QtGui   import QFont, QIcon, QKeySequence, QShortcut
 
 from ui.theme   import THEME, get_stylesheet
 from ui.widgets import CalculatorWidget
+from core.config import set_label_style, current_style
 
 
 class NavButton(QPushButton):
@@ -187,6 +188,101 @@ class MainWindow(QMainWindow):
         self.register_page("AI Doc Reader",   "🤖", self._placeholder("Drop bank statements & invoices here\n(Coming next)"),
                             section_above="AI")
         self.register_page("Verbal Entry",    "🎙", self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
+
+        settings_page = self._build_settings_page()
+        self.register_page("Settings", "⚙", settings_page, section_above="SETTINGS")
+
+    def _build_settings_page(self) -> QWidget:
+        from ui.widgets import make_label, make_separator
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setSpacing(20)
+
+        title = QLabel("Settings")
+        title.setObjectName("page_title")
+        layout.addWidget(title)
+
+        sub = QLabel("Customise labels and display preferences.")
+        sub.setObjectName("page_subtitle")
+        layout.addWidget(sub)
+
+        # ── Label style section ──
+        card = QFrame()
+        card.setObjectName("card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(20, 16, 20, 16)
+
+        card_layout.addWidget(make_label("Dr / Cr Label Style"))
+        hint = QLabel(
+            "Modern (Dr/Cr) is standard for computer accounting.\n"
+            "Traditional (By/To) follows manual ledger conventions."
+        )
+        hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        card_layout.addWidget(hint)
+
+        btn_row = QHBoxLayout()
+        self._style_btns: dict[str, QPushButton] = {}
+        for key, label in [("modern", "Modern  —  Dr / Cr"),
+                            ("traditional", "Traditional  —  By / To")]:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setFixedHeight(34)
+            btn.setChecked(key == current_style())
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {THEME['border']};
+                    border-radius: 6px;
+                    padding: 4px 16px;
+                    font-size: 12px;
+                    color: {THEME['text_secondary']};
+                    background: transparent;
+                }}
+                QPushButton:checked {{
+                    background: {THEME['accent']}22;
+                    border-color: {THEME['accent']};
+                    color: {THEME['accent']};
+                    font-weight: bold;
+                }}
+                QPushButton:hover:!checked {{
+                    border-color: {THEME['accent']};
+                }}
+            """)
+            btn.clicked.connect(lambda _, k=key: self._apply_style(k))
+            self._style_btns[key] = btn
+            btn_row.addWidget(btn)
+        btn_row.addStretch()
+        card_layout.addLayout(btn_row)
+        layout.addWidget(card)
+        layout.addStretch()
+        return page
+
+    def _apply_style(self, style: str):
+        set_label_style(style)
+        for k, btn in self._style_btns.items():
+            btn.setChecked(k == style)
+        self._refresh_all_pages()
+        QMessageBox.information(
+            self, "Applied",
+            f"Labels updated to '{style}' style."
+        )
+
+    def _refresh_all_pages(self):
+        """Rebuild label text on all pages without restarting."""
+        from core.config import get_dr_label, get_cr_label
+        for label, icon, widget, btn in self._pages:
+            if label == "Post Voucher":
+                if hasattr(widget, 'dr_ledger'):
+                    widget.dr_ledger.search.setPlaceholderText(
+                        get_dr_label(short=True) + " account…"
+                    )
+                if hasattr(widget, 'cr_ledger'):
+                    widget.cr_ledger.search.setPlaceholderText(
+                        get_cr_label(short=True) + " account…"
+                    )
+                if hasattr(widget, '_current_type'):
+                    widget._select_type(widget._current_type)
 
     def _placeholder(self, text: str) -> QWidget:
         w = QWidget()
