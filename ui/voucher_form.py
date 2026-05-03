@@ -192,6 +192,11 @@ class VoucherEntryPage(QWidget):
         self._clear_btn.setFixedHeight(36)
         self._clear_btn.clicked.connect(self._clear)
 
+        calc_btn = QPushButton("Calc (Alt+C)")
+        calc_btn.setFixedHeight(36)
+        calc_btn.setFixedWidth(100)
+        calc_btn.clicked.connect(self._show_calculator)
+        footer.addWidget(calc_btn)
         footer.addWidget(self._clear_btn)
         footer.addWidget(self._post_btn)
 
@@ -264,19 +269,26 @@ class VoucherEntryPage(QWidget):
         hdr_row = QHBoxLayout(hdr_frame)
         hdr_row.setContentsMargins(10, 6, 10, 6)
         from core.config import get_dr_label, get_cr_label
-        self._journal_dr_hdr = None
-        self._journal_cr_hdr = None
-        for col_label, stretch in [("#", 0), ("Ledger Account", 3),
-                                    (get_dr_label(short=True), 1),
-                                    (get_cr_label(short=True), 1),
-                                    ("Line Narration", 2), ("", 0)]:
+        self._dr_hdr_label = None
+        self._cr_hdr_label = None
+        headers = [
+            ("#",                      0, False),
+            ("Ledger Account",         3, True),
+            (get_dr_label(short=True), 1, True),
+            (get_cr_label(short=True), 1, True),
+            ("Line Narration",         2, True),
+            ("",                       0, False),
+        ]
+        for col_label, stretch, use_stretch in headers:
             l = QLabel(col_label)
-            l.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:10px; font-weight:bold;")
+            l.setStyleSheet(
+                f"color:{THEME['text_secondary']}; font-size:10px; font-weight:bold;"
+            )
             if col_label == get_dr_label(short=True):
-                self._journal_dr_hdr = l
-            elif col_label == get_cr_label(short=True):
-                self._journal_cr_hdr = l
-            if stretch:
+                self._dr_hdr_label = l
+            if col_label == get_cr_label(short=True):
+                self._cr_hdr_label = l
+            if use_stretch:
                 hdr_row.addWidget(l, stretch)
             else:
                 l.setFixedWidth(20 if col_label == "#" else 28)
@@ -516,17 +528,19 @@ class VoucherEntryPage(QWidget):
         """Update all live Dr/Cr labels after a style change — no restart needed."""
         from core.config import get_dr_label, get_cr_label
         dr, cr = get_dr_label(short=True), get_cr_label(short=True)
-        if self._journal_dr_hdr:
-            self._journal_dr_hdr.setText(dr)
-        if self._journal_cr_hdr:
-            self._journal_cr_hdr.setText(cr)
+        if hasattr(self, '_dr_hdr_label') and self._dr_hdr_label:
+            self._dr_hdr_label.setText(dr)
+        if hasattr(self, '_cr_hdr_label') and self._cr_hdr_label:
+            self._cr_hdr_label.setText(cr)
         self._select_type(self._current_type)
         self._update_balance_smart()
 
     def _wire_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self._post)
         QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(self._add_journal_row)
-        QShortcut(QKeySequence("Alt+C"), self).activated.connect(self._show_calculator)
+        calc_sc = QShortcut(QKeySequence("Alt+C"), self)
+        calc_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        calc_sc.activated.connect(self._show_calculator)
 
     def _show_calculator(self):
         btn_pos = self._post_btn.mapToGlobal(self._post_btn.rect().topLeft())

@@ -215,29 +215,32 @@ class MainWindow(QMainWindow):
         card_layout.setContentsMargins(20, 16, 20, 16)
 
         card_layout.addWidget(make_label("Dr / Cr Label Style"))
-        hint = QLabel(
-            "Modern (Dr/Cr) is standard for computer accounting.\n"
-            "Traditional (By/To) follows manual ledger conventions."
-        )
+        hint = QLabel("Choose how debit and credit labels appear throughout the app.")
         hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
         card_layout.addWidget(hint)
 
+        descriptions = {
+            "natural":     ("Paid To / Recd From",  "Plain language — recommended for most users"),
+            "traditional": ("By / To",               "Traditional Indian accounting style"),
+            "accounting":  ("Debit / Credit",        "Standard accounting terminology"),
+        }
+
         btn_row = QHBoxLayout()
         self._style_btns: dict[str, QPushButton] = {}
-        for key, label in [("modern", "Modern  —  Dr / Cr"),
-                            ("traditional", "Traditional  —  By / To")]:
-            btn = QPushButton(label)
+        for key, (short_lbl, desc) in descriptions.items():
+            btn = QPushButton(f"{short_lbl}\n{desc}")
             btn.setCheckable(True)
-            btn.setFixedHeight(34)
+            btn.setFixedHeight(52)
             btn.setChecked(key == current_style())
             btn.setStyleSheet(f"""
                 QPushButton {{
                     border: 1px solid {THEME['border']};
                     border-radius: 6px;
                     padding: 4px 16px;
-                    font-size: 12px;
+                    font-size: 11px;
                     color: {THEME['text_secondary']};
                     background: transparent;
+                    text-align: left;
                 }}
                 QPushButton:checked {{
                     background: {THEME['accent']}22;
@@ -317,7 +320,9 @@ class MainWindow(QMainWindow):
         self.calculator.raise_()
 
     def _wire_shortcuts(self):
-        QShortcut(QKeySequence("Alt+C"), self).activated.connect(self._show_calculator)
+        calc_sc = QShortcut(QKeySequence("Alt+C"), self)
+        calc_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        calc_sc.activated.connect(self._show_calculator)
         # Number keys 1-9 jump to nav pages
         for i in range(min(9, 9)):
             QShortcut(QKeySequence(f"Ctrl+{i+1}"), self).activated.connect(
