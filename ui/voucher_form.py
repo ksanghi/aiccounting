@@ -429,6 +429,26 @@ class VoucherEntryPage(QWidget):
         return self.date_edit.date().toString("yyyy-MM-dd")
 
     def _post(self):
+        # License gate — check before doing any work
+        try:
+            from core.license_manager import LicenseManager
+            _lmgr = LicenseManager()
+            _allowed, _msg, _cost = _lmgr.can_post_voucher()
+            if not _allowed:
+                QMessageBox.warning(self, "Limit reached", _msg)
+                return
+            if _msg:  # overage warning on paid plans
+                reply = QMessageBox.question(
+                    self, "Overage charge applies",
+                    f"{_msg}\n\nPost anyway?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+        except Exception:
+            pass  # license check failure is non-fatal
+
         from core.voucher_engine import VoucherValidationError, VoucherDraft, VoucherLine
 
         vtype     = self._current_type
@@ -498,6 +518,13 @@ class VoucherEntryPage(QWidget):
                 draft = builder_map[vtype]()
 
             posted = self.engine.post(draft)
+
+            # Record transaction for license counter
+            try:
+                from core.license_manager import LicenseManager
+                LicenseManager().record_voucher_posted()
+            except Exception:
+                pass
 
             # Success notification
             colour = VOUCHER_COLOURS.get(vtype, THEME["success"])

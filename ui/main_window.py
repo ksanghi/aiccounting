@@ -17,9 +17,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore  import Qt, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui   import QFont, QIcon, QKeySequence, QShortcut
 
-from ui.theme   import THEME, get_stylesheet
-from ui.widgets import CalculatorWidget
-from core.config import set_label_style, current_style
+from ui.theme              import THEME, get_stylesheet
+from ui.widgets            import CalculatorWidget
+from core.config           import set_label_style, current_style
+from core.license_manager  import LicenseManager
 
 
 class NavButton(QPushButton):
@@ -81,6 +82,8 @@ class MainWindow(QMainWindow):
         self.company_id = company_id
         self.tree       = tree
         self.engine     = engine
+
+        self.license_mgr = LicenseManager()
 
         # Shared calculator (one instance, shown/hidden)
         self.calculator = CalculatorWidget(self)
@@ -233,16 +236,12 @@ class MainWindow(QMainWindow):
             raise
 
     def _build_pages_inner(self):
-        from ui.voucher_form  import VoucherEntryPage
-        from ui.daybook       import DayBookPage, LedgerBalancePage
-        from ui.reports_page  import (
-            TrialBalancePage, ProfitLossPage, BalanceSheetPage,
-            CashBookPage, BankBookPage, ReceiptsPaymentsPage,
-            GSTSummaryPage, TDSReportPage,
-        )
+        from ui.voucher_form     import VoucherEntryPage
+        from ui.daybook          import DayBookPage, LedgerBalancePage
+        from ui.feature_gate_widget import FeatureGateWidget
         from core.reports_engine import ReportsEngine
 
-        rpt = ReportsEngine(self.db, self.company_id)
+        lmgr = self.license_mgr
 
         voucher_page = VoucherEntryPage(self.engine, self.tree, self.calculator)
         voucher_page.voucher_posted.connect(self._on_voucher_posted)
@@ -251,37 +250,99 @@ class MainWindow(QMainWindow):
         self._daybook_page = DayBookPage(self.engine)
         self.register_page("Day Book", "📋", self._daybook_page)
 
+        # ── Ledger Balances — FREE ──
         self._balance_page = LedgerBalancePage(self.tree)
         self.register_page("Ledger Balances", "⚖", self._balance_page,
                             section_above="REPORTS")
 
-        self.register_page("Trial Balance",  "📊", TrialBalancePage(rpt))
-        self.register_page("P & L",          "📈", ProfitLossPage(rpt))
-        self.register_page("Balance Sheet",  "🏦", BalanceSheetPage(rpt))
-        self.register_page("Cash Book",      "💵", CashBookPage(rpt))
-        self.register_page("Bank Book",      "🏛", BankBookPage(rpt))
-        self.register_page("Rcpts & Pmts",   "↕",  ReceiptsPaymentsPage(rpt))
-        self.register_page("GST Returns",    "🧾", GSTSummaryPage(rpt),
-                            section_above="TAX")
-        self.register_page("TDS Reports",    "📑", TDSReportPage(rpt))
-        from ui.document_reader_page import DocumentReaderPage
-        doc_reader = DocumentReaderPage(
-            ReportsEngine(self.db, self.company_id), self.tree
-        )
-        self.register_page("AI Doc Reader", "🤖", doc_reader, section_above="AI")
-        self.register_page("Verbal Entry",   "🎙",
-                            self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
+        # ── Financial reports — STANDARD+ ──
+        if lmgr.has_feature("reports"):
+            from ui.reports_page import (
+                TrialBalancePage, ProfitLossPage, BalanceSheetPage,
+                CashBookPage, BankBookPage, ReceiptsPaymentsPage,
+            )
+            rpt = ReportsEngine(self.db, self.company_id)
+            self.register_page("Trial Balance", "📊", TrialBalancePage(rpt))
+            self.register_page("P & L",         "📈", ProfitLossPage(rpt))
+            self.register_page("Balance Sheet", "🏦", BalanceSheetPage(rpt))
+            self.register_page("Cash Book",     "💵", CashBookPage(rpt))
+            self.register_page("Bank Book",     "🏛", BankBookPage(rpt))
+            self.register_page("Rcpts & Pmts",  "↕",  ReceiptsPaymentsPage(rpt))
+        else:
+            self.register_page(
+                "Reports", "📊",
+                FeatureGateWidget(
+                    "reports", "STANDARD", lmgr.plan, "Financial Reports"
+                ),
+            )
 
-        from ui.backup_page      import BackupPage
-        from core.backup_manager import BackupManager
-        backup_mgr  = BackupManager(
-            db_path      = str(self.db.path),
-            company_slug = self.db.path.stem,
-        )
-        self._backup_mgr  = backup_mgr
-        backup_page = BackupPage(backup_mgr)
-        self.register_page("Backup & Restore", "💾", backup_page,
-                           section_above="DATA")
+        # ── GST — PRO+ ──
+        if lmgr.has_feature("gst"):
+            from ui.reports_page import GSTSummaryPage
+            rpt_gst = ReportsEngine(self.db, self.company_id)
+            self.register_page("GST Returns", "🧾", GSTSummaryPage(rpt_gst),
+                                section_above="TAX")
+        else:
+            self.register_page(
+                "GST Returns", "🧾",
+                FeatureGateWidget("gst", "PRO", lmgr.plan, "GST Returns"),
+                section_above="TAX",
+            )
+
+        # ── TDS — PRO+ ──
+        if lmgr.has_feature("tds"):
+            from ui.reports_page import TDSReportPage
+            rpt_tds = ReportsEngine(self.db, self.company_id)
+            self.register_page("TDS Reports", "📑", TDSReportPage(rpt_tds))
+        else:
+            self.register_page(
+                "TDS Reports", "📑",
+                FeatureGateWidget("tds", "PRO", lmgr.plan, "TDS Reports"),
+            )
+
+        # ── AI Doc Reader — PRO+ ──
+        if lmgr.has_feature("ai_document_reader"):
+            from ui.document_reader_page import DocumentReaderPage
+            self.register_page(
+                "AI Doc Reader", "🤖",
+                DocumentReaderPage(ReportsEngine(self.db, self.company_id), self.tree),
+                section_above="AI",
+            )
+        else:
+            self.register_page(
+                "AI Doc Reader", "🤖",
+                FeatureGateWidget(
+                    "ai_document_reader", "PRO", lmgr.plan, "AI Document Reader"
+                ),
+                section_above="AI",
+            )
+
+        self.register_page("Verbal Entry", "🎙",
+                           self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
+
+        # ── Backup — STANDARD+ ──
+        if lmgr.has_feature("backup"):
+            from ui.backup_page      import BackupPage
+            from core.backup_manager import BackupManager
+            backup_mgr = BackupManager(
+                db_path      = str(self.db.path),
+                company_slug = self.db.path.stem,
+            )
+            self._backup_mgr = backup_mgr
+            self.register_page("Backup & Restore", "💾", BackupPage(backup_mgr),
+                                section_above="DATA")
+        else:
+            self.register_page(
+                "Backup & Restore", "💾",
+                FeatureGateWidget("backup", "STANDARD", lmgr.plan, "Backup & Restore"),
+                section_above="DATA",
+            )
+
+        # ── License page ──
+        from ui.license_page import LicensePage
+        lic_page = LicensePage(lmgr)
+        lic_page.plan_changed.connect(self._on_plan_changed)
+        self.register_page("License & Plan", "🔑", lic_page, section_above="ACCOUNT")
 
         settings_page = self._build_settings_page()
         self.register_page("Settings", "⚙", settings_page, section_above="SETTINGS")
@@ -420,6 +481,13 @@ class MainWindow(QMainWindow):
         self.calculator.move(sidebar_pos.x() + 10, sidebar_pos.y() - 360)
         self.calculator.show()
         self.calculator.raise_()
+
+    def _on_plan_changed(self, new_plan: str):
+        QMessageBox.information(
+            self, "Plan updated",
+            f"Your plan is now {new_plan}.\n"
+            f"Please restart the app to unlock all features.",
+        )
 
     def _check_backup_reminder(self):
         if hasattr(self, "_backup_mgr") and self._backup_mgr.needs_reminder():
