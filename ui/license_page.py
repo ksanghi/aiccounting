@@ -1,14 +1,13 @@
 """
-License page UI — key entry, plan status, usage meter, upgrade nudge.
+License page — clean rewrite with proper spacing
 """
 import webbrowser
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit,
-    QFrame, QProgressBar, QMessageBox,
-    QGridLayout,
+    QFrame, QScrollArea, QMessageBox,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 
 from ui.theme import THEME
 from core.license_manager import (
@@ -21,7 +20,7 @@ UPGRADE_URL = "https://aiccounting.in/pricing"
 class ValidateThread(QThread):
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, mgr: LicenseManager, key: str):
+    def __init__(self, mgr, key):
         super().__init__()
         self.mgr = mgr
         self.key = key
@@ -29,6 +28,28 @@ class ValidateThread(QThread):
     def run(self):
         ok, msg = self.mgr.validate_with_server(self.key)
         self.finished.emit(ok, msg)
+
+
+def _section_label(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet(f"""
+        font-size: 13px;
+        font-weight: bold;
+        color: {THEME['text_primary']};
+        padding: 4px 0px 6px 0px;
+    """)
+    return lbl
+
+
+def _divider() -> QFrame:
+    f = QFrame()
+    f.setFrameShape(QFrame.Shape.HLine)
+    f.setStyleSheet(
+        f"color: {THEME['border']};"
+        f"background: {THEME['border']};"
+        f"border: none; max-height: 1px;"
+    )
+    return f
 
 
 class LicensePage(QWidget):
@@ -43,349 +64,497 @@ class LicensePage(QWidget):
         self.refresh()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(10)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(32, 24, 32, 24)
+        outer.setSpacing(0)
 
         title = QLabel("License & Plan")
         title.setObjectName("page_title")
-        layout.addWidget(title)
+        outer.addWidget(title)
 
         sub = QLabel("Manage your subscription and view usage")
         sub.setObjectName("page_subtitle")
-        layout.addWidget(sub)
+        outer.addWidget(sub)
 
-        # ── Current plan card ──
-        plan_card = QFrame()
-        plan_card.setObjectName("card")
-        pc = QVBoxLayout(plan_card)
-        pc.setContentsMargins(20, 16, 20, 16)
-        pc.setSpacing(12)
+        # Scroll area holds everything below the title
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        top_row = QHBoxLayout()
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 12, 8, 0)
+        layout.setSpacing(16)
+
+        # ── SECTION 1: Current plan status ─────────────────────────────────────
+        layout.addWidget(_section_label("Current plan"))
+
+        status_card = QFrame()
+        status_card.setStyleSheet(f"""
+            QFrame {{
+                background: {THEME['bg_card']};
+                border: 1px solid {THEME['border']};
+                border-radius: 10px;
+            }}
+        """)
+        sc = QVBoxLayout(status_card)
+        sc.setContentsMargins(20, 16, 20, 16)
+        sc.setSpacing(14)
+
+        # Badge + expiry row
+        top = QHBoxLayout()
+        top.setSpacing(12)
+
         self._plan_badge = QLabel("FREE")
-        self._plan_badge.setFixedHeight(28)
-        top_row.addWidget(self._plan_badge)
-        top_row.addStretch()
+        self._plan_badge.setFixedHeight(32)
+        self._plan_badge.setStyleSheet(f"""
+            background: {THEME['accent_dim']};
+            color: {THEME['accent']};
+            border: 1px solid {THEME['accent']};
+            border-radius: 6px;
+            padding: 4px 16px;
+            font-size: 14px;
+            font-weight: bold;
+        """)
+
         self._expiry_lbl = QLabel("")
         self._expiry_lbl.setStyleSheet(
-            f"color:{THEME['text_secondary']}; font-size:11px;"
+            f"color: {THEME['text_secondary']}; font-size: 12px;"
         )
-        top_row.addWidget(self._expiry_lbl)
-        pc.addLayout(top_row)
 
-        # Stats grid — QFrame-based to avoid nested background bleed
-        stats = QGridLayout()
-        stats.setSpacing(10)
+        top.addWidget(self._plan_badge)
+        top.addStretch()
+        top.addWidget(self._expiry_lbl)
+        sc.addLayout(top)
 
-        def _stat(label: str):
-            frame = QFrame()
-            frame.setStyleSheet(f"""
+        sc.addWidget(_divider())
+
+        # Stats row — 4 cards
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(10)
+
+        def _make_stat(label: str) -> QLabel:
+            card = QFrame()
+            card.setStyleSheet(f"""
                 QFrame {{
-                    background:{THEME['bg_input']};
-                    border-radius:8px;
-                    border:0.5px solid {THEME['border']};
-                    padding:10px 12px;
+                    background: {THEME['bg_input']};
+                    border: 1px solid {THEME['border']};
+                    border-radius: 8px;
                 }}
             """)
-            col = QVBoxLayout(frame)
-            col.setContentsMargins(0, 0, 0, 0)
-            col.setSpacing(4)
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(14, 12, 14, 12)
+            cl.setSpacing(6)
+
             lbl = QLabel(label)
-            lbl.setStyleSheet(
-                f"color:{THEME['text_secondary']}; font-size:10px;"
-                f" font-weight:bold; letter-spacing:0.5px;"
-                f" background:transparent; border:none;"
-            )
+            lbl.setStyleSheet(f"""
+                color: {THEME['text_secondary']};
+                font-size: 10px; font-weight: bold;
+                letter-spacing: 0.8px;
+                background: transparent; border: none; padding: 0px;
+            """)
+
             val = QLabel("—")
-            val.setStyleSheet(
-                f"font-size:18px; font-weight:500; color:{THEME['text_primary']};"
-                f" background:transparent; border:none;"
-            )
-            col.addWidget(lbl)
-            col.addWidget(val)
-            return frame, val
+            val.setStyleSheet(f"""
+                color: {THEME['text_primary']};
+                font-size: 20px; font-weight: 500;
+                background: transparent; border: none; padding: 0px;
+            """)
 
-        f1, self._txn_used_lbl  = _stat("TRANSACTIONS USED")
-        f2, self._txn_limit_lbl = _stat("PLAN LIMIT")
-        f3, self._overage_lbl   = _stat("OVERAGE COST")
-        f4, self._users_lbl     = _stat("USERS ALLOWED")
-        for col, frame in enumerate([f1, f2, f3, f4]):
-            stats.addWidget(frame, 0, col)
-        pc.addLayout(stats)
+            cl.addWidget(lbl)
+            cl.addWidget(val)
+            stats_row.addWidget(card)
+            return val
 
-        usage_lbl = QLabel("Transaction usage")
-        usage_lbl.setStyleSheet(
-            f"color:{THEME['text_secondary']}; font-size:11px; font-weight:bold;"
+        self._txn_used_val  = _make_stat("USED")
+        self._txn_limit_val = _make_stat("LIMIT")
+        self._overage_val   = _make_stat("OVERAGE")
+        self._users_val     = _make_stat("USERS")
+        sc.addLayout(stats_row)
+
+        sc.addWidget(_divider())
+
+        # Usage bar (custom QFrame fill — avoids QProgressBar stylesheet quirks)
+        bar_lbl = QLabel("Transaction usage this year")
+        bar_lbl.setStyleSheet(
+            f"color: {THEME['text_secondary']}; font-size: 11px; font-weight: bold;"
         )
-        pc.addWidget(usage_lbl)
+        sc.addWidget(bar_lbl)
 
-        self._progress = QProgressBar()
-        self._progress.setRange(0, 100)
-        self._progress.setFixedHeight(10)
-        self._progress.setTextVisible(False)
-        pc.addWidget(self._progress)
+        self._bar_bg = QFrame()
+        self._bar_bg.setFixedHeight(12)
+        self._bar_bg.setStyleSheet(f"""
+            QFrame {{
+                background: {THEME['bg_input']};
+                border-radius: 6px;
+                border: 1px solid {THEME['border']};
+            }}
+        """)
+        bar_inner = QHBoxLayout(self._bar_bg)
+        bar_inner.setContentsMargins(0, 0, 0, 0)
+        bar_inner.setSpacing(0)
+
+        self._bar_fill = QFrame()
+        self._bar_fill.setFixedHeight(12)
+        self._bar_fill.setFixedWidth(0)
+        self._bar_fill.setStyleSheet(f"""
+            QFrame {{
+                background: {THEME['success']};
+                border-radius: 6px;
+                border: none;
+            }}
+        """)
+        bar_inner.addWidget(self._bar_fill)
+        bar_inner.addStretch()
+        sc.addWidget(self._bar_bg)
 
         self._usage_detail = QLabel("")
         self._usage_detail.setStyleSheet(
-            f"color:{THEME['text_secondary']}; font-size:11px;"
+            f"color: {THEME['text_secondary']}; font-size: 11px;"
         )
-        pc.addWidget(self._usage_detail)
-        layout.addWidget(plan_card)
+        sc.addWidget(self._usage_detail)
 
-        # ── Upgrade nudge ──
+        layout.addWidget(status_card)
+
+        # ── Upgrade nudge ───────────────────────────────────────────────────────
         self._nudge_frame = QFrame()
-        self._nudge_frame.setObjectName("card")
         self._nudge_frame.setVisible(False)
+        self._nudge_frame.setStyleSheet(f"""
+            QFrame {{
+                background: {THEME['bg_card']};
+                border: 1px solid {THEME['warning']};
+                border-radius: 10px;
+            }}
+        """)
         nf = QHBoxLayout(self._nudge_frame)
         nf.setContentsMargins(16, 12, 16, 12)
+        nf.setSpacing(12)
+
         self._nudge_lbl = QLabel("")
         self._nudge_lbl.setWordWrap(True)
         self._nudge_lbl.setStyleSheet(
-            f"color:{THEME['warning']}; font-size:12px;"
+            f"color: {THEME['warning']}; font-size: 12px;"
+            f" border: none; background: transparent;"
         )
+
         nudge_btn = QPushButton("Upgrade now")
         nudge_btn.setObjectName("btn_primary")
-        nudge_btn.setFixedHeight(32)
+        nudge_btn.setFixedHeight(34)
         nudge_btn.setFixedWidth(130)
         nudge_btn.clicked.connect(lambda: webbrowser.open(UPGRADE_URL))
+
         nf.addWidget(self._nudge_lbl, 1)
         nf.addWidget(nudge_btn)
         layout.addWidget(self._nudge_frame)
 
-        layout.addSpacing(8)
+        # ── SECTION 2: License key ─────────────────────────────────────────────
+        layout.addWidget(_section_label("License key"))
 
-        # ── License key entry ──
-        key_frame = QFrame()
-        key_frame.setObjectName("card")
-        kf = QVBoxLayout(key_frame)
-        kf.setContentsMargins(20, 16, 20, 16)
-        kf.setSpacing(10)
+        key_card = QFrame()
+        key_card.setStyleSheet(f"""
+            QFrame {{
+                background: {THEME['bg_card']};
+                border: 1px solid {THEME['border']};
+                border-radius: 10px;
+            }}
+        """)
+        kc = QVBoxLayout(key_card)
+        kc.setContentsMargins(20, 16, 20, 16)
+        kc.setSpacing(10)
 
-        key_hdr = QLabel("License key")
-        key_hdr.setStyleSheet(
-            f"font-size:13px; font-weight:bold; color:{THEME['text_primary']};"
+        info = QLabel(
+            "Purchase a plan at aiccounting.in to receive your license key by email."
         )
-        kf.addWidget(key_hdr)
+        info.setStyleSheet(
+            f"color: {THEME['text_secondary']}; font-size: 12px;"
+        )
+        info.setWordWrap(True)
+        kc.addWidget(info)
 
         key_row = QHBoxLayout()
+        key_row.setSpacing(8)
+
         self._key_edit = QLineEdit()
-        self._key_edit.setPlaceholderText("AICC-XXXX-XXXX-XXXX")
-        self._key_edit.setFixedHeight(34)
+        self._key_edit.setPlaceholderText("Enter license key — AICC-XXXX-XXXX-XXXX")
+        self._key_edit.setFixedHeight(38)
+        self._key_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background: {THEME['bg_input']};
+                border: 1px solid {THEME['border']};
+                border-radius: 7px;
+                padding: 6px 12px;
+                color: {THEME['text_primary']};
+                font-size: 12px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {THEME['border_focus']};
+            }}
+        """)
         current_key = self._mgr.license_key
-        if current_key and current_key != "FREE-DEMO":
+        if current_key not in ("FREE-DEMO", "", None):
             self._key_edit.setText(current_key)
         self._key_edit.returnPressed.connect(self._activate)
 
         self._activate_btn = QPushButton("Activate")
-        self._activate_btn.setObjectName("btn_primary")
-        self._activate_btn.setFixedHeight(34)
-        self._activate_btn.setFixedWidth(100)
+        self._activate_btn.setFixedHeight(38)
+        self._activate_btn.setFixedWidth(110)
+        self._activate_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {THEME['accent']};
+                color: white;
+                border: none;
+                border-radius: 7px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px 16px;
+            }}
+            QPushButton:hover {{ background: {THEME['accent_hover']}; }}
+            QPushButton:disabled {{ background: {THEME['text_dim']}; color: #555; }}
+        """)
         self._activate_btn.clicked.connect(self._activate)
+
         key_row.addWidget(self._key_edit, 1)
         key_row.addWidget(self._activate_btn)
-        kf.addLayout(key_row)
+        kc.addLayout(key_row)
 
         self._key_status = QLabel("")
-        self._key_status.setStyleSheet("font-size:11px;")
-        kf.addWidget(self._key_status)
-        layout.addWidget(key_frame)
+        self._key_status.setStyleSheet(f"font-size: 11px; color: {THEME['text_dim']};")
+        kc.addWidget(self._key_status)
 
-        layout.addSpacing(8)
+        layout.addWidget(key_card)
 
-        # ── Plan comparison ──
-        plans_frame = QFrame()
-        plans_frame.setObjectName("card")
-        pf = QVBoxLayout(plans_frame)
-        pf.setContentsMargins(20, 16, 20, 16)
-        pf.setSpacing(10)
+        # ── SECTION 3: Plan comparison ─────────────────────────────────────────
+        layout.addWidget(_section_label("Available plans"))
 
-        hdr = QLabel("Available plans")
-        hdr.setStyleSheet(
-            f"font-size:13px; font-weight:bold; color:{THEME['text_primary']};"
-            f" padding-bottom:4px;"
-        )
-        pf.addWidget(hdr)
+        plans_card = QFrame()
+        plans_card.setStyleSheet(f"""
+            QFrame {{
+                background: {THEME['bg_card']};
+                border: 1px solid {THEME['border']};
+                border-radius: 10px;
+            }}
+        """)
+        pc2 = QVBoxLayout(plans_card)
+        pc2.setContentsMargins(20, 16, 20, 16)
+        pc2.setSpacing(8)
 
-        plan_grid = QGridLayout()
-        plan_grid.setSpacing(8)
         plan_defs = [
-            ("FREE",     "Free",     "Rs.0/yr",       "5,000 txn",   "Basic features"),
-            ("STANDARD", "Standard", "Rs.1,999/yr",   "20,000 txn",  "Reports + backup"),
-            ("PRO",      "Pro",      "Rs.4,999/yr",   "50,000 txn",  "GST + TDS + AI"),
-            ("PREMIUM",  "Premium",  "Rs.9,999/yr",   "Unlimited",   "All features"),
+            ("FREE",     "Rs.0 / year",     "5,000 transactions",
+             "Basic ledger, day book, backup"),
+            ("STANDARD", "Rs.1,999 / year", "20,000 transactions",
+             "Reports, export, 2 users"),
+            ("PRO",      "Rs.4,999 / year", "50,000 transactions",
+             "GST, TDS, AI doc reader, 5 users"),
+            ("PREMIUM",  "Rs.9,999 / year", "Unlimited transactions",
+             "All features, WhatsApp, audit export"),
         ]
-        for col, (key, name, price, limit, desc) in enumerate(plan_defs):
-            is_current = (key == self._mgr.plan)
-            card = QFrame()
-            card.setStyleSheet(f"""
+
+        for plan_key, price, txns, desc in plan_defs:
+            is_current = (plan_key == self._mgr.plan)
+
+            row_frame = QFrame()
+            row_frame.setStyleSheet(f"""
                 QFrame {{
-                    background:{THEME['accent_dim'] if is_current else THEME['bg_input']};
-                    border-radius:10px;
-                    border:{'1.5px solid ' + THEME['accent']
-                            if is_current
-                            else '0.5px solid ' + THEME['border']};
+                    background: {THEME['accent_dim'] if is_current else THEME['bg_input']};
+                    border: {'1.5px solid ' + THEME['accent']
+                             if is_current
+                             else '1px solid ' + THEME['border']};
+                    border-radius: 8px;
                 }}
             """)
-            inner = QVBoxLayout(card)
-            inner.setContentsMargins(12, 10, 12, 10)
-            inner.setSpacing(4)
+            rl = QHBoxLayout(row_frame)
+            rl.setContentsMargins(14, 12, 14, 12)
+            rl.setSpacing(12)
 
-            n_lbl = QLabel(name)
-            n_lbl.setStyleSheet(
-                f"font-size:12px; font-weight:bold;"
-                f" color:{THEME['accent'] if is_current else THEME['text_primary']};"
-                f" background:transparent; border:none;"
-            )
-            p_lbl = QLabel(price)
-            p_lbl.setStyleSheet(
-                f"font-size:13px; font-weight:500; color:{THEME['text_primary']};"
-                f" background:transparent; border:none;"
-            )
-            l_lbl = QLabel(limit)
-            l_lbl.setStyleSheet(
-                f"font-size:10px; color:{THEME['success']};"
-                f" background:transparent; border:none;"
-            )
-            d_lbl = QLabel(desc)
-            d_lbl.setStyleSheet(
-                f"font-size:10px; color:{THEME['text_secondary']};"
-                f" background:transparent; border:none;"
-            )
-            inner.addWidget(n_lbl)
-            inner.addWidget(p_lbl)
-            inner.addWidget(l_lbl)
-            inner.addWidget(d_lbl)
+            # Left: name + desc
+            left = QVBoxLayout()
+            left.setSpacing(3)
 
+            name_lbl = QLabel(plan_key)
+            name_lbl.setStyleSheet(f"""
+                color: {THEME['accent'] if is_current else THEME['text_primary']};
+                font-size: 13px; font-weight: bold;
+                background: transparent; border: none; padding: 0px;
+            """)
+            desc_lbl = QLabel(desc)
+            desc_lbl.setStyleSheet(f"""
+                color: {THEME['text_secondary']};
+                font-size: 11px;
+                background: transparent; border: none; padding: 0px;
+            """)
+            left.addWidget(name_lbl)
+            left.addWidget(desc_lbl)
+            rl.addLayout(left, 2)
+
+            # Middle: price + txns
+            mid = QVBoxLayout()
+            mid.setSpacing(3)
+            price_lbl = QLabel(price)
+            price_lbl.setStyleSheet(f"""
+                color: {THEME['text_primary']};
+                font-size: 13px; font-weight: 500;
+                background: transparent; border: none; padding: 0px;
+            """)
+            txn_lbl = QLabel(txns)
+            txn_lbl.setStyleSheet(f"""
+                color: {THEME['success']};
+                font-size: 11px;
+                background: transparent; border: none; padding: 0px;
+            """)
+            mid.addWidget(price_lbl)
+            mid.addWidget(txn_lbl)
+            rl.addLayout(mid, 1)
+
+            # Right: badge or button
             if is_current:
-                cur = QLabel("Current plan")
-                cur.setStyleSheet(
-                    f"font-size:10px; color:{THEME['accent']}; font-weight:bold;"
-                    f" background:transparent; border:none;"
+                cur_lbl = QLabel("✓ Current")
+                cur_lbl.setStyleSheet(f"""
+                    color: {THEME['accent']};
+                    font-size: 12px; font-weight: bold;
+                    background: transparent; border: none; padding: 0px;
+                """)
+                cur_lbl.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                 )
-                inner.addWidget(cur)
+                rl.addWidget(cur_lbl)
             else:
-                up_btn = QPushButton("Upgrade")
-                up_btn.setFixedHeight(26)
-                up_btn.setStyleSheet("font-size:10px; padding:2px;")
+                up_btn = QPushButton("Upgrade →")
+                up_btn.setFixedHeight(34)
+                up_btn.setFixedWidth(110)
+                up_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: {THEME['accent']};
+                        color: white; border: none;
+                        border-radius: 7px;
+                        font-size: 12px; font-weight: bold;
+                        padding: 6px 14px;
+                    }}
+                    QPushButton:hover {{ background: {THEME['accent_hover']}; }}
+                """)
                 up_btn.clicked.connect(
-                    lambda _, u=UPGRADE_URL: webbrowser.open(u)
+                    lambda _, p=plan_key: webbrowser.open(f"{UPGRADE_URL}?plan={p}")
                 )
-                inner.addWidget(up_btn)
+                rl.addWidget(up_btn)
 
-            plan_grid.addWidget(card, 0, col)
-        pf.addLayout(plan_grid)
+            pc2.addWidget(row_frame)
 
-        buy_lbl = QLabel(
-            "Purchase at aiccounting.in/pricing  "
-            "— Razorpay · UPI · Cards · NetBanking"
+        buy_note = QLabel(
+            "Pay via Razorpay · UPI · Cards · NetBanking · Get key instantly by email"
         )
-        buy_lbl.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:10px;"
-        )
-        pf.addWidget(buy_lbl)
-        layout.addWidget(plans_frame)
+        buy_note.setStyleSheet(f"color: {THEME['text_dim']}; font-size: 10px;")
+        buy_note.setWordWrap(True)
+        pc2.addWidget(buy_note)
+
+        layout.addWidget(plans_card)
         layout.addStretch()
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
 
     # ── Refresh ───────────────────────────────────────────────────────────────
 
     def refresh(self):
-        s    = self._mgr.status_summary()
-        plan = s["plan"]
+        s     = self._mgr.status_summary()
+        plan  = s["plan"]
+        used  = s["txn_used"]
+        limit = s["txn_limit"]
+        pct   = s["txn_pct"]
 
-        badge_colours = {
+        colours = {
             "FREE":     (THEME["text_secondary"], THEME["bg_hover"]),
             "STANDARD": (THEME["accent"],         THEME["accent_dim"]),
             "PRO":      (THEME["success"],         "#0A2A0A"),
             "PREMIUM":  (THEME["warning"],         "#2A1A00"),
         }
-        fc, bc = badge_colours.get(plan, (THEME["accent"], THEME["accent_dim"]))
+        fc, bc = colours.get(plan, (THEME["accent"], THEME["accent_dim"]))
         self._plan_badge.setText(plan)
         self._plan_badge.setStyleSheet(f"""
-            background:{bc}; color:{fc};
-            border:1px solid {fc}; border-radius:5px;
-            padding:3px 12px; font-size:13px; font-weight:bold;
+            background: {bc}; color: {fc};
+            border: 1px solid {fc}; border-radius: 6px;
+            padding: 4px 16px; font-size: 14px; font-weight: bold;
         """)
 
         days = s["days_to_expiry"]
         if s["is_expired"]:
             self._expiry_lbl.setText("EXPIRED — renew now")
             self._expiry_lbl.setStyleSheet(
-                f"color:{THEME['danger']}; font-size:11px; font-weight:bold;"
+                f"color: {THEME['danger']}; font-size: 12px; font-weight: bold;"
             )
         elif days <= 30:
             self._expiry_lbl.setText(f"Expires in {days} days")
             self._expiry_lbl.setStyleSheet(
-                f"color:{THEME['warning']}; font-size:11px;"
+                f"color: {THEME['warning']}; font-size: 12px;"
             )
         else:
             self._expiry_lbl.setText(f"Valid until {s['expires_at']}")
             self._expiry_lbl.setStyleSheet(
-                f"color:{THEME['text_secondary']}; font-size:11px;"
+                f"color: {THEME['text_secondary']}; font-size: 12px;"
             )
 
-        self._txn_used_lbl.setText(f"{s['txn_used']:,}")
-        self._txn_limit_lbl.setText(
-            "Unlimited" if plan == "PREMIUM" else f"{s['txn_limit']:,}"
+        self._txn_used_val.setText(f"{used:,}")
+        self._txn_limit_val.setText(
+            "Unlimited" if plan == "PREMIUM" else f"{limit:,}"
         )
 
-        if s["overage_count"] > 0:
-            self._overage_lbl.setText(f"Rs.{s['overage_cost']:.2f}")
-            self._overage_lbl.setStyleSheet(
-                f"font-size:18px; font-weight:500; color:{THEME['warning']};"
-                f" background:transparent; border:none;"
-            )
+        overage = s["overage_count"]
+        cost    = s["overage_cost"]
+        if overage > 0:
+            self._overage_val.setText(f"Rs.{cost:.2f}")
+            self._overage_val.setStyleSheet(f"""
+                color: {THEME['warning']}; font-size: 20px; font-weight: 500;
+                background: transparent; border: none;
+            """)
         else:
-            self._overage_lbl.setText("Rs.0.00")
-            self._overage_lbl.setStyleSheet(
-                f"font-size:18px; font-weight:500; color:{THEME['success']};"
-                f" background:transparent; border:none;"
-            )
+            self._overage_val.setText("Rs.0.00")
+            self._overage_val.setStyleSheet(f"""
+                color: {THEME['success']}; font-size: 20px; font-weight: 500;
+                background: transparent; border: none;
+            """)
 
         ul = self._mgr.user_limit
-        self._users_lbl.setText("Unlimited" if ul >= 999 else str(ul))
+        self._users_val.setText("Unlimited" if ul >= 999 else str(ul))
 
-        pct = int(s["txn_pct"])
-        self._progress.setValue(pct)
-        colour = (THEME["danger"] if pct >= 100
-                  else THEME["warning"] if pct >= 80
-                  else THEME["success"])
-        self._progress.setStyleSheet(f"""
-            QProgressBar {{
-                background:{THEME['bg_input']};
-                border-radius:5px;
-                border:none;
-            }}
-            QProgressBar::chunk {{
-                background:{colour};
-                border-radius:5px;
+        # Progress fill — set after layout has assigned a width
+        fill_pct  = min(pct, 100) / 100
+        bar_color = (THEME["danger"]  if pct >= 100
+                     else THEME["warning"] if pct >= 80
+                     else THEME["success"])
+        self._bar_fill.setStyleSheet(f"""
+            QFrame {{
+                background: {bar_color};
+                border-radius: 6px; border: none;
             }}
         """)
 
-        used      = s["txn_used"]
-        limit     = s["txn_limit"]
+        def _set_bar():
+            total_w = self._bar_bg.width()
+            fill_w  = max(0, int(total_w * fill_pct))
+            self._bar_fill.setFixedWidth(fill_w)
+
+        QTimer.singleShot(100, _set_bar)
+
         remaining = max(0, limit - used)
         if plan == "PREMIUM":
-            detail = f"{used:,} transactions used this year"
+            detail = f"{used:,} transactions used"
         elif used > limit:
-            overage = used - limit
-            rate    = 0.20 if plan == "PREMIUM" else 0.30
-            detail  = (
-                f"{used:,} used of {limit:,} — "
-                f"{overage:,} over limit "
-                f"(Rs.{overage * rate:.2f} overage)"
+            ov   = used - limit
+            rate = 0.30
+            detail = (
+                f"{used:,} of {limit:,} — {ov:,} over limit "
+                f"(Rs.{ov * rate:.2f} overage)"
             )
         else:
-            detail = f"{used:,} used of {limit:,} — {remaining:,} remaining"
+            detail = f"{used:,} of {limit:,} used — {remaining:,} remaining"
         self._usage_detail.setText(detail)
 
         nudge = self._mgr.upgrade_savings()
         if nudge:
             self._nudge_frame.setVisible(True)
             self._nudge_lbl.setText(
-                f"You have {nudge['overage_txn']:,} overage transactions costing "
+                f"{nudge['overage_txn']:,} overage txn = "
                 f"Rs.{nudge['overage_cost']:.2f}. "
-                f"Upgrading to {nudge['next_plan']} would save "
+                f"Upgrading to {nudge['next_plan']} saves "
                 f"Rs.{nudge['would_save']:.2f}."
             )
         else:
@@ -396,12 +565,16 @@ class LicensePage(QWidget):
     def _activate(self):
         key = self._key_edit.text().strip().upper()
         if not key:
-            self._set_key_status("Please enter a license key.", error=True)
+            self._show_key_status(
+                "Please enter your license key.", THEME["danger"]
+            )
             return
 
         self._activate_btn.setEnabled(False)
-        self._activate_btn.setText("Checking…")
-        self._set_key_status("Contacting license server…", error=False)
+        self._activate_btn.setText("Checking...")
+        self._show_key_status(
+            "Contacting license server...", THEME["text_secondary"]
+        )
 
         self._thread = ValidateThread(self._mgr, key)
         self._thread.finished.connect(self._on_validate)
@@ -412,24 +585,17 @@ class LicensePage(QWidget):
         self._activate_btn.setText("Activate")
 
         if ok:
-            self._set_key_status(f"✓  {msg}", error=False, success=True)
+            self._show_key_status(f"✓  {msg}", THEME["success"])
             self.refresh()
             self.plan_changed.emit(self._mgr.plan)
             QMessageBox.information(
                 self, "Activated",
-                f"License activated!\n"
-                f"Plan: {self._mgr.plan}\n"
+                f"License activated!\n\nPlan: {self._mgr.plan}\n"
                 f"Expires: {self._mgr.expires_at}",
             )
         else:
-            self._set_key_status(f"✗  {msg}", error=True)
+            self._show_key_status(f"✗  {msg}", THEME["danger"])
 
-    def _set_key_status(self, msg: str, error: bool = False, success: bool = False):
-        colour = (THEME["danger"] if error
-                  else THEME["success"] if success
-                  else THEME["text_secondary"])
-        weight = "bold" if success else "normal"
-        self._key_status.setText(msg)
-        self._key_status.setStyleSheet(
-            f"color:{colour}; font-size:11px; font-weight:{weight};"
-        )
+    def _show_key_status(self, text: str, colour: str):
+        self._key_status.setText(text)
+        self._key_status.setStyleSheet(f"font-size: 11px; color: {colour};")
