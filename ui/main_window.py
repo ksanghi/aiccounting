@@ -25,16 +25,53 @@ from core.config import set_label_style, current_style
 class NavButton(QPushButton):
     def __init__(self, icon: str, label: str, parent=None):
         super().__init__(f"  {icon}   {label}", parent)
-        self.setObjectName("nav_btn")
         self.setCheckable(True)
         self.setFixedHeight(36)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._update_style(False)
 
     def set_active(self, active: bool):
-        self.setObjectName("nav_btn_active" if active else "nav_btn")
         self.setChecked(active)
-        self.style().unpolish(self)
-        self.style().polish(self)
+        self._update_style(active)
+
+    def _update_style(self, active: bool):
+        if active:
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {THEME['accent_dim']};
+                    border: none;
+                    border-left: 3px solid {THEME['accent']};
+                    border-radius: 7px;
+                    padding: 0px 14px 0px 11px;
+                    text-align: left;
+                    font-size: 12px;
+                    color: {THEME['accent']};
+                    font-weight: bold;
+                    height: 36px;
+                    min-height: 36px;
+                    max-height: 36px;
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    border-radius: 7px;
+                    padding: 0px 14px;
+                    text-align: left;
+                    font-size: 12px;
+                    color: {THEME['text_secondary']};
+                    font-weight: normal;
+                    height: 36px;
+                    min-height: 36px;
+                    max-height: 36px;
+                }}
+                QPushButton:hover {{
+                    background-color: {THEME['bg_hover']};
+                    color: {THEME['text_primary']};
+                }}
+            """)
 
 
 class MainWindow(QMainWindow):
@@ -120,8 +157,25 @@ class MainWindow(QMainWindow):
 
         # Calc button at bottom
         calc_btn = QPushButton("  ⌨   Calculator   (Alt+C)")
-        calc_btn.setObjectName("nav_btn")
         calc_btn.setFixedHeight(36)
+        calc_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 7px;
+                padding: 0px 14px;
+                text-align: left;
+                font-size: 12px;
+                color: {THEME['text_secondary']};
+                height: 36px;
+                min-height: 36px;
+                max-height: 36px;
+            }}
+            QPushButton:hover {{
+                background-color: {THEME['bg_hover']};
+                color: {THEME['text_primary']};
+            }}
+        """)
         calc_btn.clicked.connect(self._show_calculator)
         sidebar_layout.addWidget(calc_btn)
 
@@ -318,15 +372,23 @@ class MainWindow(QMainWindow):
             return
         idx = max(0, min(idx, len(self._pages) - 1))
 
-        if self._current_idx >= 0:
-            _, _, _, old_btn = self._pages[self._current_idx]
-            old_btn.set_active(False)
+        # Deactivate ALL buttons first
+        for _, _, _, btn in self._pages:
+            btn.set_active(False)
+            btn.update()
+            btn.repaint()
 
+        # Activate selected
         label, icon, widget, btn = self._pages[idx]
         btn.set_active(True)
+        btn.update()
+        btn.repaint()
+
         self._stack.setCurrentWidget(widget)
         self._current_idx = idx
-        self.status.showMessage(f"  {self._company_name}  |  {icon}  {label}")
+        self.status.showMessage(
+            f"  {self._company_name}  |  {icon}  {label}"
+        )
 
         # Refresh data-driven pages when switched to
         if hasattr(widget, "refresh"):

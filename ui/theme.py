@@ -109,33 +109,6 @@ QMainWindow {{
     padding-top: 3px;
 }}
 
-/* ── Nav buttons ─────────────────────────── */
-#nav_btn {{
-    background: transparent;
-    border: none;
-    border-radius: 7px;
-    padding: 10px 16px;
-    text-align: left;
-    font-size: 12px;
-    color: {t['text_secondary']};
-    margin: 2px 8px;
-}}
-#nav_btn:hover {{
-    background-color: {t['bg_hover']};
-    color: {t['text_primary']};
-}}
-#nav_btn_active {{
-    background-color: {t['accent_dim']};
-    border: none;
-    border-radius: 7px;
-    border-left: 3px solid {t['accent']};
-    padding: 10px 16px 10px 13px;
-    text-align: left;
-    font-size: 12px;
-    color: {t['accent']};
-    font-weight: bold;
-    margin: 2px 8px;
-}}
 #nav_section {{
     color: {t['text_dim']};
     font-size: 10px;
