@@ -91,8 +91,10 @@ class ReportsEngine:
         income_rows   = ledger_net("INCOME")
         expense_rows  = ledger_net("EXPENSE")
         for r in income_rows:
+            r["group"] = r.pop("grp")
             r["amount"] = round(r["cr"] - r["dr"], 2)
         for r in expense_rows:
+            r["group"] = r.pop("grp")
             r["amount"] = round(r["dr"] - r["cr"], 2)
 
         total_income  = round(sum(r["amount"] for r in income_rows),  2)

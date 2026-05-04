@@ -70,7 +70,6 @@ class _ReportBase(QWidget):
         self.rpt   = rpt
         self._data = None
         self._build_shell()
-        self.refresh()
 
     # ── shell layout ──────────────────────────────────────────────────────────
 
