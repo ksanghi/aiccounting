@@ -163,6 +163,19 @@ class MainWindow(QMainWindow):
         self._pages.append((label, icon, widget, btn))
 
     def _build_pages(self):
+        import traceback
+        try:
+            self._build_pages_inner()
+        except Exception:
+            tb = traceback.format_exc()
+            print("STARTUP CRASH in _build_pages:\n" + tb)
+            QMessageBox.critical(
+                None, "Startup Error",
+                "Failed to build app pages:\n\n" + tb
+            )
+            raise
+
+    def _build_pages_inner(self):
         from ui.voucher_form  import VoucherEntryPage
         from ui.daybook       import DayBookPage, LedgerBalancePage
         from ui.reports_page  import (
