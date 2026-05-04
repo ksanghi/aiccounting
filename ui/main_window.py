@@ -163,9 +163,16 @@ class MainWindow(QMainWindow):
         self._pages.append((label, icon, widget, btn))
 
     def _build_pages(self):
-        # Import here to avoid circular at module load
-        from ui.voucher_form import VoucherEntryPage
-        from ui.daybook      import DayBookPage, LedgerBalancePage
+        from ui.voucher_form  import VoucherEntryPage
+        from ui.daybook       import DayBookPage, LedgerBalancePage
+        from ui.reports_page  import (
+            TrialBalancePage, ProfitLossPage, BalanceSheetPage,
+            CashBookPage, BankBookPage, ReceiptsPaymentsPage,
+            GSTSummaryPage, TDSReportPage,
+        )
+        from core.reports_engine import ReportsEngine
+
+        rpt = ReportsEngine(self.db, self.company_id)
 
         voucher_page = VoucherEntryPage(self.engine, self.tree, self.calculator)
         voucher_page.voucher_posted.connect(self._on_voucher_posted)
@@ -178,16 +185,20 @@ class MainWindow(QMainWindow):
         self.register_page("Ledger Balances", "⚖", self._balance_page,
                             section_above="REPORTS")
 
-        # Placeholder pages — these will be replaced as we build each module
-        self.register_page("Trial Balance",   "📊", self._placeholder("Trial Balance\n(Coming next)"))
-        self.register_page("P & L",           "📈", self._placeholder("Profit & Loss\n(Coming next)"))
-        self.register_page("Balance Sheet",   "🏦", self._placeholder("Balance Sheet\n(Coming next)"))
-        self.register_page("GST Returns",     "🧾", self._placeholder("GST — GSTR-1 / 3B\n(Coming next)"),
+        self.register_page("Trial Balance",  "📊", TrialBalancePage(rpt))
+        self.register_page("P & L",          "📈", ProfitLossPage(rpt))
+        self.register_page("Balance Sheet",  "🏦", BalanceSheetPage(rpt))
+        self.register_page("Cash Book",      "💵", CashBookPage(rpt))
+        self.register_page("Bank Book",      "🏛", BankBookPage(rpt))
+        self.register_page("Rcpts & Pmts",   "↕",  ReceiptsPaymentsPage(rpt))
+        self.register_page("GST Returns",    "🧾", GSTSummaryPage(rpt),
                             section_above="TAX")
-        self.register_page("TDS Reports",     "📑", self._placeholder("TDS — 26Q / 27Q\n(Coming next)"))
-        self.register_page("AI Doc Reader",   "🤖", self._placeholder("Drop bank statements & invoices here\n(Coming next)"),
+        self.register_page("TDS Reports",    "📑", TDSReportPage(rpt))
+        self.register_page("AI Doc Reader",  "🤖",
+                            self._placeholder("Drop bank statements & invoices here\n(Coming next)"),
                             section_above="AI")
-        self.register_page("Verbal Entry",    "🎙", self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
+        self.register_page("Verbal Entry",   "🎙",
+                            self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
 
         settings_page = self._build_settings_page()
         self.register_page("Settings", "⚙", settings_page, section_above="SETTINGS")
