@@ -425,15 +425,6 @@ class VoucherValidator:
         errors = []
         vtype = draft.voucher_type
 
-        # DEBUG — remove after testing
-        for line in draft.lines:
-            ldg = self._get_ledger(line.ledger_id)
-            print(f"DEBUG ledger: {ldg.get('name')} "
-                  f"is_bank={ldg.get('is_bank')} "
-                  f"is_cash={ldg.get('is_cash')} "
-                  f"group={ldg.get('group_name')} "
-                  f"dr={line.dr_amount} cr={line.cr_amount}")
-
         cr_ledgers = [
             self._get_ledger(l.ledger_id)
             for l in draft.lines if l.cr_amount > 0
