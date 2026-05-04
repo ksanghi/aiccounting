@@ -39,6 +39,7 @@ PLAN_FEATURES = {
         "vouchers",
         "daybook",
         "ledger_balances",
+        "backup",
     ],
     "STANDARD": [
         "vouchers",
@@ -94,7 +95,6 @@ FEATURE_UPGRADE_MAP = {
     "export_excel":        "STANDARD",
     "export_pdf":          "STANDARD",
     "bank_reconciliation": "STANDARD",
-    "backup":              "STANDARD",
     "gst":                 "PRO",
     "tds":                 "PRO",
     "ai_document_reader":  "PRO",

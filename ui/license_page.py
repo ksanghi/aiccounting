@@ -15,7 +15,7 @@ from core.license_manager import (
     LicenseManager, PLAN_PRICES, PLAN_LIMITS, PLAN_FEATURES,
 )
 
-UPGRADE_URL = "https://aiccounting.in/upgrade"
+UPGRADE_URL = "https://aiccounting.in/pricing"
 
 
 class ValidateThread(QThread):
@@ -45,7 +45,7 @@ class LicensePage(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
         title = QLabel("License & Plan")
         title.setObjectName("page_title")
@@ -74,37 +74,44 @@ class LicensePage(QWidget):
         top_row.addWidget(self._expiry_lbl)
         pc.addLayout(top_row)
 
-        # Stats grid
+        # Stats grid — QFrame-based to avoid nested background bleed
         stats = QGridLayout()
         stats.setSpacing(10)
 
         def _stat(label: str):
-            w = QWidget()
-            w.setStyleSheet(
-                f"background:{THEME['bg_input']}; border-radius:8px;"
-            )
-            inner = QVBoxLayout(w)
-            inner.setContentsMargins(12, 8, 12, 8)
-            inner.setSpacing(2)
+            frame = QFrame()
+            frame.setStyleSheet(f"""
+                QFrame {{
+                    background:{THEME['bg_input']};
+                    border-radius:8px;
+                    border:0.5px solid {THEME['border']};
+                    padding:10px 12px;
+                }}
+            """)
+            col = QVBoxLayout(frame)
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(4)
             lbl = QLabel(label)
             lbl.setStyleSheet(
                 f"color:{THEME['text_secondary']}; font-size:10px;"
                 f" font-weight:bold; letter-spacing:0.5px;"
+                f" background:transparent; border:none;"
             )
             val = QLabel("—")
             val.setStyleSheet(
-                f"font-size:16px; font-weight:500; color:{THEME['text_primary']};"
+                f"font-size:18px; font-weight:500; color:{THEME['text_primary']};"
+                f" background:transparent; border:none;"
             )
-            inner.addWidget(lbl)
-            inner.addWidget(val)
-            return w, val
+            col.addWidget(lbl)
+            col.addWidget(val)
+            return frame, val
 
-        w1, self._txn_used_lbl  = _stat("TRANSACTIONS USED")
-        w2, self._txn_limit_lbl = _stat("PLAN LIMIT")
-        w3, self._overage_lbl   = _stat("OVERAGE COST")
-        w4, self._users_lbl     = _stat("USERS ALLOWED")
-        for col, w in enumerate([w1, w2, w3, w4]):
-            stats.addWidget(w, 0, col)
+        f1, self._txn_used_lbl  = _stat("TRANSACTIONS USED")
+        f2, self._txn_limit_lbl = _stat("PLAN LIMIT")
+        f3, self._overage_lbl   = _stat("OVERAGE COST")
+        f4, self._users_lbl     = _stat("USERS ALLOWED")
+        for col, frame in enumerate([f1, f2, f3, f4]):
+            stats.addWidget(frame, 0, col)
         pc.addLayout(stats)
 
         usage_lbl = QLabel("Transaction usage")
@@ -115,7 +122,7 @@ class LicensePage(QWidget):
 
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
-        self._progress.setFixedHeight(8)
+        self._progress.setFixedHeight(10)
         self._progress.setTextVisible(False)
         pc.addWidget(self._progress)
 
@@ -141,10 +148,12 @@ class LicensePage(QWidget):
         nudge_btn.setObjectName("btn_primary")
         nudge_btn.setFixedHeight(32)
         nudge_btn.setFixedWidth(130)
-        nudge_btn.clicked.connect(self._upgrade)
+        nudge_btn.clicked.connect(lambda: webbrowser.open(UPGRADE_URL))
         nf.addWidget(self._nudge_lbl, 1)
         nf.addWidget(nudge_btn)
         layout.addWidget(self._nudge_frame)
+
+        layout.addSpacing(8)
 
         # ── License key entry ──
         key_frame = QFrame()
@@ -152,7 +161,12 @@ class LicensePage(QWidget):
         kf = QVBoxLayout(key_frame)
         kf.setContentsMargins(20, 16, 20, 16)
         kf.setSpacing(10)
-        kf.addWidget(QLabel("License key"))
+
+        key_hdr = QLabel("License key")
+        key_hdr.setStyleSheet(
+            f"font-size:13px; font-weight:bold; color:{THEME['text_primary']};"
+        )
+        kf.addWidget(key_hdr)
 
         key_row = QHBoxLayout()
         self._key_edit = QLineEdit()
@@ -177,13 +191,21 @@ class LicensePage(QWidget):
         kf.addWidget(self._key_status)
         layout.addWidget(key_frame)
 
+        layout.addSpacing(8)
+
         # ── Plan comparison ──
         plans_frame = QFrame()
         plans_frame.setObjectName("card")
         pf = QVBoxLayout(plans_frame)
         pf.setContentsMargins(20, 16, 20, 16)
         pf.setSpacing(10)
-        pf.addWidget(QLabel("Available plans"))
+
+        hdr = QLabel("Available plans")
+        hdr.setStyleSheet(
+            f"font-size:13px; font-weight:bold; color:{THEME['text_primary']};"
+            f" padding-bottom:4px;"
+        )
+        pf.addWidget(hdr)
 
         plan_grid = QGridLayout()
         plan_grid.setSpacing(8)
@@ -195,35 +217,40 @@ class LicensePage(QWidget):
         ]
         for col, (key, name, price, limit, desc) in enumerate(plan_defs):
             is_current = (key == self._mgr.plan)
-            w = QWidget()
-            w.setStyleSheet(f"""
-                background:{THEME['accent_dim'] if is_current else THEME['bg_input']};
-                border-radius:8px;
-                border:{'1.5px solid ' + THEME['accent']
-                        if is_current
-                        else '0.5px solid ' + THEME['border']};
-                padding:10px;
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background:{THEME['accent_dim'] if is_current else THEME['bg_input']};
+                    border-radius:10px;
+                    border:{'1.5px solid ' + THEME['accent']
+                            if is_current
+                            else '0.5px solid ' + THEME['border']};
+                }}
             """)
-            inner = QVBoxLayout(w)
-            inner.setSpacing(3)
-            inner.setContentsMargins(8, 8, 8, 8)
+            inner = QVBoxLayout(card)
+            inner.setContentsMargins(12, 10, 12, 10)
+            inner.setSpacing(4)
 
             n_lbl = QLabel(name)
             n_lbl.setStyleSheet(
                 f"font-size:12px; font-weight:bold;"
-                f"color:{THEME['accent'] if is_current else THEME['text_primary']};"
+                f" color:{THEME['accent'] if is_current else THEME['text_primary']};"
+                f" background:transparent; border:none;"
             )
             p_lbl = QLabel(price)
             p_lbl.setStyleSheet(
                 f"font-size:13px; font-weight:500; color:{THEME['text_primary']};"
+                f" background:transparent; border:none;"
             )
             l_lbl = QLabel(limit)
             l_lbl.setStyleSheet(
                 f"font-size:10px; color:{THEME['success']};"
+                f" background:transparent; border:none;"
             )
             d_lbl = QLabel(desc)
             d_lbl.setStyleSheet(
                 f"font-size:10px; color:{THEME['text_secondary']};"
+                f" background:transparent; border:none;"
             )
             inner.addWidget(n_lbl)
             inner.addWidget(p_lbl)
@@ -234,16 +261,19 @@ class LicensePage(QWidget):
                 cur = QLabel("Current plan")
                 cur.setStyleSheet(
                     f"font-size:10px; color:{THEME['accent']}; font-weight:bold;"
+                    f" background:transparent; border:none;"
                 )
                 inner.addWidget(cur)
             else:
                 up_btn = QPushButton("Upgrade")
                 up_btn.setFixedHeight(26)
                 up_btn.setStyleSheet("font-size:10px; padding:2px;")
-                up_btn.clicked.connect(self._upgrade)
+                up_btn.clicked.connect(
+                    lambda _, u=UPGRADE_URL: webbrowser.open(u)
+                )
                 inner.addWidget(up_btn)
 
-            plan_grid.addWidget(w, 0, col)
+            plan_grid.addWidget(card, 0, col)
         pf.addLayout(plan_grid)
 
         buy_lbl = QLabel(
@@ -302,12 +332,14 @@ class LicensePage(QWidget):
         if s["overage_count"] > 0:
             self._overage_lbl.setText(f"Rs.{s['overage_cost']:.2f}")
             self._overage_lbl.setStyleSheet(
-                f"font-size:16px; font-weight:500; color:{THEME['warning']};"
+                f"font-size:18px; font-weight:500; color:{THEME['warning']};"
+                f" background:transparent; border:none;"
             )
         else:
             self._overage_lbl.setText("Rs.0.00")
             self._overage_lbl.setStyleSheet(
-                f"font-size:16px; font-weight:500; color:{THEME['success']};"
+                f"font-size:18px; font-weight:500; color:{THEME['success']};"
+                f" background:transparent; border:none;"
             )
 
         ul = self._mgr.user_limit
@@ -320,10 +352,13 @@ class LicensePage(QWidget):
                   else THEME["success"])
         self._progress.setStyleSheet(f"""
             QProgressBar {{
-                background:{THEME['bg_input']}; border-radius:4px; border:none;
+                background:{THEME['bg_input']};
+                border-radius:5px;
+                border:none;
             }}
             QProgressBar::chunk {{
-                background:{colour}; border-radius:4px;
+                background:{colour};
+                border-radius:5px;
             }}
         """)
 
@@ -388,9 +423,6 @@ class LicensePage(QWidget):
             )
         else:
             self._set_key_status(f"✗  {msg}", error=True)
-
-    def _upgrade(self):
-        webbrowser.open(UPGRADE_URL)
 
     def _set_key_status(self, msg: str, error: bool = False, success: bool = False):
         colour = (THEME["danger"] if error
