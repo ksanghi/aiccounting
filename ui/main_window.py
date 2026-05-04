@@ -261,9 +261,11 @@ class MainWindow(QMainWindow):
         self.register_page("GST Returns",    "🧾", GSTSummaryPage(rpt),
                             section_above="TAX")
         self.register_page("TDS Reports",    "📑", TDSReportPage(rpt))
-        self.register_page("AI Doc Reader",  "🤖",
-                            self._placeholder("Drop bank statements & invoices here\n(Coming next)"),
-                            section_above="AI")
+        from ui.document_reader_page import DocumentReaderPage
+        doc_reader = DocumentReaderPage(
+            ReportsEngine(self.db, self.company_id), self.tree
+        )
+        self.register_page("AI Doc Reader", "🤖", doc_reader, section_above="AI")
         self.register_page("Verbal Entry",   "🎙",
                             self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
 
