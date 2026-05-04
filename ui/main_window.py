@@ -94,6 +94,9 @@ class MainWindow(QMainWindow):
         self._wire_shortcuts()
         self._select_page(0)
 
+        # Backup reminder — fires 2 s after window opens (non-blocking)
+        QTimer.singleShot(2000, self._check_backup_reminder)
+
     # ── Window setup ──────────────────────────────────────────────────────────
 
     def _setup_window(self):
@@ -269,6 +272,17 @@ class MainWindow(QMainWindow):
         self.register_page("Verbal Entry",   "🎙",
                             self._placeholder("Speak a voucher — AI posts it\n(Coming next)"))
 
+        from ui.backup_page      import BackupPage
+        from core.backup_manager import BackupManager
+        backup_mgr  = BackupManager(
+            db_path      = str(self.db.path),
+            company_slug = self.db.path.stem,
+        )
+        self._backup_mgr  = backup_mgr
+        backup_page = BackupPage(backup_mgr)
+        self.register_page("Backup & Restore", "💾", backup_page,
+                           section_above="DATA")
+
         settings_page = self._build_settings_page()
         self.register_page("Settings", "⚙", settings_page, section_above="SETTINGS")
 
@@ -406,6 +420,31 @@ class MainWindow(QMainWindow):
         self.calculator.move(sidebar_pos.x() + 10, sidebar_pos.y() - 360)
         self.calculator.show()
         self.calculator.raise_()
+
+    def _check_backup_reminder(self):
+        if hasattr(self, "_backup_mgr") and self._backup_mgr.needs_reminder():
+            self._show_backup_reminder(self._backup_mgr)
+
+    def _show_backup_reminder(self, backup_mgr):
+        days = backup_mgr.days_since_backup()
+        if days < 0:
+            msg = "You have never backed up this company."
+        else:
+            msg = f"Your last backup was {days} day(s) ago."
+
+        reply = QMessageBox.question(
+            self,
+            "Backup Reminder",
+            f"{msg}\n\nWould you like to back up now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            # Switch to the Backup page
+            for idx, (label, _, _, _) in enumerate(self._pages):
+                if label == "Backup & Restore":
+                    self._select_page(idx)
+                    break
 
     def _wire_shortcuts(self):
         calc_sc = QShortcut(QKeySequence("Alt+C"), self)
