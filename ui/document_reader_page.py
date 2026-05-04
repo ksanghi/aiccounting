@@ -349,6 +349,12 @@ class DocumentReaderPage(QWidget):
         foot.addWidget(sel_none)
         foot.addStretch()
 
+        self._total_label = QLabel("")
+        self._total_label.setStyleSheet(
+            f"color:{THEME['text_secondary']};font-size:11px;"
+        )
+        foot.addWidget(self._total_label)
+
         self._count_label = QLabel("")
         self._count_label.setStyleSheet(
             f"color:{THEME['text_secondary']};font-size:11px;"
@@ -398,7 +404,36 @@ class DocumentReaderPage(QWidget):
         fname = Path(path).name
         self._drop._lbl.setText(f"📄  {fname}")
         self._process_btn.setEnabled(True)
-        self._status.setText(f"Ready to process: {fname}")
+
+        # Auto-detect document type from filename
+        fl = fname.lower()
+        if any(x in fl for x in [
+            "statement", "bank", "account",
+            "hdfc", "axis", "sbi", "icici",
+            "union", "kotak", "yes", "indusind",
+            "pnb", "boi", "canara", "federal",
+        ]):
+            self._doc_type.setCurrentIndex(0)
+            self._status.setText(
+                f"Ready: {fname}  (detected: bank statement)"
+            )
+        elif any(x in fl for x in [
+            "invoice", "bill", "purchase", "vendor",
+        ]):
+            self._doc_type.setCurrentIndex(2)
+            self._status.setText(
+                f"Ready: {fname}  (detected: purchase invoice)"
+            )
+        elif any(x in fl for x in [
+            "zerodha", "broker", "contract", "trade",
+            "pnl", "profit",
+        ]):
+            self._doc_type.setCurrentIndex(3)
+            self._status.setText(
+                f"Ready: {fname}  (detected: broker statement)"
+            )
+        else:
+            self._status.setText(f"Ready to process: {fname}")
 
     # ── Processing ────────────────────────────────────────────────────────────
 
@@ -484,26 +519,43 @@ class DocumentReaderPage(QWidget):
 
     def _fill_review_table(self, vouchers: list):
         self._table.setRowCount(len(vouchers))
+        total_dr = 0.0
+        total_cr = 0.0
+
         for r, v in enumerate(vouchers):
+            conf   = float(v.get("confidence", 0))
+            vtype  = v.get("voucher_type", "")
+            amount = float(v.get("amount", 0))
+            dr_ldg = v.get("dr_ledger", "")
+            cr_ldg = v.get("cr_ledger", "")
+
+            # Row background based on confidence
+            if conf < 0.6:
+                row_bg = THEME["danger_dim"]
+            elif conf < 0.8:
+                row_bg = "#2A1A00"   # amber-dark
+            else:
+                row_bg = ""
+
+            # Checkbox — pre-check only if confidence is decent
             chk = QCheckBox()
-            chk.setChecked(float(v.get("confidence", 0)) >= 0.7)
+            chk.setChecked(conf >= 0.7)
             chk.stateChanged.connect(self._update_count)
             self._table.setCellWidget(r, 0, chk)
 
-            colour = VOUCHER_COLOURS.get(
-                v.get("voucher_type", ""), THEME["text_secondary"]
-            )
-            conf = float(v.get("confidence", 0))
+            colour    = VOUCHER_COLOURS.get(vtype, THEME["text_secondary"])
+            dr_is_new = "(NEW)" in dr_ldg
+            cr_is_new = "(NEW)" in cr_ldg
 
             vals = [
                 v.get("date", ""),
-                v.get("voucher_type", ""),
-                v.get("dr_ledger", ""),
-                v.get("cr_ledger", ""),
-                f"Rs.{float(v.get('amount', 0)):,.2f}",
-                v.get("narration", ""),
+                vtype,
+                dr_ldg,
+                cr_ldg,
+                f"Rs.{amount:,.2f}",
+                v.get("narration", "")[:60],
                 v.get("reference", ""),
-                f"{conf*100:.0f}%",
+                f"{conf * 100:.0f}%",
             ]
 
             for c, val in enumerate(vals, 1):
@@ -511,19 +563,46 @@ class DocumentReaderPage(QWidget):
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
                 )
-                if c == 2:   # voucher type
+
+                # Voucher type in its colour, bold
+                if c == 2:
                     item.setForeground(QColor(colour))
                     item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-                if c == 8:   # confidence
+
+                # NEW ledgers in warning orange so user notices
+                if c == 3 and dr_is_new:
+                    item.setForeground(QColor(THEME["warning"]))
+                if c == 4 and cr_is_new:
+                    item.setForeground(QColor(THEME["warning"]))
+
+                # Confidence column coloured by threshold
+                if c == 8:
                     if conf >= 0.9:
                         item.setForeground(QColor(THEME["success"]))
                     elif conf >= 0.7:
                         item.setForeground(QColor(THEME["warning"]))
                     else:
                         item.setForeground(QColor(THEME["danger"]))
+
+                # Low-confidence row gets a tinted background
+                if row_bg:
+                    item.setBackground(QColor(row_bg))
+
                 self._table.setItem(r, c, item)
 
+            # Accumulate totals
+            if vtype in ("PAYMENT", "PURCHASE", "DEBIT_NOTE"):
+                total_dr += amount
+            else:
+                total_cr += amount
+
         self._update_count()
+        net = abs(total_dr - total_cr)
+        self._total_label.setText(
+            f"Payments: Rs.{total_dr:,.2f}  |  "
+            f"Receipts: Rs.{total_cr:,.2f}  |  "
+            f"Net: Rs.{net:,.2f}"
+        )
 
     def _update_count(self):
         selected = sum(
