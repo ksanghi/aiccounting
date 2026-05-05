@@ -344,6 +344,10 @@ class MainWindow(QMainWindow):
         lic_page.plan_changed.connect(self._on_plan_changed)
         self.register_page("License & Plan", "🔑", lic_page, section_above="ACCOUNT")
 
+        from ui.feedback_page import FeedbackPage
+        feedback_page = FeedbackPage(self.license_mgr)
+        self.register_page("Feedback", "💬", feedback_page)
+
         settings_page = self._build_settings_page()
         self.register_page("Settings", "⚙", settings_page, section_above="SETTINGS")
 
