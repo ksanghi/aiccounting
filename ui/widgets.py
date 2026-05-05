@@ -314,9 +314,11 @@ class QuickAddLedgerDialog(QDialog):
     """
     ledger_created = pyqtSignal(int, str)   # id, name
 
-    def __init__(self, tree, initial_name: str = "", parent=None):
+    def __init__(self, tree, initial_name: str = "", parent=None,
+                 allowed_group_ids=None):
         super().__init__(parent)
         self.tree = tree
+        self._allowed_group_ids = allowed_group_ids or []
         self.setWindowTitle("New Ledger")
         self.setMinimumWidth(420)
         self.setModal(True)
@@ -349,6 +351,15 @@ class QuickAddLedgerDialog(QDialog):
             (self.tree.company_id,)
         ).fetchall()
         groups = [r["name"] for r in rows]
+        if self._allowed_group_ids:
+            allowed_rows = self.tree.db.execute(
+                "SELECT name FROM account_groups WHERE id IN ({})".format(
+                    ",".join("?" * len(self._allowed_group_ids))
+                ),
+                self._allowed_group_ids
+            ).fetchall()
+            allowed_names = {r["name"] for r in allowed_rows}
+            groups = [g for g in groups if g in allowed_names]
         self.group_combo.addItems(groups)
         form.addRow(make_label("Under Group", required=True), self.group_combo)
 
@@ -546,6 +557,123 @@ class LedgerSearchEdit(QWidget):
             if name.lower() == text_lower:
                 return l["id"]
         return None
+
+    @property
+    def selected_ledger(self) -> dict | None:
+        return self._ledger_map.get(self.search.text().strip())
+
+    def clear(self):
+        self.search.clear()
+        self._selected_id = None
+
+    def set_ledger(self, name: str):
+        self.search.setText(name)
+        ldg = self._ledger_map.get(name)
+        if ldg:
+            self._selected_id = ldg["id"]
+
+
+# ── Filtered Ledger Search Edit ───────────────────────────────────────────────
+
+class FilteredLedgerSearchEdit(QWidget):
+    """
+    Ledger search restricted to a pre-filtered subset of ledgers.
+    F2 opens QuickAddLedgerDialog restricted to allowed groups only.
+    """
+    ledger_selected = pyqtSignal(int, str, dict)
+
+    def __init__(self, tree, calculator,
+                 ledger_list: list,
+                 allowed_group_ids: list = None,
+                 placeholder="Search...",
+                 parent=None):
+        super().__init__(parent)
+        self.tree               = tree
+        self.calculator         = calculator
+        self._ledger_map: dict[str, dict] = {}
+        self._selected_id: int | None = None
+        self._allowed_group_ids = allowed_group_ids or []
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(placeholder)
+        self.search.setFixedHeight(34)
+
+        add_btn = QPushButton("F2")
+        add_btn.setObjectName("btn_icon")
+        add_btn.setFixedSize(28, 34)
+        add_btn.setToolTip("F2 — Create new account")
+        add_btn.clicked.connect(self._open_add_dialog)
+
+        layout.addWidget(self.search)
+        layout.addWidget(add_btn)
+
+        self._model = QStringListModel()
+        self._completer = QCompleter(self._model, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.setMaxVisibleItems(12)
+        self._completer.activated.connect(self._on_completion)
+        self.search.setCompleter(self._completer)
+
+        f2 = QShortcut(QKeySequence("F2"), self.search)
+        f2.activated.connect(self._open_add_dialog)
+
+        self.search.textChanged.connect(
+            lambda t: setattr(self, '_selected_id', None)
+            if t not in self._ledger_map else None
+        )
+
+        self.load_ledgers(ledger_list)
+
+    def load_ledgers(self, ledger_list: list):
+        self._ledger_map = {l["name"]: l for l in ledger_list}
+        self._model.setStringList(sorted(self._ledger_map.keys()))
+
+    def _on_completion(self, text: str):
+        ldg = self._ledger_map.get(text)
+        if ldg:
+            self._selected_id = ldg["id"]
+            self.search.setText(text)
+            self.ledger_selected.emit(ldg["id"], text, ldg)
+
+    def _open_add_dialog(self):
+        try:
+            dlg = QuickAddLedgerDialog(
+                self.tree,
+                self.search.text().strip(),
+                parent=self,
+                allowed_group_ids=self._allowed_group_ids,
+            )
+            dlg.ledger_created.connect(self._on_ledger_created)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _on_ledger_created(self, lid: int, name: str):
+        try:
+            all_ledgers = self.tree.get_all_ledgers()
+            filtered = [
+                l for l in all_ledgers
+                if l["name"] in self._ledger_map or l["id"] == lid
+            ]
+            self.load_ledgers(filtered)
+        except Exception:
+            pass
+        self.search.setText(name)
+        self._selected_id = lid
+        ldg = self._ledger_map.get(name, {"id": lid, "name": name})
+        self.ledger_selected.emit(lid, name, ldg)
+
+    @property
+    def selected_id(self) -> int | None:
+        if self._selected_id is None:
+            ldg = self._ledger_map.get(self.search.text().strip())
+            return ldg["id"] if ldg else None
+        return self._selected_id
 
     @property
     def selected_ledger(self) -> dict | None:

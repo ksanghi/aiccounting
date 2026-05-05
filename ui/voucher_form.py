@@ -27,8 +27,8 @@ VOUCHER_TYPES = [
     ("RECEIPT",     "Receipt",    "💰"),
     ("CONTRA",      "Contra",     "↔"),
     ("JOURNAL",     "Journal",    "📓"),
-    ("SALES",       "Sales",      "🛒"),
-    ("PURCHASE",    "Purchase",   "📦"),
+    ("SALES",       "Income",     "📈"),
+    ("PURCHASE",    "Expense",    "📤"),
     ("DEBIT_NOTE",  "Debit Note", "📋"),
     ("CREDIT_NOTE", "Credit Note","📝"),
 ]
@@ -44,9 +44,29 @@ class VoucherEntryPage(QWidget):
         self.engine     = engine
         self.tree       = tree
         self.calculator = calculator
+        self._income_ledgers    = []
+        self._expense_ledgers   = []
+        self._party_ledgers     = []
+        self._bank_cash         = []
+        self._party_bank_cash   = []
+        self._income_group_ids  = []
+        self._expense_group_ids = []
+        self._load_filtered_ledgers()
         self._journal_rows: list[VoucherLineRow] = []
         self._build_ui()
         self._wire_shortcuts()
+
+    def _load_filtered_ledgers(self):
+        try:
+            self._income_ledgers    = self.tree.get_income_ledgers()
+            self._expense_ledgers   = self.tree.get_expense_ledgers()
+            self._party_ledgers     = self.tree.get_party_ledgers()
+            self._bank_cash         = self.tree.get_bank_cash_ledgers()
+            self._party_bank_cash   = self.tree.get_party_and_bank_cash()
+            self._income_group_ids  = self.tree.get_income_group_ids()
+            self._expense_group_ids = self.tree.get_expense_group_ids()
+        except Exception:
+            pass
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
@@ -207,6 +227,7 @@ class VoucherEntryPage(QWidget):
         self._select_type("PAYMENT")
 
     def _build_smart_page(self) -> QWidget:
+        from ui.widgets import FilteredLedgerSearchEdit
         page = QWidget()
         self._smart_layout = QVBoxLayout(page)
         self._smart_layout.setContentsMargins(0, 0, 0, 0)
@@ -215,31 +236,39 @@ class VoucherEntryPage(QWidget):
         frame = QFrame()
         frame.setObjectName("card")
         inner = QGridLayout(frame)
-        inner.setSpacing(12)
-        inner.setContentsMargins(16, 14, 16, 14)
+        inner.setSpacing(14)
+        inner.setContentsMargins(16, 16, 16, 16)
 
-        # Row 0: Dr ledger
-        from core.config import get_dr_label, get_cr_label
-        inner.addWidget(make_label(get_dr_label(short=True) + " Account", required=True), 0, 0)
-        self.dr_ledger = LedgerSearchEdit(self.tree, self.calculator, "Search Dr ledger…")
-        inner.addWidget(self.dr_ledger, 0, 1)
+        # Row 0: Field 1 (label + widget — swapped per type by _select_type)
+        self._field1_label = QLabel("Account")
+        self._field1_label.setObjectName("field_label")
+        inner.addWidget(self._field1_label, 0, 0)
+        self.field1_ledger = LedgerSearchEdit(
+            self.tree, self.calculator, "Search account..."
+        )
+        inner.addWidget(self.field1_ledger, 0, 1)
 
-        # Row 1: Cr ledger
-        inner.addWidget(make_label(get_cr_label(short=True) + " Account", required=True), 1, 0)
-        self.cr_ledger = LedgerSearchEdit(self.tree, self.calculator, "Search Cr ledger…")
-        inner.addWidget(self.cr_ledger, 1, 1)
+        # Row 1: Field 2
+        self._field2_label = QLabel("Account")
+        self._field2_label.setObjectName("field_label")
+        inner.addWidget(self._field2_label, 1, 0)
+        self.field2_ledger = LedgerSearchEdit(
+            self.tree, self.calculator, "Search account..."
+        )
+        inner.addWidget(self.field2_ledger, 1, 1)
 
         # Row 2: Amount + GST
-        inner.addWidget(make_label("Amount (₹)", required=True), 2, 0)
+        self._amount_label = QLabel("Amount (Rs.)")
+        self._amount_label.setObjectName("field_label")
+        inner.addWidget(self._amount_label, 2, 0)
+
         amt_row = QHBoxLayout()
         self.amount_edit = AmountEdit()
         self.amount_edit.setMinimumWidth(160)
         self.amount_edit.valueChanged.connect(self._update_balance_smart)
         self.amount_edit.focused.connect(self.calculator.connect_to)
-
         amt_row.addWidget(self.amount_edit)
 
-        # GST toggle (only for Sales/Purchase)
         self._gst_label = QLabel("GST %")
         self._gst_label.setStyleSheet(f"color:{THEME['text_secondary']};")
         self._gst_combo = QComboBox()
@@ -256,6 +285,9 @@ class VoucherEntryPage(QWidget):
 
         self._smart_layout.addWidget(frame)
         self._smart_layout.addStretch()
+
+        self._smart_frame = frame
+        self._smart_inner = inner
         return page
 
     def _build_journal_page(self) -> QWidget:
@@ -330,40 +362,118 @@ class VoucherEntryPage(QWidget):
     # ── Logic ─────────────────────────────────────────────────────────────────
 
     def _select_type(self, vtype: str):
+        from core.config import get_dr_label, get_cr_label
+        from ui.widgets import FilteredLedgerSearchEdit
+
         self._current_type = vtype
-        colour = VOUCHER_COLOURS.get(vtype, THEME["accent"])
 
         for vt, btn in self._type_btns.items():
             btn.setChecked(vt == vtype)
 
-        # Update page title colour
         is_journal = vtype == "JOURNAL"
         has_gst    = vtype in ("SALES", "PURCHASE", "DEBIT_NOTE", "CREDIT_NOTE")
 
         self._stack.setCurrentIndex(1 if is_journal else 0)
-
-        # Show/hide GST
         self._gst_label.setVisible(has_gst)
         self._gst_combo.setVisible(has_gst)
 
-        # Update Dr/Cr labels based on type
-        from core.config import get_dr_label, get_cr_label
-        dr = get_dr_label(short=True)
-        cr = get_cr_label(short=True)
-        labels = {
-            "PAYMENT":     (f"Expense / Party — {dr}",    f"Bank / Cash — {cr}"),
-            "RECEIPT":     (f"Bank / Cash — {dr}",         f"Party / Income — {cr}"),
-            "CONTRA":      (f"To Account — {dr}",          f"From Account — {cr}"),
-            "SALES":       (f"Party / Debtor — {dr}",      f"Sales Account — {cr}"),
-            "PURCHASE":    (f"Purchase Account — {dr}",    f"Party / Creditor — {cr}"),
-            "DEBIT_NOTE":  (f"Party / Creditor — {dr}",   f"Purchase Return — {cr}"),
-            "CREDIT_NOTE": (f"Sales Return — {dr}",        f"Party / Debtor — {cr}"),
-        }
-        dr_hint, cr_hint = labels.get(vtype, ("Debit Account", "Credit Account"))
-        self.dr_ledger.search.setPlaceholderText(dr_hint)
-        self.cr_ledger.search.setPlaceholderText(cr_hint)
+        # Remove old field widgets from grid
+        old1 = self._smart_inner.itemAtPosition(0, 1)
+        old2 = self._smart_inner.itemAtPosition(1, 1)
+        if old1 and old1.widget():
+            old1.widget().setParent(None)
+        if old2 and old2.widget():
+            old2.widget().setParent(None)
 
-        # If switching to journal, add 2 rows if empty
+        # Build correct filtered fields per voucher type
+        if vtype == "SALES":
+            self._field1_label.setText("Source of Income")
+            self._field2_label.setText("Billed to / Received by")
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._income_ledgers,
+                self._income_group_ids,
+                "Search income account...",
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._party_bank_cash,
+                placeholder="Customer, Cash or Bank...",
+            )
+
+        elif vtype == "PURCHASE":
+            self._field1_label.setText("Expense Account")
+            self._field2_label.setText("Paid via")
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._expense_ledgers,
+                self._expense_group_ids,
+                "Search expense account...",
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._bank_cash,
+                placeholder="Cash or Bank...",
+            )
+
+        elif vtype == "PAYMENT":
+            self._field1_label.setText("Paid to (Party)")
+            self._field2_label.setText("Paid from")
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._party_ledgers,
+                placeholder="Search party...",
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._bank_cash,
+                placeholder="Cash or Bank...",
+            )
+
+        elif vtype == "RECEIPT":
+            self._field1_label.setText("Received from")
+            self._field2_label.setText("Deposited to")
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._party_ledgers,
+                placeholder="Search party...",
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._bank_cash,
+                placeholder="Cash or Bank...",
+            )
+
+        elif vtype == "CONTRA":
+            self._field1_label.setText("From Account")
+            self._field2_label.setText("To Account")
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._bank_cash,
+                placeholder="Cash or Bank...",
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._bank_cash,
+                placeholder="Cash or Bank...",
+            )
+
+        else:
+            # Debit Note, Credit Note, and other fallbacks
+            self._field1_label.setText(get_dr_label(short=True) + " Account")
+            self._field2_label.setText(get_cr_label(short=True) + " Account")
+            f1 = LedgerSearchEdit(
+                self.tree, self.calculator, "Search account..."
+            )
+            f2 = LedgerSearchEdit(
+                self.tree, self.calculator, "Search account..."
+            )
+
+        self.field1_ledger = f1
+        self.field2_ledger = f2
+        self._smart_inner.addWidget(f1, 0, 1)
+        self._smart_inner.addWidget(f2, 1, 1)
+
         if is_journal and not self._journal_rows:
             self._add_journal_row()
             self._add_journal_row()
@@ -475,47 +585,65 @@ class VoucherEntryPage(QWidget):
                 draft = self.engine.build_journal(vdate, lines, narration, reference)
 
             else:
-                from core.config import get_dr_label, get_cr_label
-                dr_id = self.dr_ledger.selected_id
-                cr_id = self.cr_ledger.selected_id
-
-                # Fallback — try direct name lookup in case completer did not fire signal
-                if not dr_id:
-                    dr_text = self.dr_ledger.search.text().strip()
-                    ldg = self.dr_ledger._ledger_map.get(dr_text)
-                    if ldg:
-                        dr_id = ldg["id"]
-
-                if not cr_id:
-                    cr_text = self.cr_ledger.search.text().strip()
-                    ldg = self.cr_ledger._ledger_map.get(cr_text)
-                    if ldg:
-                        cr_id = ldg["id"]
-
+                f1_id  = self.field1_ledger.selected_id
+                f2_id  = self.field2_ledger.selected_id
                 amount = self.amount_edit.value()
 
-                if not dr_id:
-                    QMessageBox.warning(self, "Missing field",
-                        "Please select a " + get_dr_label(short=True) + " account.")
+                if not f1_id:
+                    QMessageBox.warning(
+                        self, "Missing",
+                        f"Please select {self._field1_label.text()}"
+                    )
                     return
-                if not cr_id:
-                    QMessageBox.warning(self, "Missing field",
-                        "Please select a " + get_cr_label(short=True) + " account.")
+                if not f2_id:
+                    QMessageBox.warning(
+                        self, "Missing",
+                        f"Please select {self._field2_label.text()}"
+                    )
                     return
                 if amount <= 0:
-                    QMessageBox.warning(self, "Missing field", "Amount must be greater than zero.")
+                    QMessageBox.warning(
+                        self, "Missing",
+                        "Amount must be greater than zero."
+                    )
                     return
 
-                builder_map = {
-                    "PAYMENT":     lambda: self.engine.build_payment(vdate, dr_id, cr_id, amount, narration, reference),
-                    "RECEIPT":     lambda: self.engine.build_receipt(vdate, cr_id, dr_id, amount, narration, reference),
-                    "CONTRA":      lambda: self.engine.build_contra(vdate, cr_id, dr_id, amount, narration),
-                    "SALES":       lambda: self.engine.build_sales(vdate, dr_id, cr_id, amount, gst_rate, narration, reference),
-                    "PURCHASE":    lambda: self.engine.build_purchase(vdate, dr_id, cr_id, amount, gst_rate, narration, reference),
-                    "DEBIT_NOTE":  lambda: self.engine.build_debit_note(vdate, dr_id, cr_id, amount, gst_rate, narration, reference),
-                    "CREDIT_NOTE": lambda: self.engine.build_credit_note(vdate, cr_id, dr_id, amount, gst_rate, narration, reference),
-                }
-                draft = builder_map[vtype]()
+                if vtype == "SALES":
+                    dr_id = f2_id   # Billed to / Received by
+                    cr_id = f1_id   # Source of income
+                    draft = self.engine.build_sales(
+                        vdate, dr_id, cr_id, amount, gst_rate, narration, reference
+                    )
+                elif vtype == "PURCHASE":
+                    dr_id = f1_id   # Expense account
+                    cr_id = f2_id   # Paid via
+                    draft = self.engine.build_purchase(
+                        vdate, cr_id, dr_id, amount, gst_rate, narration, reference
+                    )
+                elif vtype == "PAYMENT":
+                    dr_id = f1_id   # Paid to party
+                    cr_id = f2_id   # Paid from bank/cash
+                    draft = self.engine.build_payment(
+                        vdate, dr_id, cr_id, amount, narration, reference
+                    )
+                elif vtype == "RECEIPT":
+                    cr_id = f1_id   # Received from
+                    dr_id = f2_id   # Deposited to
+                    draft = self.engine.build_receipt(
+                        vdate, cr_id, dr_id, amount, narration, reference
+                    )
+                elif vtype == "CONTRA":
+                    cr_id = f1_id   # From account
+                    dr_id = f2_id   # To account
+                    draft = self.engine.build_contra(
+                        vdate, cr_id, dr_id, amount, narration
+                    )
+                else:
+                    dr_id = f1_id
+                    cr_id = f2_id
+                    draft = self.engine.build_payment(
+                        vdate, dr_id, cr_id, amount, narration, reference
+                    )
 
             posted = self.engine.post(draft)
 
@@ -549,8 +677,11 @@ class VoucherEntryPage(QWidget):
         self.narration_edit.clear()
         self.reference_edit.clear()
         self.amount_edit.setValue(0)
-        self.dr_ledger.clear()
-        self.cr_ledger.clear()
+        try:
+            self.field1_ledger.clear()
+            self.field2_ledger.clear()
+        except Exception:
+            pass
         self.date_edit.setDate(QDate.currentDate())
         for row in self._journal_rows[:]:
             self._rows_layout.removeWidget(row)

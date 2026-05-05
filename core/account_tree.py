@@ -219,3 +219,99 @@ class AccountTree:
         )
         self.db.commit()
         return cur.lastrowid
+
+    def get_income_ledgers(self) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT l.id, l.name, l.is_cash,
+                      l.is_bank, g.name as group_name,
+                      g.nature
+               FROM ledgers l
+               JOIN account_groups g ON l.group_id = g.id
+               WHERE l.company_id = ?
+                 AND l.active = 1
+                 AND g.nature = 'INCOME'
+               ORDER BY g.name, l.name""",
+            (self.company_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_expense_ledgers(self) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT l.id, l.name, l.is_cash,
+                      l.is_bank, g.name as group_name,
+                      g.nature
+               FROM ledgers l
+               JOIN account_groups g ON l.group_id = g.id
+               WHERE l.company_id = ?
+                 AND l.active = 1
+                 AND g.nature = 'EXPENSE'
+               ORDER BY g.name, l.name""",
+            (self.company_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_party_ledgers(self) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT l.id, l.name, l.is_cash,
+                      l.is_bank, g.name as group_name,
+                      g.nature
+               FROM ledgers l
+               JOIN account_groups g ON l.group_id = g.id
+               WHERE l.company_id = ?
+                 AND l.active = 1
+                 AND g.name IN ('Sundry Debtors', 'Sundry Creditors')
+               ORDER BY g.name, l.name""",
+            (self.company_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_bank_cash_ledgers(self) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT l.id, l.name, l.is_cash,
+                      l.is_bank, g.name as group_name,
+                      g.nature
+               FROM ledgers l
+               JOIN account_groups g ON l.group_id = g.id
+               WHERE l.company_id = ?
+                 AND l.active = 1
+                 AND (l.is_bank = 1 OR l.is_cash = 1)
+               ORDER BY l.is_cash DESC, l.name""",
+            (self.company_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_party_and_bank_cash(self) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT l.id, l.name, l.is_cash,
+                      l.is_bank, g.name as group_name,
+                      g.nature
+               FROM ledgers l
+               JOIN account_groups g ON l.group_id = g.id
+               WHERE l.company_id = ?
+                 AND l.active = 1
+                 AND (
+                     l.is_bank = 1
+                     OR l.is_cash = 1
+                     OR g.name IN ('Sundry Debtors', 'Sundry Creditors')
+                 )
+               ORDER BY l.is_cash DESC, l.is_bank DESC,
+                        g.name, l.name""",
+            (self.company_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_income_group_ids(self) -> list[int]:
+        rows = self.db.execute(
+            """SELECT id FROM account_groups
+               WHERE company_id = ? AND nature = 'INCOME'""",
+            (self.company_id,)
+        ).fetchall()
+        return [r["id"] for r in rows]
+
+    def get_expense_group_ids(self) -> list[int]:
+        rows = self.db.execute(
+            """SELECT id FROM account_groups
+               WHERE company_id = ? AND nature = 'EXPENSE'""",
+            (self.company_id,)
+        ).fetchall()
+        return [r["id"] for r in rows]
