@@ -413,7 +413,7 @@ class VoucherEntryPage(QWidget):
 
         elif vtype == "PURCHASE":
             self._field1_label.setText("Expense Account")
-            self._field2_label.setText("Paid via")
+            self._field2_label.setText("Paid via / Payable to")
             f1 = FilteredLedgerSearchEdit(
                 self.tree, self.calculator,
                 self._expense_ledgers,
@@ -422,8 +422,8 @@ class VoucherEntryPage(QWidget):
             )
             f2 = FilteredLedgerSearchEdit(
                 self.tree, self.calculator,
-                self._bank_cash,
-                placeholder="Cash or Bank...",
+                self._party_bank_cash,
+                placeholder="Cash, Bank or Party...",
             )
 
         elif vtype == "PAYMENT":
