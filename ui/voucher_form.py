@@ -445,9 +445,14 @@ class VoucherEntryPage(QWidget):
                 self._income_group_ids,
                 "Search income account...",
             )
+            party_list = (
+                self._party_bank_cash
+                if self._party_bank_cash
+                else self.tree.get_all_ledgers()
+            )
             f2 = FilteredLedgerSearchEdit(
                 self.tree, self.calculator,
-                self._party_bank_cash,
+                party_list,
                 placeholder="Customer, Cash or Bank...",
             )
 
@@ -460,18 +465,28 @@ class VoucherEntryPage(QWidget):
                 self._expense_group_ids,
                 "Search expense account...",
             )
+            party_list = (
+                self._party_bank_cash
+                if self._party_bank_cash
+                else self.tree.get_all_ledgers()
+            )
             f2 = FilteredLedgerSearchEdit(
                 self.tree, self.calculator,
-                self._party_bank_cash,
+                party_list,
                 placeholder="Cash, Bank or Party...",
             )
 
         elif vtype == "PAYMENT":
             self._field1_label.setText("Paid to (Party)")
             self._field2_label.setText("Paid from")
+            party_list = (
+                self._party_ledgers
+                if self._party_ledgers
+                else self.tree.get_all_ledgers()
+            )
             f1 = FilteredLedgerSearchEdit(
                 self.tree, self.calculator,
-                self._party_ledgers,
+                party_list,
                 placeholder="Search party...",
             )
             f2 = FilteredLedgerSearchEdit(
@@ -483,9 +498,14 @@ class VoucherEntryPage(QWidget):
         elif vtype == "RECEIPT":
             self._field1_label.setText("Received from")
             self._field2_label.setText("Deposited to")
+            party_list = (
+                self._party_ledgers
+                if self._party_ledgers
+                else self.tree.get_all_ledgers()
+            )
             f1 = FilteredLedgerSearchEdit(
                 self.tree, self.calculator,
-                self._party_ledgers,
+                party_list,
                 placeholder="Search party...",
             )
             f2 = FilteredLedgerSearchEdit(

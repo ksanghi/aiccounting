@@ -447,10 +447,9 @@ class QuickAddLedgerDialog(QDialog):
             "opening_balance": self.ob_edit.value(),
             "opening_type":    self.ob_type.currentText(),
         }
-        group_lower = group.lower()
-        if "bank accounts" in group_lower:
+        if group == "Bank Accounts":
             kwargs["is_bank"] = True
-        elif "cash-in-hand" in group_lower:
+        elif group == "Cash-in-Hand":
             kwargs["is_cash"] = True
         if self.gstin_edit.text().strip():
             kwargs["gstin"]      = self.gstin_edit.text().strip()
@@ -498,7 +497,7 @@ class LedgerSearchEdit(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(4)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText(placeholder)
@@ -507,41 +506,11 @@ class LedgerSearchEdit(QWidget):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.search.setStyleSheet(f"""
-            QLineEdit {{
-                background: {THEME['bg_input']};
-                border: 1px solid {THEME['border']};
-                border-right: none;
-                border-radius: 7px 0px 0px 7px;
-                padding: 6px 12px;
-                color: {THEME['text_primary']};
-                font-size: 12px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {THEME['border_focus']};
-                border-right: none;
-            }}
-        """)
 
         self._add_btn = QPushButton("F2")
-        self._add_btn.setFixedSize(36, 34)
+        self._add_btn.setObjectName("btn_icon")
+        self._add_btn.setFixedSize(32, 34)
         self._add_btn.setToolTip("F2 — Create new ledger on the fly")
-        self._add_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {THEME['bg_hover']};
-                border: 1px solid {THEME['border']};
-                border-left: none;
-                border-radius: 0px 7px 7px 0px;
-                color: {THEME['text_secondary']};
-                font-size: 10px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: {THEME['accent_dim']};
-                color: {THEME['accent']};
-                border-color: {THEME['accent']};
-            }}
-        """)
         self._add_btn.clicked.connect(self._open_add_dialog)
 
         layout.addWidget(self.search)
@@ -653,7 +622,7 @@ class FilteredLedgerSearchEdit(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(4)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText(placeholder)
@@ -662,41 +631,11 @@ class FilteredLedgerSearchEdit(QWidget):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.search.setStyleSheet(f"""
-            QLineEdit {{
-                background: {THEME['bg_input']};
-                border: 1px solid {THEME['border']};
-                border-right: none;
-                border-radius: 7px 0px 0px 7px;
-                padding: 6px 12px;
-                color: {THEME['text_primary']};
-                font-size: 12px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {THEME['border_focus']};
-                border-right: none;
-            }}
-        """)
 
         add_btn = QPushButton("F2")
-        add_btn.setFixedSize(36, 34)
+        add_btn.setObjectName("btn_icon")
+        add_btn.setFixedSize(32, 34)
         add_btn.setToolTip("F2 — Create new account")
-        add_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {THEME['bg_hover']};
-                border: 1px solid {THEME['border']};
-                border-left: none;
-                border-radius: 0px 7px 7px 0px;
-                color: {THEME['text_secondary']};
-                font-size: 10px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: {THEME['accent_dim']};
-                color: {THEME['accent']};
-                border-color: {THEME['accent']};
-            }}
-        """)
         add_btn.clicked.connect(self._open_add_dialog)
 
         layout.addWidget(self.search)
@@ -721,6 +660,12 @@ class FilteredLedgerSearchEdit(QWidget):
         self.load_ledgers(ledger_list)
 
     def load_ledgers(self, ledger_list: list):
+        """Load from filtered list. Falls back to all ledgers if empty."""
+        if not ledger_list:
+            try:
+                ledger_list = self.tree.get_all_ledgers()
+            except Exception:
+                ledger_list = []
         self._ledger_map = {l["name"]: l for l in ledger_list}
         self._model.setStringList(sorted(self._ledger_map.keys()))
 
