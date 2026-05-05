@@ -294,6 +294,8 @@ class AccountTree:
                      OR l.is_cash = 1
                      OR g.name = 'Sundry Debtors'
                      OR g.name = 'Sundry Creditors'
+                     OR g.name = 'Loans & Advances (A)'
+                     OR g.name = 'Capital Account'
                  )
                ORDER BY l.is_cash DESC, l.is_bank DESC,
                         g.name, l.name""",

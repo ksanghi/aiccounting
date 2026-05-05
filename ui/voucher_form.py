@@ -65,8 +65,48 @@ class VoucherEntryPage(QWidget):
             self._party_bank_cash   = self.tree.get_party_and_bank_cash()
             self._income_group_ids  = self.tree.get_income_group_ids()
             self._expense_group_ids = self.tree.get_expense_group_ids()
-        except Exception:
-            pass
+
+            all_ldg = None
+
+            if not self._party_bank_cash:
+                all_ldg = all_ldg or self.tree.get_all_ledgers()
+                self._party_bank_cash = all_ldg
+
+            if not self._bank_cash:
+                all_ldg = all_ldg or self.tree.get_all_ledgers()
+                self._bank_cash = [
+                    l for l in all_ldg
+                    if l.get("is_bank") or l.get("is_cash")
+                    or l.get("group_name", "") in (
+                        "Bank Accounts", "Cash-in-Hand"
+                    )
+                ]
+
+            if not self._income_ledgers:
+                all_ldg = all_ldg or self.tree.get_all_ledgers()
+                self._income_ledgers = [
+                    l for l in all_ldg if l.get("nature") == "INCOME"
+                ]
+
+            if not self._expense_ledgers:
+                all_ldg = all_ldg or self.tree.get_all_ledgers()
+                self._expense_ledgers = [
+                    l for l in all_ldg if l.get("nature") == "EXPENSE"
+                ]
+
+        except Exception as e:
+            print(f"_load_filtered_ledgers error: {e}")
+            try:
+                all_ldg = self.tree.get_all_ledgers()
+                self._income_ledgers    = all_ldg
+                self._expense_ledgers   = all_ldg
+                self._party_ledgers     = all_ldg
+                self._bank_cash         = all_ldg
+                self._party_bank_cash   = all_ldg
+                self._income_group_ids  = []
+                self._expense_group_ids = []
+            except Exception:
+                pass
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
