@@ -292,7 +292,8 @@ class AccountTree:
                  AND (
                      l.is_bank = 1
                      OR l.is_cash = 1
-                     OR g.name IN ('Sundry Debtors', 'Sundry Creditors')
+                     OR g.name = 'Sundry Debtors'
+                     OR g.name = 'Sundry Creditors'
                  )
                ORDER BY l.is_cash DESC, l.is_bank DESC,
                         g.name, l.name""",

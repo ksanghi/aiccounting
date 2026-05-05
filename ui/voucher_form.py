@@ -235,13 +235,19 @@ class VoucherEntryPage(QWidget):
 
         frame = QFrame()
         frame.setObjectName("card")
+        frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         inner = QGridLayout(frame)
         inner.setSpacing(14)
         inner.setContentsMargins(16, 16, 16, 16)
+        inner.setColumnStretch(0, 0)
+        inner.setColumnStretch(1, 1)
+        inner.setColumnMinimumWidth(0, 140)
 
         # Row 0: Field 1 (label + widget — swapped per type by _select_type)
         self._field1_label = QLabel("Account")
         self._field1_label.setObjectName("field_label")
+        self._field1_label.setWordWrap(True)
+        self._field1_label.setFixedWidth(140)
         inner.addWidget(self._field1_label, 0, 0)
         self.field1_ledger = LedgerSearchEdit(
             self.tree, self.calculator, "Search account..."
@@ -251,6 +257,8 @@ class VoucherEntryPage(QWidget):
         # Row 1: Field 2
         self._field2_label = QLabel("Account")
         self._field2_label.setObjectName("field_label")
+        self._field2_label.setWordWrap(True)
+        self._field2_label.setFixedWidth(140)
         inner.addWidget(self._field2_label, 1, 0)
         self.field2_ledger = LedgerSearchEdit(
             self.tree, self.calculator, "Search account..."
@@ -260,6 +268,8 @@ class VoucherEntryPage(QWidget):
         # Row 2: Amount + GST
         self._amount_label = QLabel("Amount (Rs.)")
         self._amount_label.setObjectName("field_label")
+        self._amount_label.setWordWrap(True)
+        self._amount_label.setFixedWidth(140)
         inner.addWidget(self._amount_label, 2, 0)
 
         amt_row = QHBoxLayout()

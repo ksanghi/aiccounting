@@ -594,6 +594,11 @@ class FilteredLedgerSearchEdit(QWidget):
         self._selected_id: int | None = None
         self._allowed_group_ids = allowed_group_ids or []
 
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -601,6 +606,10 @@ class FilteredLedgerSearchEdit(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText(placeholder)
         self.search.setFixedHeight(34)
+        self.search.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
 
         add_btn = QPushButton("F2")
         add_btn.setObjectName("btn_icon")
