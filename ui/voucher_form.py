@@ -281,13 +281,25 @@ class VoucherEntryPage(QWidget):
         inner.setContentsMargins(16, 16, 16, 16)
         inner.setColumnStretch(0, 0)
         inner.setColumnStretch(1, 1)
-        inner.setColumnMinimumWidth(0, 140)
+        inner.setColumnMinimumWidth(0, 160)
 
         # Row 0: Field 1 (label + widget — swapped per type by _select_type)
         self._field1_label = QLabel("Account")
-        self._field1_label.setObjectName("field_label")
+        self._field1_label.setFixedWidth(160)
+        self._field1_label.setFixedHeight(34)
         self._field1_label.setWordWrap(True)
-        self._field1_label.setFixedWidth(140)
+        self._field1_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft |
+            Qt.AlignmentFlag.AlignVCenter
+        )
+        self._field1_label.setStyleSheet(f"""
+            color: {THEME['text_primary']};
+            font-size: 12px;
+            font-weight: bold;
+            background: {THEME['bg_input']};
+            border-radius: 7px;
+            padding: 0px 10px;
+        """)
         inner.addWidget(self._field1_label, 0, 0)
         self.field1_ledger = LedgerSearchEdit(
             self.tree, self.calculator, "Search account..."
@@ -296,9 +308,21 @@ class VoucherEntryPage(QWidget):
 
         # Row 1: Field 2
         self._field2_label = QLabel("Account")
-        self._field2_label.setObjectName("field_label")
+        self._field2_label.setFixedWidth(160)
+        self._field2_label.setFixedHeight(34)
         self._field2_label.setWordWrap(True)
-        self._field2_label.setFixedWidth(140)
+        self._field2_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft |
+            Qt.AlignmentFlag.AlignVCenter
+        )
+        self._field2_label.setStyleSheet(f"""
+            color: {THEME['text_primary']};
+            font-size: 12px;
+            font-weight: bold;
+            background: {THEME['bg_input']};
+            border-radius: 7px;
+            padding: 0px 10px;
+        """)
         inner.addWidget(self._field2_label, 1, 0)
         self.field2_ledger = LedgerSearchEdit(
             self.tree, self.calculator, "Search account..."
@@ -307,9 +331,20 @@ class VoucherEntryPage(QWidget):
 
         # Row 2: Amount + GST
         self._amount_label = QLabel("Amount (Rs.)")
-        self._amount_label.setObjectName("field_label")
-        self._amount_label.setWordWrap(True)
-        self._amount_label.setFixedWidth(140)
+        self._amount_label.setFixedWidth(160)
+        self._amount_label.setFixedHeight(34)
+        self._amount_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft |
+            Qt.AlignmentFlag.AlignVCenter
+        )
+        self._amount_label.setStyleSheet(f"""
+            color: {THEME['text_primary']};
+            font-size: 12px;
+            font-weight: bold;
+            background: {THEME['bg_input']};
+            border-radius: 7px;
+            padding: 0px 10px;
+        """)
         inner.addWidget(self._amount_label, 2, 0)
 
         amt_row = QHBoxLayout()
@@ -508,8 +543,55 @@ class VoucherEntryPage(QWidget):
                 placeholder="Cash or Bank...",
             )
 
+        elif vtype == "DEBIT_NOTE":
+            self._field1_label.setText(
+                "Dr — Purchase Return"
+            )
+            self._field2_label.setText(
+                "Cr — Supplier / Party"
+            )
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._expense_ledgers,
+                self._expense_group_ids,
+                "Search purchase/expense account..."
+            )
+            party_list = (
+                self._party_bank_cash
+                if self._party_bank_cash
+                else self.tree.get_all_ledgers()
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                party_list,
+                placeholder="Supplier, Cash or Bank..."
+            )
+
+        elif vtype == "CREDIT_NOTE":
+            self._field1_label.setText(
+                "Dr — Sales Return"
+            )
+            self._field2_label.setText(
+                "Cr — Customer / Party"
+            )
+            f1 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                self._income_ledgers,
+                self._income_group_ids,
+                "Search sales/income account..."
+            )
+            party_list = (
+                self._party_bank_cash
+                if self._party_bank_cash
+                else self.tree.get_all_ledgers()
+            )
+            f2 = FilteredLedgerSearchEdit(
+                self.tree, self.calculator,
+                party_list,
+                placeholder="Customer, Cash or Bank..."
+            )
+
         else:
-            # Debit Note, Credit Note, and other fallbacks
             self._field1_label.setText(get_dr_label(short=True) + " Account")
             self._field2_label.setText(get_cr_label(short=True) + " Account")
             f1 = LedgerSearchEdit(

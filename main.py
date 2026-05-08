@@ -33,7 +33,7 @@ from ui.theme           import THEME, get_stylesheet
 class CompanyDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Accounting — Open Company")
+        self.setWindowTitle("AccGenie — Open Company")
         self.setMinimumWidth(460)
         self.setMinimumHeight(320)
         self.setStyleSheet(get_stylesheet())
@@ -207,7 +207,7 @@ class CompanyDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Ledger — Accounting")
+    app.setApplicationName("AccGenie")
     app.setStyle("Fusion")
 
     # Show company selector

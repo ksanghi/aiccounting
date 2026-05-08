@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         self._company_name = row["name"] if row else "Company"
         self._company_gstin = row["gstin"] if row else ""
 
-        self.setWindowTitle(f"Accounting — {self._company_name}")
+        self.setWindowTitle(f"AccGenie — {self._company_name}")
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
         self.setStyleSheet(get_stylesheet())
@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         logo_layout.setContentsMargins(16, 14, 16, 12)
         logo_layout.setSpacing(2)
 
-        logo_lbl = QLabel("⬡ LEDGER")
+        logo_lbl = QLabel("AccGenie")
         logo_lbl.setObjectName("logo_text")
         co_lbl = QLabel(self._company_name[:26])
         co_lbl.setObjectName("company_text")
@@ -534,7 +534,7 @@ class MainWindow(QMainWindow):
 def launch_app(db, company_id: int, tree, engine):
     """Call this from main.py to launch the GUI."""
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("Accounting")
+    app.setApplicationName("AccGenie")
     app.setOrganizationName("Aiccounting")
 
     window = MainWindow(db, company_id, tree, engine)
