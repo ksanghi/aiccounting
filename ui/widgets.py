@@ -52,7 +52,7 @@ class AmountEdit(QDoubleSpinBox):
         self.setGroupSeparatorShown(True)
         self.setPrefix("₹ ")
         self.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.setFixedHeight(32)
+        self.setFixedHeight(36)
         self.setAlignment(Qt.AlignmentFlag.AlignRight)
 
     def focusInEvent(self, event):
@@ -490,7 +490,7 @@ class LedgerSearchEdit(QWidget):
         self._ledger_map: dict[str, dict] = {}
         self._selected_id: int | None = None
 
-        self.setFixedHeight(34)
+        self.setFixedHeight(36)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -498,43 +498,31 @@ class LedgerSearchEdit(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(6)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText(placeholder)
-        self.search.setFixedHeight(34)
+        self.search.setFixedHeight(36)
         self.search.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.search.setStyleSheet(f"""
-            QLineEdit {{
-                background: {THEME['bg_input']};
-                border: 1px solid {THEME['border']};
-                border-right: none;
-                border-radius: 7px 0px 0px 7px;
-                padding: 6px 12px;
-                color: {THEME['text_primary']};
-                font-size: 12px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {THEME['border_focus']};
-                border-right: none;
-            }}
-        """)
+        # Inherit the global QLineEdit / :focus styles — gives a clean,
+        # complete focus ring instead of a half-coloured merged border.
 
         self._add_btn = QPushButton("F2")
-        self._add_btn.setFixedSize(36, 34)
+        self._add_btn.setFixedSize(38, 36)
         self._add_btn.setToolTip("F2 — Create new ledger on the fly")
         self._add_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {THEME['bg_hover']};
                 border: 1px solid {THEME['border']};
-                border-left: none;
-                border-radius: 0px 7px 7px 0px;
+                border-radius: 7px;
                 color: {THEME['text_secondary']};
                 font-size: 10px;
                 font-weight: bold;
+                min-height: 0;
+                padding: 0;
             }}
             QPushButton:hover {{
                 background: {THEME['accent_dim']};
@@ -645,7 +633,7 @@ class FilteredLedgerSearchEdit(QWidget):
         self._selected_id: int | None = None
         self._allowed_group_ids = allowed_group_ids or []
 
-        self.setFixedHeight(34)
+        self.setFixedHeight(36)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -653,43 +641,30 @@ class FilteredLedgerSearchEdit(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(6)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText(placeholder)
-        self.search.setFixedHeight(34)
+        self.search.setFixedHeight(36)
         self.search.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.search.setStyleSheet(f"""
-            QLineEdit {{
-                background: {THEME['bg_input']};
-                border: 1px solid {THEME['border']};
-                border-right: none;
-                border-radius: 7px 0px 0px 7px;
-                padding: 6px 12px;
-                color: {THEME['text_primary']};
-                font-size: 12px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {THEME['border_focus']};
-                border-right: none;
-            }}
-        """)
+        # Inherit the global QLineEdit / :focus styles for a clean focus ring.
 
         add_btn = QPushButton("F2")
-        add_btn.setFixedSize(36, 34)
+        add_btn.setFixedSize(38, 36)
         add_btn.setToolTip("F2 — Create new account")
         add_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {THEME['bg_hover']};
                 border: 1px solid {THEME['border']};
-                border-left: none;
-                border-radius: 0px 7px 7px 0px;
+                border-radius: 7px;
                 color: {THEME['text_secondary']};
                 font-size: 10px;
                 font-weight: bold;
+                min-height: 0;
+                padding: 0;
             }}
             QPushButton:hover {{
                 background: {THEME['accent_dim']};

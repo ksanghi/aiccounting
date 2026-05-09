@@ -235,10 +235,25 @@ class MainWindow(QMainWindow):
             )
             raise
 
+    def _locked_page(self, feature: str, required_plan: str,
+                     feature_label: str) -> QWidget:
+        """Build a FeatureGateWidget pre-wired to navigate to the License page."""
+        from ui.feature_gate_widget import FeatureGateWidget
+        w = FeatureGateWidget(
+            feature, required_plan, self.license_mgr.plan, feature_label
+        )
+        w.upgrade_requested.connect(self._navigate_to_license)
+        return w
+
+    def _navigate_to_license(self):
+        for idx, (label, _, _, _) in enumerate(self._pages):
+            if label == "License & Plan":
+                self._select_page(idx)
+                return
+
     def _build_pages_inner(self):
         from ui.voucher_form     import VoucherEntryPage
         from ui.daybook          import DayBookPage, LedgerBalancePage
-        from ui.feature_gate_widget import FeatureGateWidget
         from core.reports_engine import ReportsEngine
 
         lmgr = self.license_mgr
@@ -271,9 +286,7 @@ class MainWindow(QMainWindow):
         else:
             self.register_page(
                 "Reports", "📊",
-                FeatureGateWidget(
-                    "reports", "STANDARD", lmgr.plan, "Financial Reports"
-                ),
+                self._locked_page("reports", "STANDARD", "Financial Reports"),
             )
 
         # ── GST — PRO+ ──
@@ -285,7 +298,7 @@ class MainWindow(QMainWindow):
         else:
             self.register_page(
                 "GST Returns", "🧾",
-                FeatureGateWidget("gst", "PRO", lmgr.plan, "GST Returns"),
+                self._locked_page("gst", "PRO", "GST Returns"),
                 section_above="TAX",
             )
 
@@ -297,7 +310,7 @@ class MainWindow(QMainWindow):
         else:
             self.register_page(
                 "TDS Reports", "📑",
-                FeatureGateWidget("tds", "PRO", lmgr.plan, "TDS Reports"),
+                self._locked_page("tds", "PRO", "TDS Reports"),
             )
 
         # ── AI Doc Reader — PRO+ ──
@@ -311,8 +324,8 @@ class MainWindow(QMainWindow):
         else:
             self.register_page(
                 "AI Doc Reader", "🤖",
-                FeatureGateWidget(
-                    "ai_document_reader", "PRO", lmgr.plan, "AI Document Reader"
+                self._locked_page(
+                    "ai_document_reader", "PRO", "AI Document Reader"
                 ),
                 section_above="AI",
             )
@@ -334,7 +347,7 @@ class MainWindow(QMainWindow):
         else:
             self.register_page(
                 "Backup & Restore", "💾",
-                FeatureGateWidget("backup", "STANDARD", lmgr.plan, "Backup & Restore"),
+                self._locked_page("backup", "STANDARD", "Backup & Restore"),
                 section_above="DATA",
             )
 

@@ -10,7 +10,8 @@ All 8 voucher types, with:
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QDateEdit, QTextEdit,
-    QScrollArea, QFrame, QSizePolicy, QMessageBox, QStackedWidget
+    QScrollArea, QFrame, QSizePolicy, QMessageBox, QStackedWidget,
+    QSpacerItem
 )
 from PyQt6.QtCore import Qt, QDate, pyqtSignal, QTimer
 from PyQt6.QtGui  import QFont, QShortcut, QKeySequence
@@ -65,48 +66,8 @@ class VoucherEntryPage(QWidget):
             self._party_bank_cash   = self.tree.get_party_and_bank_cash()
             self._income_group_ids  = self.tree.get_income_group_ids()
             self._expense_group_ids = self.tree.get_expense_group_ids()
-
-            all_ldg = None
-
-            if not self._party_bank_cash:
-                all_ldg = all_ldg or self.tree.get_all_ledgers()
-                self._party_bank_cash = all_ldg
-
-            if not self._bank_cash:
-                all_ldg = all_ldg or self.tree.get_all_ledgers()
-                self._bank_cash = [
-                    l for l in all_ldg
-                    if l.get("is_bank") or l.get("is_cash")
-                    or l.get("group_name", "") in (
-                        "Bank Accounts", "Cash-in-Hand"
-                    )
-                ]
-
-            if not self._income_ledgers:
-                all_ldg = all_ldg or self.tree.get_all_ledgers()
-                self._income_ledgers = [
-                    l for l in all_ldg if l.get("nature") == "INCOME"
-                ]
-
-            if not self._expense_ledgers:
-                all_ldg = all_ldg or self.tree.get_all_ledgers()
-                self._expense_ledgers = [
-                    l for l in all_ldg if l.get("nature") == "EXPENSE"
-                ]
-
-        except Exception as e:
-            print(f"_load_filtered_ledgers error: {e}")
-            try:
-                all_ldg = self.tree.get_all_ledgers()
-                self._income_ledgers    = all_ldg
-                self._expense_ledgers   = all_ldg
-                self._party_ledgers     = all_ldg
-                self._bank_cash         = all_ldg
-                self._party_bank_cash   = all_ldg
-                self._income_group_ids  = []
-                self._expense_group_ids = []
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
@@ -184,7 +145,7 @@ class VoucherEntryPage(QWidget):
         date_col.addWidget(make_label("Voucher Date", required=True))
         self.date_edit = QDateEdit(QDate.currentDate())
         self.date_edit.setCalendarPopup(True)
-        self.date_edit.setFixedHeight(32)
+        self.date_edit.setFixedHeight(34)
         self.date_edit.setDisplayFormat("dd-MMM-yyyy")
         date_col.addWidget(self.date_edit)
         meta_layout.addLayout(date_col)
@@ -195,7 +156,7 @@ class VoucherEntryPage(QWidget):
         narr_col.addWidget(make_label("Narration"))
         self.narration_edit = QLineEdit()
         self.narration_edit.setPlaceholderText("e.g. Rent for May 2025")
-        self.narration_edit.setFixedHeight(32)
+        self.narration_edit.setFixedHeight(34)
         narr_col.addWidget(self.narration_edit)
         meta_layout.addLayout(narr_col, 3)
 
@@ -205,7 +166,7 @@ class VoucherEntryPage(QWidget):
         ref_col.addWidget(make_label("Reference / Cheque No."))
         self.reference_edit = QLineEdit()
         self.reference_edit.setPlaceholderText("Optional")
-        self.reference_edit.setFixedHeight(32)
+        self.reference_edit.setFixedHeight(34)
         ref_col.addWidget(self.reference_edit)
         meta_layout.addLayout(ref_col, 1)
 
@@ -263,6 +224,11 @@ class VoucherEntryPage(QWidget):
 
         root.addLayout(footer)
 
+        # After picking the GST rate, Tab should land on Post so the user
+        # can verify the highlighted Total before submitting.
+        self.setTabOrder(self.amount_edit, self._gst_combo)
+        self.setTabOrder(self._gst_combo, self._post_btn)
+
         # Select PAYMENT by default
         self._select_type("PAYMENT")
 
@@ -276,14 +242,34 @@ class VoucherEntryPage(QWidget):
         frame = QFrame()
         frame.setObjectName("card")
         frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        inner = QGridLayout(frame)
-        inner.setSpacing(14)
-        inner.setContentsMargins(16, 16, 16, 16)
-        inner.setColumnStretch(0, 0)
-        inner.setColumnStretch(1, 1)
-        inner.setColumnMinimumWidth(0, 160)
+        inner = QVBoxLayout(frame)
+        inner.setSpacing(0)
+        inner.setContentsMargins(22, 22, 22, 22)
 
-        # Row 0: Field 1 (label + widget — swapped per type by _select_type)
+        # Each row is a real QWidget with min-height — guarantees a visible
+        # vertical gap regardless of how Qt sums contained widgets.
+        ROW_HEIGHT     = 54   # 36 input + 18 breathing
+        TOTAL_ROW_HEIGHT = 64
+
+        def _make_row(label_widget: QLabel, input_widget,
+                      min_height: int = ROW_HEIGHT):
+            row_w = QWidget()
+            row_w.setMinimumHeight(min_height)
+            row_w.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Fixed,
+            )
+            hl = QHBoxLayout(row_w)
+            hl.setContentsMargins(0, 9, 0, 9)
+            hl.setSpacing(14)
+            hl.addWidget(label_widget, 0)
+            if isinstance(input_widget, QHBoxLayout):
+                hl.addLayout(input_widget, 1)
+            else:
+                hl.addWidget(input_widget, 1)
+            return row_w
+
+        # Row 1: Field 1
         self._field1_label = QLabel("Account")
         self._field1_label.setFixedWidth(160)
         self._field1_label.setFixedHeight(34)
@@ -300,13 +286,13 @@ class VoucherEntryPage(QWidget):
             border-radius: 7px;
             padding: 0px 10px;
         """)
-        inner.addWidget(self._field1_label, 0, 0)
         self.field1_ledger = LedgerSearchEdit(
             self.tree, self.calculator, "Search account..."
         )
-        inner.addWidget(self.field1_ledger, 0, 1)
+        self._field1_row = _make_row(self._field1_label, self.field1_ledger)
+        inner.addWidget(self._field1_row)
 
-        # Row 1: Field 2
+        # Row 2: Field 2
         self._field2_label = QLabel("Account")
         self._field2_label.setFixedWidth(160)
         self._field2_label.setFixedHeight(34)
@@ -323,13 +309,13 @@ class VoucherEntryPage(QWidget):
             border-radius: 7px;
             padding: 0px 10px;
         """)
-        inner.addWidget(self._field2_label, 1, 0)
         self.field2_ledger = LedgerSearchEdit(
             self.tree, self.calculator, "Search account..."
         )
-        inner.addWidget(self.field2_ledger, 1, 1)
+        self._field2_row = _make_row(self._field2_label, self.field2_ledger)
+        inner.addWidget(self._field2_row)
 
-        # Row 2: Amount + GST
+        # Row 3: Base Amount (asked first; GST applies on top)
         self._amount_label = QLabel("Amount (Rs.)")
         self._amount_label.setFixedWidth(160)
         self._amount_label.setFixedHeight(34)
@@ -345,34 +331,91 @@ class VoucherEntryPage(QWidget):
             border-radius: 7px;
             padding: 0px 10px;
         """)
-        inner.addWidget(self._amount_label, 2, 0)
-
-        amt_row = QHBoxLayout()
         self.amount_edit = AmountEdit()
         self.amount_edit.setMinimumWidth(160)
         self.amount_edit.valueChanged.connect(self._update_balance_smart)
         self.amount_edit.focused.connect(self.calculator.connect_to)
-        amt_row.addWidget(self.amount_edit)
+        amt_inner = QHBoxLayout()
+        amt_inner.setContentsMargins(0, 0, 0, 0)
+        amt_inner.addWidget(self.amount_edit)
+        amt_inner.addStretch()
+        self._amount_row = _make_row(self._amount_label, amt_inner)
+        inner.addWidget(self._amount_row)
 
-        self._gst_label = QLabel("GST %")
-        self._gst_label.setStyleSheet(f"color:{THEME['text_secondary']};")
+        # Row 4: GST Rate + GST Amount + Total Amount on one combined row
+        self._gst_label = QLabel("GST")
+        self._gst_label.setFixedWidth(160)
+        self._gst_label.setFixedHeight(34)
+        self._gst_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft |
+            Qt.AlignmentFlag.AlignVCenter
+        )
+        self._gst_label.setStyleSheet(f"""
+            color: {THEME['text_primary']};
+            font-size: 12px;
+            font-weight: bold;
+            background: {THEME['bg_input']};
+            border-radius: 7px;
+            padding: 0px 10px;
+        """)
+
         self._gst_combo = QComboBox()
         self._gst_combo.addItem("No GST", 0)
         for r in GST_RATES:
             self._gst_combo.addItem(f"{r}%", r)
         self._gst_combo.setCurrentIndex(4)  # 18%
-        self._gst_combo.setFixedWidth(90)
+        self._gst_combo.setFixedHeight(36)
+        self._gst_combo.setFixedWidth(96)
         self._gst_combo.currentIndexChanged.connect(self._update_balance_smart)
-        amt_row.addWidget(self._gst_label)
-        amt_row.addWidget(self._gst_combo)
-        amt_row.addStretch()
-        inner.addLayout(amt_row, 2, 1)
+
+        self._gst_amount_value = QLabel("Tax ₹ 0.00")
+        self._gst_amount_value.setMinimumHeight(36)
+        self._gst_amount_value.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:12px; "
+            f"font-weight:bold; padding:0 6px;"
+        )
+
+        arrow = QLabel("→  Total")
+        arrow.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:11px; padding:0 4px;"
+        )
+
+        self._total_amount_value = QLabel("₹ 0.00")
+        self._total_amount_value.setMinimumHeight(46)
+        self._total_amount_value.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
+        self._total_amount_value.setStyleSheet(
+            f"color:{THEME['accent']}; font-size:18px; font-weight:bold; "
+            f"background:{THEME['accent_dim']}; "
+            f"border:1.5px solid {THEME['accent']}; "
+            f"border-radius:8px; padding:8px 16px;"
+        )
+
+        self._total_hint = QLabel("← post this")
+        self._total_hint.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:10px; font-style:italic;"
+        )
+
+        gst_total_inner = QHBoxLayout()
+        gst_total_inner.setContentsMargins(0, 0, 0, 0)
+        gst_total_inner.setSpacing(10)
+        gst_total_inner.addWidget(self._gst_combo)
+        gst_total_inner.addWidget(self._gst_amount_value)
+        gst_total_inner.addWidget(arrow)
+        gst_total_inner.addWidget(self._total_amount_value, 1)
+        gst_total_inner.addWidget(self._total_hint)
+
+        self._gst_combined_row = _make_row(
+            self._gst_label, gst_total_inner,
+            min_height=TOTAL_ROW_HEIGHT,
+        )
+        inner.addWidget(self._gst_combined_row)
 
         self._smart_layout.addWidget(frame)
         self._smart_layout.addStretch()
 
         self._smart_frame = frame
-        self._smart_inner = inner
         return page
 
     def _build_journal_page(self) -> QWidget:
@@ -459,16 +502,16 @@ class VoucherEntryPage(QWidget):
         has_gst    = vtype in ("SALES", "PURCHASE", "DEBIT_NOTE", "CREDIT_NOTE")
 
         self._stack.setCurrentIndex(1 if is_journal else 0)
-        self._gst_label.setVisible(has_gst)
-        self._gst_combo.setVisible(has_gst)
+        self._gst_combined_row.setVisible(has_gst)
+        self._amount_label.setText("Base Amount (Rs.)" if has_gst else "Amount (Rs.)")
 
-        # Remove old field widgets from grid
-        old1 = self._smart_inner.itemAtPosition(0, 1)
-        old2 = self._smart_inner.itemAtPosition(1, 1)
-        if old1 and old1.widget():
-            old1.widget().setParent(None)
-        if old2 and old2.widget():
-            old2.widget().setParent(None)
+        # Remove old field widgets from their row layouts
+        if self.field1_ledger is not None:
+            self._field1_row.layout().removeWidget(self.field1_ledger)
+            self.field1_ledger.setParent(None)
+        if self.field2_ledger is not None:
+            self._field2_row.layout().removeWidget(self.field2_ledger)
+            self.field2_ledger.setParent(None)
 
         # Build correct filtered fields per voucher type
         if vtype == "SALES":
@@ -603,8 +646,10 @@ class VoucherEntryPage(QWidget):
 
         self.field1_ledger = f1
         self.field2_ledger = f2
-        self._smart_inner.addWidget(f1, 0, 1)
-        self._smart_inner.addWidget(f2, 1, 1)
+        self._field1_row.layout().addWidget(f1, 1)
+        self._field2_row.layout().addWidget(f2, 1)
+        # Force layout recompute so the new widgets pick up the row geometry.
+        self._smart_frame.adjustSize()
 
         if is_journal and not self._journal_rows:
             self._add_journal_row()
@@ -643,6 +688,9 @@ class VoucherEntryPage(QWidget):
         gst = self._gst_combo.currentData() if self._gst_combo.isVisible() else 0
         tax = round(amt * gst / 100, 2)
         gross = round(amt + tax, 2)
+        if hasattr(self, "_gst_amount_value"):
+            self._gst_amount_value.setText(f"₹ {tax:,.2f}")
+            self._total_amount_value.setText(f"₹ {gross:,.2f}")
         self._bal_dr.setText(f"{get_dr_label(short=True)}  ₹{gross:,.2f}")
         self._bal_cr.setText(f"{get_cr_label(short=True)}  ₹{gross:,.2f}")
         self._bal_diff.setText("✓ Balanced" if gross > 0 else "")

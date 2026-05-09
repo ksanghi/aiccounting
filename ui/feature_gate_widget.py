@@ -1,20 +1,21 @@
 """
 Feature gate widget — shows upgrade prompt when user tries to access a locked feature.
 """
-import webbrowser
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from ui.theme import THEME
 from core.license_manager import PLAN_PRICES, PLAN_FEATURES
 
-UPGRADE_URL = "https://aiccounting.in/pricing"
-
 
 class FeatureGateWidget(QWidget):
     """Drop-in replacement for any locked page. Shows a friendly upgrade prompt."""
+
+    # Emitted when the user clicks "Upgrade". MainWindow listens and switches
+    # to the in-app License page.
+    upgrade_requested = pyqtSignal()
 
     def __init__(self, feature: str, required_plan: str, current_plan: str,
                  feature_label: str = "", parent=None):
@@ -55,7 +56,7 @@ class FeatureGateWidget(QWidget):
         btn.setObjectName("btn_primary")
         btn.setFixedHeight(40)
         btn.setFixedWidth(220)
-        btn.clicked.connect(lambda: webbrowser.open(UPGRADE_URL))
+        btn.clicked.connect(lambda: self.upgrade_requested.emit())
         layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         features = PLAN_FEATURES.get(required_plan, [])
