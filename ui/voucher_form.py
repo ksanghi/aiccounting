@@ -57,6 +57,13 @@ class VoucherEntryPage(QWidget):
         # Edit-mode state — set via load_voucher_for_edit()
         self._edit_voucher_id: int | None = None
         self._edit_voucher_number: str = ""
+        # Create-mode state — set via prefill_for_create() for posting from
+        # other pages (Ledger Reconciliation etc.). on_post_callback runs
+        # after a successful engine.post(), receiving the PostedVoucher.
+        # Type selector stays visible — re-applies prefill on every switch.
+        self._create_callback         = None
+        self._create_banner_text: str = ""
+        self._create_prefill          = None
         self._build_ui()
         self._wire_shortcuts()
 
@@ -690,6 +697,11 @@ class VoucherEntryPage(QWidget):
 
         self._update_balance_smart()
 
+        # If we're in create-mode-with-prefill, re-fill so the user sees the
+        # party ledger / amount applied to the chosen voucher type.
+        if getattr(self, "_create_prefill", None):
+            self._apply_create_prefill()
+
     def _add_journal_row(self):
         row = VoucherLineRow(
             self.tree, self.calculator,
@@ -898,6 +910,22 @@ class VoucherEntryPage(QWidget):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
 
+            # If we were prefilled from another page (Ledger Reconciliation etc.),
+            # run the callback so it can link the posted voucher back, then hop
+            # to the page we came from.
+            cb = self._create_callback
+            if cb is not None:
+                self._exit_create_mode()
+                try:
+                    cb(posted)
+                except Exception as e:
+                    QMessageBox.warning(self, "Post-link failed", str(e))
+                self._clear()
+                win = self.window()
+                if hasattr(win, "return_from_voucher_edit"):
+                    win.return_from_voucher_edit()
+                return
+
             self._clear()
 
         except VoucherValidationError as e:
@@ -905,6 +933,126 @@ class VoucherEntryPage(QWidget):
                 "\n".join(f"• {err}" for err in e.errors))
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+
+    def prefill_for_create(
+        self,
+        prefill: dict,
+        on_post_callback=None,
+        banner_text: str = "",
+    ) -> None:
+        """
+        Open the form in create-mode for a fresh voucher, prefilled from
+        another page (Ledger / Bank Reconciliation etc.). Posts via the
+        normal engine.post path; after success, on_post_callback(posted)
+        is called and the page returns to its origin.
+
+        Type selector stays VISIBLE — user picks the voucher type.
+        On every type switch, the prefill is re-applied: party ledger
+        lands on field1 (PAYMENT/RECEIPT/DEBIT_NOTE/CREDIT_NOTE),
+        field2 (SALES/PURCHASE), or as a journal row (JOURNAL).
+
+        prefill keys (all optional):
+            voucher_type        — initial pick; defaults to 'JOURNAL'
+            voucher_date        — ISO yyyy-mm-dd
+            narration / reference
+            party_ledger_name   — main subject ledger (the one to be
+                                   placed on the canonical side)
+            party_amount        — amount; goes into amount_edit on smart
+                                   modes / one journal row on JOURNAL
+            party_side          — 'DR' or 'CR' — which side the party
+                                   ledger should sit on in JOURNAL mode
+        """
+        # Reset any in-progress edit state
+        self._edit_voucher_id     = None
+        self._edit_voucher_number = ""
+
+        self._create_callback     = on_post_callback
+        self._create_banner_text  = banner_text
+        self._create_prefill      = dict(prefill)
+
+        if banner_text:
+            self._edit_banner_label.setText(banner_text)
+            self._edit_banner.setVisible(True)
+            # Hide the page-title strip but KEEP the type selector visible —
+            # the user needs it to pick PAYMENT / RECEIPT / SALES / etc.
+            self._header_strip.setVisible(False)
+        self._post_btn.setText("Post Voucher  (Ctrl+S)")
+
+        vtype = prefill.get("voucher_type") or "JOURNAL"
+        self._select_type(vtype)
+        # _select_type ends by calling _apply_create_prefill for us
+        # (see the hook at the end of _select_type).
+
+    def _apply_create_prefill(self) -> None:
+        """
+        Re-apply self._create_prefill after a type switch in create-mode.
+        Idempotent — safe to call from _select_type's tail.
+        """
+        from PyQt6.QtCore import QDate
+        p = self._create_prefill
+        if not p:
+            return
+
+        # Form-level fields
+        if p.get("voucher_date"):
+            self.date_edit.setDate(
+                QDate.fromString(p["voucher_date"], "yyyy-MM-dd")
+            )
+        self.narration_edit.setText(p.get("narration") or "")
+        self.reference_edit.setText(p.get("reference") or "")
+
+        party_name = p.get("party_ledger_name") or ""
+        party_amt  = float(p.get("party_amount") or 0)
+        party_side = (p.get("party_side") or "DR").upper()
+
+        vtype = self._current_type
+        if vtype == "JOURNAL":
+            # One journal row for the party + a blank row for the counter.
+            for r in self._journal_rows[:]:
+                self._rows_layout.removeWidget(r)
+                r.deleteLater()
+            self._journal_rows.clear()
+            if party_name and party_amt > 0:
+                self._add_journal_row()
+                row = self._journal_rows[-1]
+                row.ledger_search.set_ledger(party_name)
+                row.type_toggle.setCurrentIndex(0 if party_side == "DR" else 1)
+                row.amount_edit.setValue(party_amt)
+                row.narration.setText(p.get("narration") or "")
+            self._add_journal_row()    # blank row for the counter
+            self._update_balance_journal()
+            return
+
+        # Smart modes — place party in the canonical field for that type.
+        # Mapping: party = the subject of the row in the source ledger.
+        party_field = self._party_field_for_type(vtype)
+        if party_name and party_field:
+            getattr(self, party_field).set_ledger(party_name)
+        if party_amt > 0:
+            self.amount_edit.setValue(party_amt)
+        self._update_balance_smart()
+
+    @staticmethod
+    def _party_field_for_type(vtype: str) -> str | None:
+        """Which smart-mode field receives the prefilled party ledger."""
+        # PAYMENT: Field 1 = Paid to (party)
+        # RECEIPT: Field 1 = Received from (party)
+        # SALES:   Field 2 = Billed to / Received by (party)
+        # PURCHASE:Field 2 = Paid via / Payable to (party)
+        # DR/CR notes / others: Field 1
+        if vtype in ("SALES", "PURCHASE"):
+            return "field2_ledger"
+        if vtype in ("PAYMENT", "RECEIPT", "DEBIT_NOTE", "CREDIT_NOTE"):
+            return "field1_ledger"
+        return None
+
+    def _exit_create_mode(self):
+        self._create_callback    = None
+        self._create_banner_text = ""
+        self._create_prefill     = None
+        self._edit_banner.setVisible(False)
+        self._header_strip.setVisible(True)
+        self._type_frame.setVisible(True)
 
     def load_voucher_for_edit(self, voucher_id: int) -> bool:
         """
@@ -987,9 +1135,15 @@ class VoucherEntryPage(QWidget):
         self._type_frame.setVisible(True)
 
     def _cancel_edit(self):
-        if not self._edit_voucher_id:
+        """Handles the banner Cancel button in BOTH edit and create modes."""
+        in_edit   = bool(self._edit_voucher_id)
+        in_create = bool(self._create_callback or self._create_prefill)
+        if not (in_edit or in_create):
             return
-        self._exit_edit_mode()
+        if in_edit:
+            self._exit_edit_mode()
+        else:
+            self._exit_create_mode()
         self._clear()
         self._select_type("PAYMENT")
         win = self.window()

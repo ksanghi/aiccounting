@@ -292,6 +292,27 @@ class MainWindow(QMainWindow):
                 self._select_page(idx)
                 return
 
+    def open_voucher_for_create(
+        self, prefill: dict, on_post_callback=None,
+        banner_text: str = "",
+    ) -> None:
+        """
+        Switch to Post Voucher with the form prefilled for a fresh post,
+        run on_post_callback after a successful post, then return to the
+        page we came from. Used by Ledger Reconciliation's 'Add voucher'.
+        """
+        if not hasattr(self, "_voucher_page"):
+            return
+        self._voucher_page.prefill_for_create(
+            prefill, on_post_callback=on_post_callback,
+            banner_text=banner_text,
+        )
+        self._voucher_origin_idx = self._current_idx
+        for idx, (label, _, _, _) in enumerate(self._pages):
+            if label == "Post Voucher":
+                self._select_page(idx)
+                return
+
     def return_from_voucher_edit(self) -> None:
         """Called by VoucherEntryPage after Update / Cancel in edit mode."""
         idx = getattr(self, "_voucher_origin_idx", None)
@@ -362,6 +383,24 @@ class MainWindow(QMainWindow):
                     "bank_reconciliation", "STANDARD", "Bank Reconciliation"
                 ),
                 section_above="BANKING",
+            )
+
+        # ── Ledger Reconciliation — STANDARD+ ──
+        if lmgr.has_feature("ledger_reconciliation"):
+            from ui.ledger_reconciliation_page import LedgerReconciliationPage
+            self.register_page(
+                "Ledger Reconciliation", "📒",
+                LedgerReconciliationPage(
+                    self.db, self.company_id, self.tree,
+                    self.engine, self.calculator, lmgr,
+                ),
+            )
+        else:
+            self.register_page(
+                "Ledger Reconciliation", "📒",
+                self._locked_page(
+                    "ledger_reconciliation", "STANDARD", "Ledger Reconciliation"
+                ),
             )
 
         # ── GST — PRO+ ──

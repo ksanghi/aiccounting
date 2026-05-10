@@ -222,6 +222,63 @@ CREATE TABLE IF NOT EXISTS bank_reconciliations (
     notes                 TEXT
 );
 
+-- ── Ledger Reconciliation: imported party-statement headers ─────────
+CREATE TABLE IF NOT EXISTS ledger_statements (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id           INTEGER NOT NULL REFERENCES companies(id),
+    ledger_id            INTEGER NOT NULL REFERENCES ledgers(id),
+    file_name            TEXT NOT NULL,
+    file_hash            TEXT NOT NULL,
+    period_from          TEXT NOT NULL,
+    period_to            TEXT NOT NULL,
+    statement_opening    REAL,
+    statement_closing    REAL,
+    sign_mode            TEXT NOT NULL DEFAULT 'MIRROR',  -- 'MIRROR' | 'SAME'
+    import_method        TEXT NOT NULL,                   -- 'LOCAL' | 'AI'
+    imported_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    imported_by_user_id  INTEGER REFERENCES users(id),
+    raw_meta             TEXT,
+    UNIQUE(company_id, ledger_id, file_hash)
+);
+
+-- ── Ledger Reconciliation: per-line staging rows ──────────────────────
+CREATE TABLE IF NOT EXISTS ledger_statement_lines (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    statement_id             INTEGER NOT NULL REFERENCES ledger_statements(id) ON DELETE CASCADE,
+    line_index               INTEGER NOT NULL,
+    txn_date                 TEXT NOT NULL,
+    amount                   REAL NOT NULL,
+    sign                     TEXT NOT NULL,             -- DR/CR exactly as in the file
+    narration                TEXT,
+    reference                TEXT,
+    raw_extracted            TEXT,
+    match_status             TEXT NOT NULL DEFAULT 'UNMATCHED',
+                                                        -- UNMATCHED | AUTO_MATCHED |
+                                                        -- MANUAL_MATCHED | VOUCHER_CREATED |
+                                                        -- IGNORED | FLAGGED
+    matched_voucher_line_id  INTEGER REFERENCES voucher_lines(id),
+    resolved_at              TEXT,
+    resolved_by_user_id      INTEGER REFERENCES users(id),
+    notes                    TEXT
+);
+
+-- ── Ledger Reconciliation: snapshot when finalised ────────────────────
+CREATE TABLE IF NOT EXISTS ledger_reconciliations (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id            INTEGER NOT NULL REFERENCES companies(id),
+    ledger_id             INTEGER NOT NULL REFERENCES ledgers(id),
+    statement_id          INTEGER REFERENCES ledger_statements(id),
+    as_of_date            TEXT NOT NULL,
+    book_balance          REAL NOT NULL,
+    statement_balance     REAL NOT NULL,
+    matched_count         INTEGER NOT NULL DEFAULT 0,
+    unmatched_stmt_count  INTEGER NOT NULL DEFAULT 0,
+    unmatched_book_count  INTEGER NOT NULL DEFAULT 0,
+    finalised_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    reconciled_by_user_id INTEGER REFERENCES users(id),
+    notes                 TEXT
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_vouchers_date     ON vouchers(company_id, voucher_date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_type     ON vouchers(company_id, voucher_type);
@@ -231,6 +288,9 @@ CREATE INDEX IF NOT EXISTS idx_ledgers_company   ON ledgers(company_id);
 CREATE INDEX IF NOT EXISTS idx_bsl_status        ON bank_statement_lines(statement_id, match_status);
 CREATE INDEX IF NOT EXISTS idx_bsl_match         ON bank_statement_lines(matched_voucher_line_id);
 CREATE INDEX IF NOT EXISTS idx_bstmt_ledger      ON bank_statements(company_id, bank_ledger_id);
+CREATE INDEX IF NOT EXISTS idx_lsl_status        ON ledger_statement_lines(statement_id, match_status);
+CREATE INDEX IF NOT EXISTS idx_lsl_match         ON ledger_statement_lines(matched_voucher_line_id);
+CREATE INDEX IF NOT EXISTS idx_lstmt_ledger      ON ledger_statements(company_id, ledger_id);
 """
 
 
@@ -243,9 +303,12 @@ CREATE INDEX IF NOT EXISTS idx_bstmt_ledger      ON bank_statements(company_id, 
 # missing. This is the canonical pattern — do not invent migration plumbing.
 
 _ADDITIVE_COLUMNS = [
-    ("voucher_lines", "cleared_date",            "TEXT"),
-    ("voucher_lines", "bank_statement_line_id",  "INTEGER"),
-    ("voucher_lines", "cleared_by_user_id",      "INTEGER"),
+    ("voucher_lines", "cleared_date",                  "TEXT"),
+    ("voucher_lines", "bank_statement_line_id",        "INTEGER"),
+    ("voucher_lines", "cleared_by_user_id",            "INTEGER"),
+    ("voucher_lines", "party_cleared_date",            "TEXT"),
+    ("voucher_lines", "ledger_statement_line_id",      "INTEGER"),
+    ("voucher_lines", "party_cleared_by_user_id",      "INTEGER"),
 ]
 
 
@@ -257,6 +320,10 @@ def _apply_additive_columns(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_vlines_cleared "
         "ON voucher_lines(ledger_id, cleared_date)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vlines_party_cleared "
+        "ON voucher_lines(ledger_id, party_cleared_date)"
     )
 
 
