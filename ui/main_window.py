@@ -9,13 +9,13 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QFrame, QStackedWidget, QStatusBar,
     QSizePolicy, QMessageBox, QSplitter, QScrollArea
 )
-from PyQt6.QtCore  import Qt, QTimer, pyqtSignal, QSize
-from PyQt6.QtGui   import QFont, QIcon, QKeySequence, QShortcut
+from PySide6.QtCore  import Qt, QTimer, Signal, QSize
+from PySide6.QtGui   import QFont, QIcon, QKeySequence, QShortcut
 
 from ui.theme              import THEME, get_stylesheet
 from ui.widgets            import CalculatorWidget

@@ -8,12 +8,12 @@ Hosts:
 from __future__ import annotations
 
 import json
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QFrame,
 )
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from ui.theme import THEME
 

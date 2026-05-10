@@ -2,13 +2,13 @@
 License page — clean rewrite with proper spacing
 """
 import webbrowser
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit,
     QFrame, QScrollArea, QMessageBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QFont
 
 from ui.theme import THEME
 from ui.widgets import make_separator
@@ -21,7 +21,7 @@ UPGRADE_URL = "https://aiccounting.in/pricing"
 
 
 class ValidateThread(QThread):
-    finished = pyqtSignal(bool, str)
+    finished = Signal(bool, str)
 
     def __init__(self, mgr, key):
         super().__init__()
@@ -57,7 +57,7 @@ def divider() -> QFrame:
 
 class LicensePage(QWidget):
 
-    plan_changed = pyqtSignal(str)
+    plan_changed = Signal(str)
 
     def __init__(self, license_mgr: LicenseManager, parent=None):
         super().__init__(parent)
@@ -582,7 +582,7 @@ class LicensePage(QWidget):
             }}
         """)
 
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         def _set_bar():
             total_w = self._bar_bg.width()
             fill_w  = max(0, int(total_w * fill_pct))

@@ -6,14 +6,14 @@ import json
 import os
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QFrame, QFileDialog,
     QProgressBar, QComboBox, QLineEdit, QHeaderView,
     QAbstractItemView, QMessageBox, QCheckBox,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui  import QColor, QFont
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui  import QColor, QFont
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label
@@ -54,9 +54,9 @@ def _save_cfg(data: dict):
 # ── Background worker ─────────────────────────────────────────────────────────
 
 class ProcessThread(QThread):
-    progress = pyqtSignal(str)
-    finished = pyqtSignal(list, object)   # vouchers, ExtractionResult
-    error    = pyqtSignal(str)
+    progress = Signal(str)
+    finished = Signal(list, object)   # vouchers, ExtractionResult
+    error    = Signal(str)
 
     def __init__(self, filepath, doc_type, api_key, ledger_names, company_name):
         super().__init__()
@@ -107,7 +107,7 @@ class ProcessThread(QThread):
 # ── Drop zone widget ──────────────────────────────────────────────────────────
 
 class DropZone(QFrame):
-    file_dropped = pyqtSignal(str)
+    file_dropped = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QFrame, QDateEdit, QLineEdit,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QFormLayout, QInputDialog, QPlainTextEdit, QButtonGroup,
     QRadioButton,
 )
-from PyQt6.QtCore import Qt, QDate, pyqtSignal, QThread
+from PySide6.QtCore import Qt, QDate, Signal, QThread
 
 from ui.theme import THEME
 from ui.widgets import FilteredLedgerSearchEdit
@@ -33,10 +33,10 @@ from core.voucher_engine import VoucherDraft, VoucherLine
 # ── Background worker ───────────────────────────────────────────────────────
 
 class _ImportThread(QThread):
-    progress     = pyqtSignal(str)
-    finished     = pyqtSignal(int, object)
-    local_failed = pyqtSignal(str)
-    error        = pyqtSignal(str)
+    progress     = Signal(str)
+    finished     = Signal(int, object)
+    local_failed = Signal(str)
+    error        = Signal(str)
 
     def __init__(self, reconciler, ledger_id, file_path,
                  sign_mode, period_from, period_to):

@@ -7,16 +7,16 @@ Shared Widgets
   - FieldLabel        : styled label with optional required star
   - StatusPill        : coloured badge (Dr / Cr / voucher type)
 """
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLineEdit, QPushButton, QLabel, QCompleter, QComboBox,
     QFrame, QSizePolicy, QFormLayout, QApplication, QMessageBox,
     QDoubleSpinBox
 )
-from PyQt6.QtCore import (
-    Qt, QStringListModel, pyqtSignal, QTimer, QEvent, QPoint
+from PySide6.QtCore import (
+    Qt, QStringListModel, Signal, QTimer, QEvent, QPoint
 )
-from PyQt6.QtGui import QFont, QKeySequence, QShortcut, QColor, QPalette
+from PySide6.QtGui import QFont, QKeySequence, QShortcut, QColor, QPalette
 
 from ui.theme import THEME
 
@@ -42,7 +42,7 @@ def make_separator() -> QFrame:
 class AmountEdit(QDoubleSpinBox):
     """Numeric spinbox formatted as Indian currency ₹1,23,456.78"""
 
-    focused = pyqtSignal(object)  # emits self when this field receives focus
+    focused = Signal(object)  # emits self when this field receives focus
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -97,7 +97,7 @@ class CalculatorWidget(QDialog):
     Has a "Paste to field" button that sends the result
     to the last focused AmountEdit.
     """
-    result_ready = pyqtSignal(float)   # emitted when user hits Paste
+    result_ready = Signal(float)   # emitted when user hits Paste
 
     def __init__(self, parent=None):
         super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
@@ -315,8 +315,8 @@ class QuickAddLedgerDialog(QDialog):
     - F3 / pencil button on a ledger search → edit mode (existing_ledger_id
       set, fields pre-populated, save calls update_ledger).
     """
-    ledger_created = pyqtSignal(int, str)   # id, name (create mode)
-    ledger_updated = pyqtSignal(int, str)   # id, name (edit mode)
+    ledger_created = Signal(int, str)   # id, name (create mode)
+    ledger_updated = Signal(int, str)   # id, name (edit mode)
 
     def __init__(self, tree, initial_name: str = "", parent=None,
                  allowed_group_ids=None, existing_ledger_id: int | None = None):
@@ -606,8 +606,8 @@ class LedgerSearchEdit(QWidget):
     Alt+C  → open calculator
     Emits ledger_selected(id, name) when a match is chosen.
     """
-    ledger_selected = pyqtSignal(int, str, dict)   # id, name, full ledger dict
-    add_requested   = pyqtSignal(str)              # user wants to create ledger
+    ledger_selected = Signal(int, str, dict)   # id, name, full ledger dict
+    add_requested   = Signal(str)              # user wants to create ledger
 
     def __init__(self, tree, calculator: CalculatorWidget,
                  placeholder="Type ledger name…", parent=None):
@@ -782,7 +782,7 @@ class FilteredLedgerSearchEdit(QWidget):
     Ledger search restricted to a pre-filtered subset of ledgers.
     F2 opens QuickAddLedgerDialog restricted to allowed groups only.
     """
-    ledger_selected = pyqtSignal(int, str, dict)
+    ledger_selected = Signal(int, str, dict)
 
     def __init__(self, tree, calculator,
                  ledger_list: list,
@@ -944,7 +944,7 @@ class FilteredLedgerSearchEdit(QWidget):
 
 class VoucherLineRow(QWidget):
     """One journal line: ledger | single amount | Dr/Cr toggle | narration | delete"""
-    delete_requested = pyqtSignal(object)
+    delete_requested = Signal(object)
 
     def __init__(self, tree, calculator, row_num: int, parent=None):
         super().__init__(parent)

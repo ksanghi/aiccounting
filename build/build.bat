@@ -29,7 +29,7 @@ echo.
 
 python -m nuitka ^
     --standalone ^
-    --enable-plugin=pyqt6 ^
+    --enable-plugin=pyside6 ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=ai ^

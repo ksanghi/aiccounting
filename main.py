@@ -5,7 +5,7 @@ Double-click this file or run:
     python main.py
 
 Requirements:
-    pip install pyqt6
+    pip install -r requirements.txt
 """
 import sys
 import os
@@ -14,13 +14,13 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QFormLayout, QFrame,
     QDoubleSpinBox, QMessageBox
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui  import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui  import QFont
 
 from core.models        import Database
 from core.account_tree  import AccountTree

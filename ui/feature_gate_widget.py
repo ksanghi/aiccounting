@@ -1,10 +1,10 @@
 """
 Feature gate widget — shows upgrade prompt when user tries to access a locked feature.
 """
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PySide6.QtCore import Qt, Signal
 
 from ui.theme import THEME
 from core.license_manager import PLAN_PRICES, PLAN_FEATURES
@@ -15,7 +15,7 @@ class FeatureGateWidget(QWidget):
 
     # Emitted when the user clicks "Upgrade". MainWindow listens and switches
     # to the in-app License page.
-    upgrade_requested = pyqtSignal()
+    upgrade_requested = Signal()
 
     def __init__(self, feature: str, required_plan: str, current_plan: str,
                  feature_label: str = "", parent=None):

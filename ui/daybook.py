@@ -2,13 +2,13 @@
 Day Book panel — lists all vouchers with filter
 Ledger Balance panel — searchable ledger summary
 """
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox,
     QDateEdit, QFrame, QHeaderView, QAbstractItemView, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QDate, pyqtSignal
-from PyQt6.QtGui  import QColor, QFont
+from PySide6.QtCore import Qt, QDate, Signal
+from PySide6.QtGui  import QColor, QFont
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, make_separator
@@ -164,6 +164,7 @@ class LedgerBalancePage(QWidget):
         self.refresh()
 
     def _build_ui(self):
+        self._all_data = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 0, 24, 24)
         layout.setSpacing(8)

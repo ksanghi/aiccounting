@@ -6,32 +6,30 @@ license, plan, OS info auto-populated.
 import platform
 import webbrowser
 import urllib.parse
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit,
     QLineEdit, QFrame,
 )
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from ui.theme import THEME
 from core.license_manager import LicenseManager
 
 # Replace with your real Google Form URL after creating at forms.google.com
 FORM_BASE_URL = (
-    "https://docs.google.com/forms/d/e/"
-    "PLACEHOLDER_FORM_ID/viewform"
+    "https://docs.google.com/forms/d/e/1FAIpQLSfvdc_MV65NF_2a25UN7wlEvOfS8ojbE4Efm4aJK-G2ZKHC1g/viewform"
 )
 
 # Replace with real entry IDs from your form's pre-filled link
-ENTRY_TYPE        = "entry.1000001"
-ENTRY_SUBJECT     = "entry.1000002"
-ENTRY_DESCRIPTION = "entry.1000003"
-ENTRY_STEPS       = "entry.1000004"
-ENTRY_LICENSE     = "entry.1000005"
-ENTRY_PLAN        = "entry.1000006"
-ENTRY_VERSION     = "entry.1000007"
-ENTRY_OS          = "entry.1000008"
-
+ENTRY_TYPE        = "entry.984541397=Feature+Request"
+ENTRY_SUBJECT     = "entry.128865362"
+ENTRY_DESCRIPTION = "entry.140912316"
+ENTRY_STEPS       = "entry.1697098567"
+ENTRY_LICENSE     = "entry.978684963"
+ENTRY_PLAN        = "entry.1634516875"
+ENTRY_VERSION     = "entry.523822359"
+ENTRY_OS          = "entry.700692895"
 APP_VERSION = "1.0.0"
 
 

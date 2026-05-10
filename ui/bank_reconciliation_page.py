@@ -11,14 +11,14 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QFrame, QDateEdit, QComboBox, QLineEdit,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QTabWidget, QSizePolicy, QDialog,
     QFormLayout, QInputDialog, QMenu, QPlainTextEdit,
 )
-from PyQt6.QtCore import Qt, QDate, pyqtSignal, QThread
+from PySide6.QtCore import Qt, QDate, Signal, QThread
 
 from ui.theme   import THEME
 from ui.widgets import FilteredLedgerSearchEdit, AmountEdit
@@ -41,14 +41,14 @@ class _ImportThread(QThread):
     the specific exception types as dedicated signals so the UI can show
     the right dialog and re-fire with adjusted flags.
     """
-    progress           = pyqtSignal(str)
-    finished           = pyqtSignal(int, object)         # statement_id, AutoMatchResult
-    local_failed       = pyqtSignal(str)                 # error message
-    account_mismatch   = pyqtSignal(str, str)            # ledger_acct, file_acct
-    account_unset      = pyqtSignal(str)                 # file_acct
-    bank_name_mismatch = pyqtSignal(str, str)            # ledger_name, file_bank_name
-    unverified         = pyqtSignal(str)                 # ledger_name
-    error              = pyqtSignal(str)                 # generic fallback
+    progress           = Signal(str)
+    finished           = Signal(int, object)         # statement_id, AutoMatchResult
+    local_failed       = Signal(str)                 # error message
+    account_mismatch   = Signal(str, str)            # ledger_acct, file_acct
+    account_unset      = Signal(str)                 # file_acct
+    bank_name_mismatch = Signal(str, str)            # ledger_name, file_bank_name
+    unverified         = Signal(str)                 # ledger_name
+    error              = Signal(str)                 # generic fallback
 
     def __init__(
         self,
@@ -115,7 +115,7 @@ class _CreateVoucherDialog(QDialog):
     Lightweight modal for creating a single PAYMENT or RECEIPT voucher
     from an unmatched statement line.
     """
-    posted = pyqtSignal(int, object)   # statement_line_id, PostedVoucher
+    posted = Signal(int, object)   # statement_line_id, PostedVoucher
 
     def __init__(self, reconciler: BankReconciler, tree,
                  bank_ledger_id: int, bank_ledger_name: str,
@@ -248,7 +248,7 @@ class _CreateVoucherDialog(QDialog):
 # ── "Find candidate" picker ──────────────────────────────────────────────────
 
 class _FindCandidateDialog(QDialog):
-    picked = pyqtSignal(int)   # voucher_line_id
+    picked = Signal(int)   # voucher_line_id
 
     def __init__(self, candidates: list[dict], parent=None):
         super().__init__(parent)

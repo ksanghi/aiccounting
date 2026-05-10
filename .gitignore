@@ -12,6 +12,9 @@ build/
 build/output/
 build/dist/
 
+# Nuitka leaves a crash report if the build is killed / interrupted.
+nuitka-crash-report.xml
+
 # Database files — NEVER commit company data
 data/companies/*.db
 data/companies/*.db-wal

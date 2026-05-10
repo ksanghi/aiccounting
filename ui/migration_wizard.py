@@ -18,13 +18,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QFrame, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QPlainTextEdit,
     QRadioButton, QButtonGroup, QFileDialog, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PySide6.QtCore import Qt, Signal
 
 from ui.theme import THEME
 from core.migration import (
@@ -44,7 +44,7 @@ _SOURCES = [
 
 class MigrationWizard(QDialog):
 
-    completed = pyqtSignal(int)   # run_id on successful apply
+    completed = Signal(int)   # run_id on successful apply
 
     def __init__(self, db, company_id: int, tree, parent=None):
         super().__init__(parent)

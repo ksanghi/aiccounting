@@ -7,14 +7,14 @@ All 8 voucher types, with:
   - Alt+C      : calculator, result pastes into focused amount field
   - Live balance display: shows Dr total, Cr total, diff in real time
 """
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QDateEdit, QTextEdit,
     QScrollArea, QFrame, QSizePolicy, QMessageBox, QStackedWidget,
     QSpacerItem
 )
-from PyQt6.QtCore import Qt, QDate, pyqtSignal, QTimer
-from PyQt6.QtGui  import QFont, QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QDate, Signal, QTimer
+from PySide6.QtGui  import QFont, QShortcut, QKeySequence
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import (
@@ -38,7 +38,7 @@ GST_RATES = [0, 5, 12, 18, 28]
 
 
 class VoucherEntryPage(QWidget):
-    voucher_posted = pyqtSignal(str, str, float)  # type, number, amount
+    voucher_posted = Signal(str, str, float)  # type, number, amount
 
     def __init__(self, engine, tree, calculator: CalculatorWidget, parent=None):
         super().__init__(parent)
@@ -988,7 +988,7 @@ class VoucherEntryPage(QWidget):
         Re-apply self._create_prefill after a type switch in create-mode.
         Idempotent — safe to call from _select_type's tail.
         """
-        from PyQt6.QtCore import QDate
+        from PySide6.QtCore import QDate
         p = self._create_prefill
         if not p:
             return
@@ -1093,7 +1093,7 @@ class VoucherEntryPage(QWidget):
         self._journal_rows.clear()
 
         # Header fields
-        from PyQt6.QtCore import QDate
+        from PySide6.QtCore import QDate
         self.date_edit.setDate(QDate.fromString(v["voucher_date"], "yyyy-MM-dd"))
         self.narration_edit.setText(v.get("narration") or "")
         self.reference_edit.setText(v.get("reference") or "")
@@ -1178,8 +1178,8 @@ class VoucherEntryPage(QWidget):
         self._update_balance_smart()
 
     def _wire_shortcuts(self):
-        from PyQt6.QtGui import QShortcut, QKeySequence
-        from PyQt6.QtCore import Qt
+        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtCore import Qt
         sc_post = QShortcut(QKeySequence("Ctrl+S"), self)
         sc_post.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         sc_post.activated.connect(self._post)

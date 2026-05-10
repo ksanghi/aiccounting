@@ -1,14 +1,14 @@
 """
 Reports pages — UI for all reports with Excel and PDF export.
 """
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QDateEdit, QFrame,
     QHeaderView, QAbstractItemView, QMessageBox, QFileDialog,
     QScrollArea, QSplitter, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui  import QColor
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label
@@ -34,7 +34,7 @@ def _item(text: str, right: bool = False, colour: str = None,
     if colour:
         it.setForeground(QColor(colour))
     if bold:
-        from PyQt6.QtGui import QFont
+        from PySide6.QtGui import QFont
         f = QFont()
         f.setBold(True)
         it.setFont(f)

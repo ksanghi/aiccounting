@@ -5,13 +5,13 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QTableWidget, QTableWidgetItem, QFileDialog,
     QMessageBox, QHeaderView, QSizePolicy,
 )
-from PyQt6.QtCore  import Qt, QThread, pyqtSignal
-from PyQt6.QtGui   import QFont
+from PySide6.QtCore  import Qt, QThread, Signal
+from PySide6.QtGui   import QFont
 
 from ui.theme import THEME
 
@@ -27,8 +27,8 @@ def _fmt_size(n: int) -> str:
 # ── Worker thread ─────────────────────────────────────────────────────────────
 
 class BackupThread(QThread):
-    finished = pyqtSignal(str)   # backup path
-    error    = pyqtSignal(str)
+    finished = Signal(str)   # backup path
+    error    = Signal(str)
 
     def __init__(self, mgr, dest_dir: str = ""):
         super().__init__()
