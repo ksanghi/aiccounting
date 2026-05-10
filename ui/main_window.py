@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QFrame, QStackedWidget, QStatusBar,
-    QSizePolicy, QMessageBox, QSplitter
+    QSizePolicy, QMessageBox, QSplitter, QScrollArea
 )
 from PyQt6.QtCore  import Qt, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui   import QFont, QIcon, QKeySequence, QShortcut
@@ -148,18 +148,40 @@ class MainWindow(QMainWindow):
         logo_layout.addWidget(co_lbl)
         sidebar_layout.addWidget(logo_box)
 
-        # Nav section header
+        # Scrollable nav container — with many section + button entries the
+        # sidebar overflows the window, and Qt was squeezing the unfixed
+        # section labels to zero. A QScrollArea keeps the calc button at the
+        # bottom pinned and lets the nav content scroll if it doesn't fit.
+        self._nav_scroll = QScrollArea()
+        self._nav_scroll.setWidgetResizable(True)
+        self._nav_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._nav_scroll.setStyleSheet(
+            f"QScrollArea {{ background: {THEME['bg_sidebar']}; border: none; }}"
+        )
+
+        nav_host = QWidget()
+        nav_host.setStyleSheet(f"background: {THEME['bg_sidebar']};")
+        nav_outer = QVBoxLayout(nav_host)
+        nav_outer.setContentsMargins(0, 0, 0, 0)
+        nav_outer.setSpacing(0)
+
         nav_section = QLabel("TRANSACTIONS")
         nav_section.setObjectName("nav_section")
-        sidebar_layout.addWidget(nav_section)
+        nav_section.setMinimumHeight(34)
+        nav_outer.addWidget(nav_section)
 
         # Nav buttons container (populated by register_page)
         self._nav_container = QVBoxLayout()
         self._nav_container.setSpacing(0)
         self._nav_container.setContentsMargins(0, 0, 0, 0)
-        sidebar_layout.addLayout(self._nav_container)
+        nav_outer.addLayout(self._nav_container)
+        nav_outer.addStretch()
 
-        sidebar_layout.addStretch()
+        self._nav_scroll.setWidget(nav_host)
+        sidebar_layout.addWidget(self._nav_scroll, 1)
 
         # Calc button at bottom
         calc_btn = QPushButton("  ⌨   Calculator   (Alt+C)")
@@ -213,6 +235,7 @@ class MainWindow(QMainWindow):
         if section_above:
             sec = QLabel(section_above)
             sec.setObjectName("nav_section")
+            sec.setMinimumHeight(34)
             self._nav_container.addWidget(sec)
 
         btn = NavButton(icon, label, self._sidebar)
@@ -287,6 +310,26 @@ class MainWindow(QMainWindow):
             self.register_page(
                 "Reports", "📊",
                 self._locked_page("reports", "STANDARD", "Financial Reports"),
+            )
+
+        # ── Bank Reconciliation — STANDARD+ ──
+        if lmgr.has_feature("bank_reconciliation"):
+            from ui.bank_reconciliation_page import BankReconciliationPage
+            self.register_page(
+                "Bank Reconciliation", "🏦",
+                BankReconciliationPage(
+                    self.db, self.company_id, self.tree,
+                    self.engine, self.calculator, lmgr,
+                ),
+                section_above="BANKING",
+            )
+        else:
+            self.register_page(
+                "Bank Reconciliation", "🏦",
+                self._locked_page(
+                    "bank_reconciliation", "STANDARD", "Bank Reconciliation"
+                ),
+                section_above="BANKING",
             )
 
         # ── GST — PRO+ ──

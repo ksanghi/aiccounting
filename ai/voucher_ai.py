@@ -227,6 +227,98 @@ DOCUMENT CONTENT:
                 f"Response preview: {raw[:500]}"
             )
 
+    def extract_bank_statement_lines(
+        self,
+        document_text: str,
+        bank_ledger_name: str,
+        ledger_names: list,
+        company_name: str = "",
+    ) -> dict:
+        """
+        Wrapper around extract_vouchers for bank reconciliation.
+        Returns reconciliation-friendly statement lines instead of vouchers
+        ready to post — the reconciler decides what to do with them.
+
+        Returns:
+            {
+                "period_from": "YYYY-MM-DD" | None,
+                "period_to":   "YYYY-MM-DD" | None,
+                "statement_opening": float | None,    # v1: always None
+                "statement_closing": float | None,    # v1: always None
+                "lines": [
+                    {
+                        "txn_date": "YYYY-MM-DD",
+                        "amount":   123.45,           # always positive
+                        "sign":     "DR" | "CR",      # bank's POV: DR=out, CR=in
+                        "narration": "...",
+                        "reference": "...",
+                        "raw_extracted": {...},       # original dict for audit
+                    },
+                    ...
+                ],
+            }
+        """
+        vouchers = self.extract_vouchers(
+            document_text,
+            ledger_names,
+            document_type="bank_statement",
+            company_name=company_name,
+        )
+
+        bank_lower = (bank_ledger_name or "").lower().strip()
+        lines = []
+        for v in vouchers:
+            sign = self._infer_sign(v, bank_lower)
+            if sign is None:
+                # Could not place the bank ledger on either side — store anyway
+                # as raw, the user will see it as UNMATCHED in the review tab.
+                sign = "DR" if v.get("voucher_type") == "PAYMENT" else "CR"
+            lines.append({
+                "txn_date":      v["date"],
+                "amount":        v["amount"],
+                "sign":          sign,
+                "narration":     v.get("narration", ""),
+                "reference":     v.get("reference", ""),
+                "raw_extracted": v,
+            })
+
+        dates = [l["txn_date"] for l in lines if l.get("txn_date")]
+        return {
+            "period_from":       min(dates) if dates else None,
+            "period_to":         max(dates) if dates else None,
+            "statement_opening": None,
+            "statement_closing": None,
+            "lines":             lines,
+        }
+
+    @staticmethod
+    def _infer_sign(voucher: dict, bank_ledger_lower: str) -> str | None:
+        """
+        Bank-side sign convention:
+            DR = money OUT of the bank (statement debit)
+            CR = money INTO the bank (statement credit)
+        """
+        vt = voucher.get("voucher_type")
+        dr = (voucher.get("dr_ledger") or "").lower().strip()
+        cr = (voucher.get("cr_ledger") or "").lower().strip()
+        if vt == "PAYMENT":
+            return "DR"
+        if vt == "RECEIPT":
+            return "CR"
+        if vt == "CONTRA":
+            # If bank is on the Dr side, it received money → CR (credit) on stmt.
+            if bank_ledger_lower and bank_ledger_lower in dr:
+                return "CR"
+            if bank_ledger_lower and bank_ledger_lower in cr:
+                return "DR"
+            return None
+        # JOURNAL or anything else: place by which side mentions the bank.
+        if bank_ledger_lower and bank_ledger_lower in dr:
+            return "CR"
+        if bank_ledger_lower and bank_ledger_lower in cr:
+            return "DR"
+        return None
+
     def suggest_ledger(
         self,
         narration: str,

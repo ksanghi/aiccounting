@@ -1,48 +1,51 @@
 """
-Theme — warm dark professional palette with higher contrast and larger fonts.
+Theme — White + Jewel Tones (Stripe), violet accent on near-white surfaces.
 All colours, fonts, and spacing defined here.
 Change THEME dict to restyle the entire app.
 """
 
 THEME = {
-    # Backgrounds — warm dark, not cold grey
-    "bg_sidebar":    "#0D1117",
-    "bg_main":       "#161B22",
-    "bg_card":       "#1C2333",
-    "bg_input":      "#21283A",
-    "bg_hover":      "#273044",
-    "bg_selected":   "#1A3A5C",
-    "bg_dialog":     "#1C2333",
+    # Backgrounds — Stripe-style near-white
+    "bg_sidebar":      "#FAFBFF",
+    "bg_main":         "#FFFFFF",
+    "bg_card":         "#FFFFFF",
+    "bg_input":        "#F4F6FB",
+    "bg_hover":        "#E8EDFA",
+    "bg_selected":     "#DBE3F7",
+    "bg_dialog":       "#FFFFFF",
 
-    # Accents — warmer blue with teal complement
-    "accent":        "#58A6FF",
-    "accent_hover":  "#79B8FF",
-    "accent_dim":    "#1A3A5C",
-    "success":       "#3FB950",
-    "warning":       "#D29922",
-    "danger":        "#F85149",
-    "danger_dim":    "#4A1515",
+    # Accents — Stripe violet with jewel-tone supports
+    "accent":          "#635BFF",
+    "accent_hover":    "#8077FF",
+    "accent_dim":      "#E8E6FF",
+    "success":         "#00D4A0",
+    "warning":         "#FFAB00",
+    "danger":          "#FF4757",
+    "danger_dim":      "#FFE4E6",
 
-    # Text — higher contrast
-    "text_primary":  "#F0F6FC",
-    "text_secondary":"#9ECAFF",
-    "text_dim":      "#484F58",
-    "text_accent":   "#58A6FF",
+    # Text — deep navy, calm slate, soft slate-grey
+    "text_primary":    "#0A2540",
+    "text_secondary":  "#425466",
+    "text_dim":        "#8898AA",
+    "text_accent":     "#635BFF",
 
-    # Borders — subtle but visible
-    "border":        "#30363D",
-    "border_focus":  "#58A6FF",
-    "border_error":  "#F85149",
+    # Borders — barely-there cool grey
+    "border":          "#E3E8EE",
+    "border_focus":    "#635BFF",
+    "border_error":    "#FF4757",
 
-    # Voucher type colours — more vivid
-    "payment":       "#FF7B72",
-    "receipt":       "#3FB950",
-    "contra":        "#D2A8FF",
-    "journal":       "#E3B341",
-    "sales":         "#58A6FF",
-    "purchase":      "#FFA657",
-    "debit_note":    "#FF7B72",
-    "credit_note":   "#39D353",
+    # Foreground for the primary accent button (white on violet)
+    "btn_primary_text":"#FFFFFF",
+
+    # Voucher type colours — jewel tones from the Stripe preview
+    "payment":         "#FF4757",
+    "receipt":         "#00D4A0",
+    "contra":          "#635BFF",
+    "journal":         "#FFAB00",
+    "sales":           "#0096FF",
+    "purchase":        "#FF7A45",
+    "debit_note":      "#FF4757",
+    "credit_note":     "#00D4A0",
 }
 
 FONT = {
@@ -110,7 +113,7 @@ QMainWindow {{
 }}
 
 #nav_section {{
-    color: {t['text_dim']};
+    color: {t['text_secondary']};
     font-size: 10px;
     letter-spacing: 1.5px;
     padding: 16px 22px 5px 22px;
@@ -143,20 +146,22 @@ QMainWindow {{
 }}
 
 /* ── Inputs ──────────────────────────────── */
+/* NOTE: do NOT set min-height here. Forms call setFixedHeight(34) on
+   inputs; a CSS min-height larger than that squeezes the content area
+   and clips text (especially on :focus when the border grows). */
 QLineEdit, QComboBox, QDateEdit, QTextEdit,
 QSpinBox, QDoubleSpinBox {{
     background-color: {t['bg_input']};
     border: 1px solid {t['border']};
     border-radius: 7px;
-    padding: 7px 12px;
+    padding: 4px 10px;
     color: {t['text_primary']};
     font-size: 12px;
-    min-height: 34px;
     selection-background-color: {t['accent_dim']};
 }}
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus,
 QTextEdit:focus, QDoubleSpinBox:focus {{
-    border: 1.5px solid {t['border_focus']};
+    border: 1px solid {t['border_focus']};
     background-color: {t['bg_hover']};
 }}
 QLineEdit[error="true"] {{
@@ -217,7 +222,7 @@ QPushButton:pressed {{
     border: none;
     border-radius: 7px;
     padding: 9px 22px;
-    color: #0D1117;
+    color: {t['btn_primary_text']};
     font-size: 12px;
     font-weight: bold;
     min-height: 34px;

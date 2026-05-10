@@ -220,6 +220,67 @@ class AccountTree:
         self.db.commit()
         return cur.lastrowid
 
+    def get_ledger(self, ledger_id: int) -> dict | None:
+        """Return a ledger row as a dict (with group_name resolved), or None."""
+        row = self.db.execute(
+            """SELECT l.*, g.name AS group_name, g.nature AS group_nature
+                 FROM ledgers l
+                 JOIN account_groups g ON l.group_id = g.id
+                WHERE l.id=? AND l.company_id=?""",
+            (ledger_id, self.company_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_ledger(self, ledger_id: int, **kwargs) -> None:
+        """
+        Update editable fields on an existing ledger. `group_name` is
+        translated to group_id automatically. Unknown / unsupplied keys
+        are left untouched. Raises ValueError if the ledger doesn't exist
+        or the named group can't be found.
+        """
+        existing = self.db.execute(
+            "SELECT id, is_system FROM ledgers WHERE id=? AND company_id=?",
+            (ledger_id, self.company_id),
+        ).fetchone()
+        if not existing:
+            raise ValueError(f"Ledger {ledger_id} not found")
+
+        # Translate group_name → group_id if supplied
+        if "group_name" in kwargs:
+            row = self.db.execute(
+                "SELECT id FROM account_groups WHERE company_id=? AND name=?",
+                (self.company_id, kwargs["group_name"]),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Group '{kwargs['group_name']}' not found")
+            kwargs["group_id"] = row["id"]
+            kwargs.pop("group_name")
+
+        # Whitelist editable columns to avoid arbitrary SQL injection via key
+        editable = {
+            "name", "group_id", "opening_balance", "opening_type",
+            "gstin", "pan", "state_code",
+            "is_tds_applicable", "tds_section", "tds_rate",
+            "bank_name", "account_number", "ifsc",
+            "is_bank", "is_cash", "active",
+        }
+        sets, params = [], []
+        for k, v in kwargs.items():
+            if k not in editable:
+                continue
+            if k in ("is_tds_applicable", "is_bank", "is_cash", "active"):
+                v = int(bool(v))
+            sets.append(f"{k}=?")
+            params.append(v)
+        if not sets:
+            return
+        params.append(ledger_id)
+        self.db.execute(
+            f"UPDATE ledgers SET {', '.join(sets)} WHERE id=?",
+            params,
+        )
+        self.db.commit()
+
     def get_income_ledgers(self) -> list[dict]:
         rows = self.db.execute(
             """SELECT l.id, l.name, l.is_cash,

@@ -309,20 +309,38 @@ class CalculatorWidget(QDialog):
 
 class QuickAddLedgerDialog(QDialog):
     """
-    Opened with F2 during ledger search.
-    Creates a new ledger and returns its id + name.
+    Add or edit a ledger account.
+
+    - F2 from a ledger search → create mode (existing_ledger_id=None).
+    - F3 / pencil button on a ledger search → edit mode (existing_ledger_id
+      set, fields pre-populated, save calls update_ledger).
     """
-    ledger_created = pyqtSignal(int, str)   # id, name
+    ledger_created = pyqtSignal(int, str)   # id, name (create mode)
+    ledger_updated = pyqtSignal(int, str)   # id, name (edit mode)
 
     def __init__(self, tree, initial_name: str = "", parent=None,
-                 allowed_group_ids=None):
+                 allowed_group_ids=None, existing_ledger_id: int | None = None):
         super().__init__(parent)
         self.tree = tree
         self._allowed_group_ids = allowed_group_ids or []
-        self.setWindowTitle("New Ledger")
-        self.setMinimumWidth(420)
+        self._existing_id = existing_ledger_id
+        self._existing = (
+            tree.get_ledger(existing_ledger_id)
+            if existing_ledger_id else None
+        )
+        self.setWindowTitle(
+            "Edit Ledger" if self._existing else "New Ledger"
+        )
+        self.setMinimumWidth(440)
         self.setModal(True)
-        self._build_ui(initial_name)
+        # In edit mode, prefill name from the existing record (overrides any
+        # initial_name passed in).
+        prefill_name = (
+            self._existing["name"] if self._existing else initial_name
+        )
+        self._build_ui(prefill_name)
+        if self._existing:
+            self._populate_from_existing()
 
     def _build_ui(self, initial_name: str):
         layout = QVBoxLayout(self)
@@ -330,7 +348,10 @@ class QuickAddLedgerDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
 
         # Header
-        hdr = QLabel("+ Add Ledger Account")
+        is_edit = self._existing is not None
+        hdr = QLabel(
+            "✎ Edit Ledger Account" if is_edit else "+ Add Ledger Account"
+        )
         hdr.setStyleSheet(f"font-size:14px; font-weight:bold; color:{THEME['accent']};")
         layout.addWidget(hdr)
         layout.addWidget(make_separator())
@@ -368,6 +389,26 @@ class QuickAddLedgerDialog(QDialog):
             if idx >= 0:
                 self.group_combo.setCurrentIndex(idx)
         form.addRow(make_label("Under Group", required=True), self.group_combo)
+
+        # Bank-only fields (Account No / IFSC / Bank Name) — visible only when
+        # the chosen group is a bank-style group. Show/hide on group change.
+        self.acct_edit = QLineEdit()
+        self.acct_edit.setPlaceholderText("e.g. 912010012345678")
+        self._acct_label = make_label("Account Number")
+        form.addRow(self._acct_label, self.acct_edit)
+
+        self.ifsc_edit = QLineEdit()
+        self.ifsc_edit.setPlaceholderText("e.g. HDFC0001234")
+        self._ifsc_label = make_label("IFSC")
+        form.addRow(self._ifsc_label, self.ifsc_edit)
+
+        self.bank_name_edit = QLineEdit()
+        self.bank_name_edit.setPlaceholderText("e.g. HDFC Bank")
+        self._bank_name_label = make_label("Bank Name")
+        form.addRow(self._bank_name_label, self.bank_name_edit)
+
+        self.group_combo.currentTextChanged.connect(self._on_group_changed)
+        self._on_group_changed(self.group_combo.currentText())
 
         # Opening balance
         self.ob_edit = AmountEdit()
@@ -419,7 +460,10 @@ class QuickAddLedgerDialog(QDialog):
         btn_row.addStretch()
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
-        save = QPushButton("Create Ledger")
+        save_label = (
+            "Update Ledger" if self._existing else "Create Ledger"
+        )
+        save = QPushButton(save_label)
         save.setObjectName("btn_primary")
         save.clicked.connect(self._save)
         btn_row.addWidget(cancel)
@@ -427,6 +471,61 @@ class QuickAddLedgerDialog(QDialog):
         layout.addLayout(btn_row)
 
         self.name_edit.setFocus()
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _is_bank_group(group_name: str) -> bool:
+        return "bank accounts" in (group_name or "").lower()
+
+    @staticmethod
+    def _is_cash_group(group_name: str) -> bool:
+        return "cash-in-hand" in (group_name or "").lower()
+
+    def _on_group_changed(self, group_name: str):
+        is_bank = self._is_bank_group(group_name)
+        for w in (
+            self._acct_label, self.acct_edit,
+            self._ifsc_label, self.ifsc_edit,
+            self._bank_name_label, self.bank_name_edit,
+        ):
+            w.setVisible(is_bank)
+
+    def _populate_from_existing(self):
+        e = self._existing
+        if not e:
+            return
+        # Group
+        idx = self.group_combo.findText(e.get("group_name") or "")
+        if idx >= 0:
+            self.group_combo.setCurrentIndex(idx)
+        # Opening balance + type
+        try:
+            self.ob_edit.setValue(float(e.get("opening_balance") or 0))
+        except Exception:
+            pass
+        ob_type = (e.get("opening_type") or "Dr").strip() or "Dr"
+        ot_idx = self.ob_type.findText(ob_type)
+        if ot_idx >= 0:
+            self.ob_type.setCurrentIndex(ot_idx)
+        # Tax fields
+        self.gstin_edit.setText(e.get("gstin") or "")
+        self.pan_edit.setText(e.get("pan") or "")
+        # TDS
+        section = e.get("tds_section")
+        if section and (e.get("is_tds_applicable") or 0):
+            for i in range(self.tds_combo.count()):
+                if self.tds_combo.itemData(i) == section:
+                    self.tds_combo.setCurrentIndex(i)
+                    break
+            try:
+                self.tds_rate.setValue(float(e.get("tds_rate") or 0))
+            except Exception:
+                pass
+        # Bank fields
+        self.acct_edit.setText(e.get("account_number") or "")
+        self.ifsc_edit.setText(e.get("ifsc") or "")
+        self.bank_name_edit.setText(e.get("bank_name") or "")
 
     def _on_gstin_change(self, text: str):
         """Auto-set group hint based on GSTIN state."""
@@ -447,24 +546,52 @@ class QuickAddLedgerDialog(QDialog):
             "opening_balance": self.ob_edit.value(),
             "opening_type":    self.ob_type.currentText(),
         }
-        group_lower = group.lower()
-        if "bank accounts" in group_lower:
+        if self._is_bank_group(group):
             kwargs["is_bank"] = True
-        elif "cash-in-hand" in group_lower:
+            kwargs["is_cash"] = False
+        elif self._is_cash_group(group):
             kwargs["is_cash"] = True
+            kwargs["is_bank"] = False
+        else:
+            kwargs["is_bank"] = False
+            kwargs["is_cash"] = False
         if self.gstin_edit.text().strip():
             kwargs["gstin"]      = self.gstin_edit.text().strip()
             kwargs["state_code"] = self.gstin_edit.text().strip()[:2]
+        else:
+            kwargs["gstin"] = None
+            kwargs["state_code"] = None
         if self.pan_edit.text().strip():
             kwargs["pan"] = self.pan_edit.text().strip()
+        else:
+            kwargs["pan"] = None
         if self.tds_combo.currentIndex() > 0:
             kwargs["is_tds_applicable"] = True
             kwargs["tds_section"]       = self.tds_combo.currentData()
             kwargs["tds_rate"]          = self.tds_rate.value()
+        else:
+            kwargs["is_tds_applicable"] = False
+            kwargs["tds_section"] = None
+            kwargs["tds_rate"] = None
+        # Bank fields — only meaningful when group is bank
+        if self._is_bank_group(group):
+            kwargs["account_number"] = self.acct_edit.text().strip() or None
+            kwargs["ifsc"]           = self.ifsc_edit.text().strip() or None
+            kwargs["bank_name"]      = self.bank_name_edit.text().strip() or None
+        else:
+            kwargs["account_number"] = None
+            kwargs["ifsc"] = None
+            kwargs["bank_name"] = None
 
         try:
-            lid = self.tree.add_ledger(name, group, **kwargs)
-            self.ledger_created.emit(lid, name)
+            if self._existing:
+                kwargs["name"]       = name
+                kwargs["group_name"] = group
+                self.tree.update_ledger(self._existing_id, **kwargs)
+                self.ledger_updated.emit(self._existing_id, name)
+            else:
+                lid = self.tree.add_ledger(name, group, **kwargs)
+                self.ledger_created.emit(lid, name)
             self.accept()
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
@@ -510,10 +637,44 @@ class LedgerSearchEdit(QWidget):
         # Inherit the global QLineEdit / :focus styles — gives a clean,
         # complete focus ring instead of a half-coloured merged border.
 
-        self._add_btn = QPushButton("F2")
-        self._add_btn.setFixedSize(38, 36)
-        self._add_btn.setToolTip("F2 — Create new ledger on the fly")
-        self._add_btn.setStyleSheet(f"""
+        self._add_btn = self._make_chip_btn(
+            "F2", "F2 — Create new ledger on the fly"
+        )
+        self._add_btn.clicked.connect(self._open_add_dialog)
+
+        self._edit_btn = self._make_chip_btn(
+            "F3", "F3 — Edit the selected ledger"
+        )
+        self._edit_btn.clicked.connect(self._open_edit_dialog)
+
+        layout.addWidget(self.search)
+        layout.addWidget(self._add_btn)
+        layout.addWidget(self._edit_btn)
+
+        # Completer
+        self._model = QStringListModel()
+        self._completer = QCompleter(self._model, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.setMaxVisibleItems(10)
+        self._completer.activated.connect(self._on_completion)
+        self.search.setCompleter(self._completer)
+
+        # Shortcuts
+        self._f2 = QShortcut(QKeySequence("F2"), self.search)
+        self._f2.activated.connect(self._open_add_dialog)
+        self._f3 = QShortcut(QKeySequence("F3"), self.search)
+        self._f3.activated.connect(self._open_edit_dialog)
+
+        self.search.textChanged.connect(self._on_text_changed)
+        self.reload_ledgers()
+
+    @staticmethod
+    def _make_chip_btn(label: str, tooltip: str) -> QPushButton:
+        b = QPushButton(label)
+        b.setFixedSize(38, 36)
+        b.setToolTip(tooltip)
+        b.setStyleSheet(f"""
             QPushButton {{
                 background: {THEME['bg_hover']};
                 border: 1px solid {THEME['border']};
@@ -530,26 +691,28 @@ class LedgerSearchEdit(QWidget):
                 border-color: {THEME['accent']};
             }}
         """)
-        self._add_btn.clicked.connect(self._open_add_dialog)
+        return b
 
-        layout.addWidget(self.search)
-        layout.addWidget(self._add_btn)
+    def _open_edit_dialog(self):
+        lid = self.selected_id
+        if not lid:
+            QMessageBox.information(
+                self, "No ledger selected",
+                "Pick a ledger from the list, then press F3 to edit it.",
+            )
+            return
+        dlg = QuickAddLedgerDialog(
+            self.tree, parent=self, existing_ledger_id=lid,
+        )
+        dlg.ledger_updated.connect(self._on_ledger_updated)
+        dlg.exec()
 
-        # Completer
-        self._model = QStringListModel()
-        self._completer = QCompleter(self._model, self)
-        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self._completer.setMaxVisibleItems(10)
-        self._completer.activated.connect(self._on_completion)
-        self.search.setCompleter(self._completer)
-
-        # Shortcuts
-        self._f2 = QShortcut(QKeySequence("F2"), self.search)
-        self._f2.activated.connect(self._open_add_dialog)
-
-        self.search.textChanged.connect(self._on_text_changed)
+    def _on_ledger_updated(self, lid: int, name: str):
         self.reload_ledgers()
+        self.search.setText(name)
+        self._selected_id = lid
+        ldg = self._ledger_map.get(name, {"id": lid, "name": name})
+        self.ledger_selected.emit(lid, name, ldg)
 
     def reload_ledgers(self):
         """Refresh from DB — call after a ledger is created."""
@@ -652,30 +815,19 @@ class FilteredLedgerSearchEdit(QWidget):
         )
         # Inherit the global QLineEdit / :focus styles for a clean focus ring.
 
-        add_btn = QPushButton("F2")
-        add_btn.setFixedSize(38, 36)
-        add_btn.setToolTip("F2 — Create new account")
-        add_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {THEME['bg_hover']};
-                border: 1px solid {THEME['border']};
-                border-radius: 7px;
-                color: {THEME['text_secondary']};
-                font-size: 10px;
-                font-weight: bold;
-                min-height: 0;
-                padding: 0;
-            }}
-            QPushButton:hover {{
-                background: {THEME['accent_dim']};
-                color: {THEME['accent']};
-                border-color: {THEME['accent']};
-            }}
-        """)
+        add_btn = LedgerSearchEdit._make_chip_btn(
+            "F2", "F2 — Create new account"
+        )
         add_btn.clicked.connect(self._open_add_dialog)
+
+        edit_btn = LedgerSearchEdit._make_chip_btn(
+            "F3", "F3 — Edit the selected account"
+        )
+        edit_btn.clicked.connect(self._open_edit_dialog)
 
         layout.addWidget(self.search)
         layout.addWidget(add_btn)
+        layout.addWidget(edit_btn)
 
         self._model = QStringListModel()
         self._completer = QCompleter(self._model, self)
@@ -687,6 +839,8 @@ class FilteredLedgerSearchEdit(QWidget):
 
         f2 = QShortcut(QKeySequence("F2"), self.search)
         f2.activated.connect(self._open_add_dialog)
+        f3 = QShortcut(QKeySequence("F3"), self.search)
+        f3.activated.connect(self._open_edit_dialog)
 
         self.search.textChanged.connect(
             lambda t: setattr(self, '_selected_id', None)
@@ -694,6 +848,36 @@ class FilteredLedgerSearchEdit(QWidget):
         )
 
         self.load_ledgers(ledger_list)
+
+    def _open_edit_dialog(self):
+        lid = self.selected_id
+        if not lid:
+            QMessageBox.information(
+                self, "No ledger selected",
+                "Pick an account from the list, then press F3 to edit it.",
+            )
+            return
+        dlg = QuickAddLedgerDialog(
+            self.tree, parent=self, existing_ledger_id=lid,
+        )
+        dlg.ledger_updated.connect(self._on_ledger_updated)
+        dlg.exec()
+
+    def _on_ledger_updated(self, lid: int, name: str):
+        # Refresh from the full ledger list, keeping the same allowed scope
+        try:
+            all_ledgers = self.tree.get_all_ledgers()
+            filtered = [
+                l for l in all_ledgers
+                if l["name"] in self._ledger_map or l["id"] == lid
+            ]
+            self.load_ledgers(filtered)
+        except Exception:
+            pass
+        self.search.setText(name)
+        self._selected_id = lid
+        ldg = self._ledger_map.get(name, {"id": lid, "name": name})
+        self.ledger_selected.emit(lid, name, ldg)
 
     def load_ledgers(self, ledger_list: list):
         self._ledger_map = {l["name"]: l for l in ledger_list}

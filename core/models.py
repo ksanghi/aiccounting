@@ -165,13 +165,99 @@ CREATE TABLE IF NOT EXISTS audit_log (
     timestamp   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ── Bank Reconciliation: imported statement headers ─────────────────
+CREATE TABLE IF NOT EXISTS bank_statements (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id           INTEGER NOT NULL REFERENCES companies(id),
+    bank_ledger_id       INTEGER NOT NULL REFERENCES ledgers(id),
+    file_name            TEXT NOT NULL,
+    file_hash            TEXT NOT NULL,                    -- sha256, dedup
+    period_from          TEXT NOT NULL,
+    period_to            TEXT NOT NULL,
+    statement_opening    REAL,
+    statement_closing    REAL,
+    import_method        TEXT NOT NULL,                    -- 'AI' | 'CSV'
+    imported_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    imported_by_user_id  INTEGER REFERENCES users(id),
+    raw_meta             TEXT,                             -- JSON
+    UNIQUE(company_id, bank_ledger_id, file_hash)
+);
+
+-- ── Bank Reconciliation: per-line staging rows ──────────────────────
+CREATE TABLE IF NOT EXISTS bank_statement_lines (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    statement_id             INTEGER NOT NULL REFERENCES bank_statements(id) ON DELETE CASCADE,
+    line_index               INTEGER NOT NULL,
+    txn_date                 TEXT NOT NULL,
+    amount                   REAL NOT NULL,                -- always positive
+    sign                     TEXT NOT NULL,                -- 'DR' (out) | 'CR' (in)
+    narration                TEXT,
+    reference                TEXT,
+    raw_extracted            TEXT,                         -- audit
+    match_status             TEXT NOT NULL DEFAULT 'UNMATCHED',
+                                                          -- UNMATCHED | AUTO_MATCHED |
+                                                          -- MANUAL_MATCHED | VOUCHER_CREATED |
+                                                          -- IGNORED | FLAGGED
+    matched_voucher_line_id  INTEGER REFERENCES voucher_lines(id),
+    resolved_at              TEXT,
+    resolved_by_user_id      INTEGER REFERENCES users(id),
+    notes                    TEXT
+);
+
+-- ── Bank Reconciliation: snapshot when user finalises ───────────────
+CREATE TABLE IF NOT EXISTS bank_reconciliations (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id            INTEGER NOT NULL REFERENCES companies(id),
+    bank_ledger_id        INTEGER NOT NULL REFERENCES ledgers(id),
+    statement_id          INTEGER REFERENCES bank_statements(id),
+    as_of_date            TEXT NOT NULL,
+    book_balance          REAL NOT NULL,
+    statement_balance     REAL NOT NULL,
+    reconciled_balance    REAL NOT NULL,
+    matched_count         INTEGER NOT NULL DEFAULT 0,
+    unmatched_stmt_count  INTEGER NOT NULL DEFAULT 0,
+    unmatched_book_count  INTEGER NOT NULL DEFAULT 0,
+    finalised_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    reconciled_by_user_id INTEGER REFERENCES users(id),
+    notes                 TEXT
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_vouchers_date     ON vouchers(company_id, voucher_date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_type     ON vouchers(company_id, voucher_type);
 CREATE INDEX IF NOT EXISTS idx_vlines_ledger     ON voucher_lines(ledger_id);
 CREATE INDEX IF NOT EXISTS idx_vlines_voucher    ON voucher_lines(voucher_id);
 CREATE INDEX IF NOT EXISTS idx_ledgers_company   ON ledgers(company_id);
+CREATE INDEX IF NOT EXISTS idx_bsl_status        ON bank_statement_lines(statement_id, match_status);
+CREATE INDEX IF NOT EXISTS idx_bsl_match         ON bank_statement_lines(matched_voucher_line_id);
+CREATE INDEX IF NOT EXISTS idx_bstmt_ledger      ON bank_statements(company_id, bank_ledger_id);
 """
+
+
+# ─── Additive-column migrations ───────────────────────────────────────────────
+#
+# SQLite has no `ALTER TABLE ADD COLUMN IF NOT EXISTS`, and this project has no
+# migration framework. To add a *nullable* column to an existing table,
+# append an entry here. _apply_additive_columns() runs on every connect and
+# is idempotent: it ALTERs only when PRAGMA table_info says the column is
+# missing. This is the canonical pattern — do not invent migration plumbing.
+
+_ADDITIVE_COLUMNS = [
+    ("voucher_lines", "cleared_date",            "TEXT"),
+    ("voucher_lines", "bank_statement_line_id",  "INTEGER"),
+    ("voucher_lines", "cleared_by_user_id",      "INTEGER"),
+]
+
+
+def _apply_additive_columns(conn: sqlite3.Connection) -> None:
+    for table, col, ddl in _ADDITIVE_COLUMNS:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vlines_cleared "
+        "ON voucher_lines(ledger_id, cleared_date)"
+    )
 
 
 # ─── Database Connection Manager ──────────────────────────────────────────────
@@ -192,6 +278,7 @@ class Database:
             )
             self._conn.row_factory = sqlite3.Row
             self._conn.executescript(SCHEMA)
+            _apply_additive_columns(self._conn)
             self._conn.commit()
         return self._conn
 

@@ -146,10 +146,12 @@ class DropZone(QFrame):
         layout.addLayout(btn_row)
 
     def _default_style(self):
+        # Tinted bg + accent-coloured dashed border so the zone reads clearly
+        # on light themes where bg_card == surrounding card.
         self.setStyleSheet(f"""
             QFrame {{
-                background:{THEME['bg_card']};
-                border:2px dashed {THEME['border']};
+                background:{THEME['bg_input']};
+                border:2px dashed {THEME['accent']};
                 border-radius:12px;
             }}
         """)
@@ -176,6 +178,15 @@ class DropZone(QFrame):
         )
         if path:
             self.file_dropped.emit(path)
+
+    def mousePressEvent(self, event):
+        # Whole zone is clickable — opens the file dialog. Helps when the
+        # inner Browse button is hard to see or hit on a light theme.
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._browse()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
