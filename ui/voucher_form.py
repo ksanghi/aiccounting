@@ -54,6 +54,9 @@ class VoucherEntryPage(QWidget):
         self._expense_group_ids = []
         self._load_filtered_ledgers()
         self._journal_rows: list[VoucherLineRow] = []
+        # Edit-mode state — set via load_voucher_for_edit()
+        self._edit_voucher_id: int | None = None
+        self._edit_voucher_number: str = ""
         self._build_ui()
         self._wire_shortcuts()
 
@@ -76,26 +79,53 @@ class VoucherEntryPage(QWidget):
         root.setContentsMargins(24, 0, 24, 24)
         root.setSpacing(0)
 
-        # ── Header bar ──
+        # ── Header strip (title + hint + subtitle) — hidden in edit mode ──
+        self._header_strip = QWidget()
+        hs = QVBoxLayout(self._header_strip)
+        hs.setContentsMargins(0, 0, 0, 0)
+        hs.setSpacing(0)
+
         hdr = QHBoxLayout()
         title = QLabel("Post Voucher")
         title.setObjectName("page_title")
         hdr.addWidget(title)
         hdr.addStretch()
-
-        # Keyboard hints
         hints = QLabel("F2 = New ledger  |  Alt+C = Calculator  |  Ctrl+S = Post")
         hints.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
         hdr.addWidget(hints)
-        root.addLayout(hdr)
+        hs.addLayout(hdr)
 
         sub = QLabel("Select voucher type, fill details, post with Ctrl+S")
         sub.setObjectName("page_subtitle")
-        root.addWidget(sub)
+        hs.addWidget(sub)
+        root.addWidget(self._header_strip)
+
+        # ── Edit-mode banner (hidden in create mode) ──
+        self._edit_banner = QFrame()
+        self._edit_banner.setObjectName("card")
+        self._edit_banner.setStyleSheet(
+            f"#card {{ background:{THEME['accent_dim']}; "
+            f"border:1px solid {THEME['accent']}; }}"
+        )
+        eb = QHBoxLayout(self._edit_banner)
+        eb.setContentsMargins(14, 8, 14, 8)
+        self._edit_banner_label = QLabel("")
+        self._edit_banner_label.setStyleSheet(
+            f"color:{THEME['accent']}; font-weight:bold; font-size:12px;"
+        )
+        eb.addWidget(self._edit_banner_label)
+        eb.addStretch()
+        cancel_edit = QPushButton("Cancel edit")
+        cancel_edit.setFixedHeight(28)
+        cancel_edit.clicked.connect(self._cancel_edit)
+        eb.addWidget(cancel_edit)
+        self._edit_banner.setVisible(False)
+        root.addWidget(self._edit_banner)
 
         # ── Voucher type selector ──
         type_frame = QFrame()
         type_frame.setObjectName("card")
+        self._type_frame = type_frame   # hidden in edit mode
         type_layout = QHBoxLayout(type_frame)
         type_layout.setContentsMargins(12, 10, 12, 10)
         type_layout.setSpacing(6)
@@ -453,6 +483,9 @@ class VoucherEntryPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Keep the vertical bar always visible so users see scroll affordance
+        # immediately (esp. in edit mode with many lines).
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         self._rows_container = QWidget()
@@ -825,6 +858,26 @@ class VoucherEntryPage(QWidget):
                         vdate, dr_id, cr_id, amount, narration, reference
                     )
 
+            if self._edit_voucher_id:
+                # EDIT mode — replace the existing voucher in place
+                posted = self.engine.update_voucher(self._edit_voucher_id, draft)
+                self.voucher_posted.emit(
+                    posted.voucher_number, vtype, posted.total_amount
+                )
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Updated")
+                msg.setText(f"✎  {posted.voucher_number} updated\n₹{posted.total_amount:,.2f}")
+                msg.setInformativeText(narration or vtype)
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.exec()
+                self._exit_edit_mode()
+                self._clear()
+                # Hop back to the page we came from (Ledger Account etc.)
+                win = self.window()
+                if hasattr(win, "return_from_voucher_edit"):
+                    win.return_from_voucher_edit()
+                return
+
             posted = self.engine.post(draft)
 
             # Record transaction for license counter
@@ -852,6 +905,96 @@ class VoucherEntryPage(QWidget):
                 "\n".join(f"• {err}" for err in e.errors))
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+
+    def load_voucher_for_edit(self, voucher_id: int) -> bool:
+        """
+        Switch the form into edit-mode for an existing voucher. Returns
+        True on success, False if the voucher can't be edited (cancelled
+        or has bank-reconciled lines). Always loads in JOURNAL mode so
+        every line — ledger, amount, sign, narration — is editable.
+        """
+        v = self.engine.get_voucher(voucher_id)
+        if not v:
+            QMessageBox.warning(self, "Not found", f"Voucher {voucher_id} not found.")
+            return False
+        if v["is_cancelled"]:
+            QMessageBox.warning(
+                self, "Cannot edit",
+                f"Voucher {v['voucher_number']} is cancelled.",
+            )
+            return False
+        if any((l.get("cleared_date") or "") for l in v["lines"]):
+            QMessageBox.warning(
+                self, "Cannot edit",
+                f"Voucher {v['voucher_number']} has bank-reconciled lines.\n"
+                "Unmatch in Bank Reconciliation first.",
+            )
+            return False
+
+        # Reset any in-progress state
+        self._edit_voucher_id     = voucher_id
+        self._edit_voucher_number = v["voucher_number"]
+
+        # Switch to JOURNAL mode — handles all voucher types uniformly,
+        # one row per voucher_line, every column editable.
+        self._select_type("JOURNAL")
+        # Clear default rows
+        for r in self._journal_rows[:]:
+            self._rows_layout.removeWidget(r)
+            r.deleteLater()
+        self._journal_rows.clear()
+
+        # Header fields
+        from PyQt6.QtCore import QDate
+        self.date_edit.setDate(QDate.fromString(v["voucher_date"], "yyyy-MM-dd"))
+        self.narration_edit.setText(v.get("narration") or "")
+        self.reference_edit.setText(v.get("reference") or "")
+
+        # Populate one journal row per voucher line
+        for line in v["lines"]:
+            self._add_journal_row()
+            row = self._journal_rows[-1]
+            row.ledger_search.set_ledger(line["ledger_name"])
+            if (line["dr_amount"] or 0) > 0:
+                row.type_toggle.setCurrentIndex(0)        # Dr
+                row.amount_edit.setValue(float(line["dr_amount"]))
+            else:
+                row.type_toggle.setCurrentIndex(1)        # Cr
+                row.amount_edit.setValue(float(line["cr_amount"] or 0))
+            row.narration.setText(line.get("line_narration") or "")
+        self._update_balance_journal()
+
+        # Show edit banner + relabel post button
+        self._edit_banner_label.setText(
+            f"✎ Editing  {v['voucher_number']}  ·  {v['voucher_type'].replace('_',' ')}"
+        )
+        self._edit_banner.setVisible(True)
+        self._post_btn.setText("Update Voucher  (Ctrl+S)")
+
+        # Hide chrome that's redundant during edit so the row area gets
+        # all the vertical space.
+        self._header_strip.setVisible(False)
+        self._type_frame.setVisible(False)
+        return True
+
+    def _exit_edit_mode(self):
+        """Drop edit-mode flags + restore chrome + post-button label."""
+        self._edit_voucher_id     = None
+        self._edit_voucher_number = ""
+        self._edit_banner.setVisible(False)
+        self._post_btn.setText("Post Voucher  (Ctrl+S)")
+        self._header_strip.setVisible(True)
+        self._type_frame.setVisible(True)
+
+    def _cancel_edit(self):
+        if not self._edit_voucher_id:
+            return
+        self._exit_edit_mode()
+        self._clear()
+        self._select_type("PAYMENT")
+        win = self.window()
+        if hasattr(win, "return_from_voucher_edit"):
+            win.return_from_voucher_edit()
 
     def _clear(self):
         self.narration_edit.clear()

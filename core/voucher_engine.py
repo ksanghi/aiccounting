@@ -505,16 +505,17 @@ class VoucherValidator:
                 )
 
         elif vtype in ("SALES", "CREDIT_NOTE"):
-            # Dr side must have a debtor/bank for SALES;
-            # for CREDIT_NOTE the Dr can be INCOME (sales return) — check Cr side has party
+            # Dr side must be a party (debtor or creditor) or bank/cash.
+            # Creditors are allowed too — income may settle a creditor balance.
             if vtype == "SALES":
                 valid_dr = any(
-                    is_bank_cash(l) or l.get("nature") == "ASSET"
+                    is_bank_cash(l)
+                    or l.get("nature") in ("ASSET", "LIABILITY")
                     for l in dr_ledgers
                 )
                 if not valid_dr:
                     errors.append(
-                        "Sales: debit side must be a debtor, bank, or cash account."
+                        "Sales: debit side must be a debtor, creditor, bank, or cash account."
                     )
 
         elif vtype == "PURCHASE":
@@ -952,6 +953,140 @@ class VoucherEngine:
         except Exception:
             self.db.rollback()
             raise
+
+    def update_voucher(
+        self,
+        voucher_id: int,
+        draft: VoucherDraft,
+    ) -> PostedVoucher:
+        """
+        Full edit of a posted voucher — replaces date / narration / reference
+        AND all voucher_lines from the supplied draft. Voucher number stays
+        the same. Audit-logged.
+
+        Refuses if:
+          • voucher doesn't exist
+          • voucher is cancelled
+          • ANY line on the voucher has cleared_date set (bank-reconciled —
+            unmatch in Bank Reconciliation first)
+
+        Validates the draft via VoucherValidator before writing.
+        """
+        conn = self.db.connect()
+        old = conn.execute(
+            "SELECT * FROM vouchers WHERE id=? AND company_id=?",
+            (voucher_id, self.company_id),
+        ).fetchone()
+        if not old:
+            raise ValueError(f"Voucher {voucher_id} not found.")
+        if old["is_cancelled"]:
+            raise ValueError("Voucher is cancelled and cannot be edited.")
+
+        cleared = conn.execute(
+            """SELECT COUNT(*) AS c FROM voucher_lines
+                WHERE voucher_id=? AND cleared_date IS NOT NULL
+                  AND cleared_date <> ''""",
+            (voucher_id,),
+        ).fetchone()
+        if cleared and cleared["c"]:
+            raise ValueError(
+                "This voucher has bank-reconciled lines. Unmatch in "
+                "Bank Reconciliation first, then edit."
+            )
+
+        # Validate the draft (reuses existing validator — raises on failure)
+        self.validator.validate(draft)
+
+        old_lines = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM voucher_lines WHERE voucher_id=? ORDER BY id",
+                (voucher_id,),
+            ).fetchall()
+        ]
+        old_snap = {
+            "voucher_date": old["voucher_date"],
+            "narration":    old["narration"],
+            "reference":    old["reference"],
+            "total_amount": old["total_amount"],
+            "lines":        old_lines,
+        }
+
+        total = round(sum(l.dr_amount for l in draft.lines), 2)
+
+        with self.db:
+            # Replace lines
+            conn.execute(
+                "DELETE FROM voucher_lines WHERE voucher_id=?",
+                (voucher_id,),
+            )
+            for line in draft.lines:
+                conn.execute(
+                    """INSERT INTO voucher_lines
+                       (voucher_id, ledger_id, dr_amount, cr_amount,
+                        cost_centre, bill_ref, is_tax_line, tax_type,
+                        tax_rate, line_narration)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        voucher_id, line.ledger_id,
+                        line.dr_amount, line.cr_amount,
+                        line.cost_centre or None,
+                        line.bill_ref or None,
+                        int(line.is_tax_line),
+                        line.tax_type or None,
+                        line.tax_rate or None,
+                        line.line_narration or None,
+                    ),
+                )
+            # Update header
+            conn.execute(
+                """UPDATE vouchers
+                      SET voucher_date=?, narration=?, reference=?,
+                          total_amount=?, updated_at=datetime('now')
+                    WHERE id=?""",
+                (
+                    draft.voucher_date,
+                    draft.narration or "",
+                    draft.reference or "",
+                    total,
+                    voucher_id,
+                ),
+            )
+            # Audit
+            new_snap = {
+                "voucher_date": draft.voucher_date,
+                "narration":    draft.narration,
+                "reference":    draft.reference,
+                "total_amount": total,
+                "lines": [
+                    {
+                        "ledger_id":    l.ledger_id,
+                        "dr_amount":    l.dr_amount,
+                        "cr_amount":    l.cr_amount,
+                        "line_narration": l.line_narration,
+                    } for l in draft.lines
+                ],
+            }
+            conn.execute(
+                """INSERT INTO audit_log
+                   (company_id, user_id, action, table_name, record_id,
+                    old_data, new_data)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    self.company_id, self.user_id, "EDIT",
+                    "vouchers", voucher_id,
+                    json.dumps(old_snap, default=str),
+                    json.dumps(new_snap, default=str),
+                ),
+            )
+
+        return PostedVoucher(
+            voucher_id=voucher_id,
+            voucher_number=old["voucher_number"],
+            voucher_type=old["voucher_type"],
+            voucher_date=draft.voucher_date,
+            total_amount=total,
+            lines=list(draft.lines),
+        )
 
     def cancel_voucher(self, voucher_id: int, reason: str = "") -> None:
         """Mark a voucher as cancelled (soft delete, preserves audit trail)."""

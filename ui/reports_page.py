@@ -683,3 +683,244 @@ class TDSReportPage(_ReportBase):
 
     def _do_pdf(self, exp, path):
         exp.tds_report(self._data, self.rpt.get_company(), path)
+
+
+# ── Ledger Account (per-ledger statement view) ───────────────────────────────
+
+class LedgerAccountPage(_ReportBase):
+    """
+    Per-ledger statement view. Pick any ledger, see the running-balance
+    transaction list. For bank ledgers, a 'Cleared' (✓) column shows
+    reconciliation status. Click a row to open the voucher detail dialog.
+    """
+    TITLE    = "Ledger Account"
+    SUBTITLE = ""
+
+    def __init__(self, rpt, tree, engine, parent=None):
+        self.tree   = tree
+        self.engine = engine
+        super().__init__(rpt, parent)
+
+    def _build_shell(self):
+        """
+        Override the parent shell entirely — give the body the maximum
+        vertical space by collapsing title + ledger picker + dates +
+        export buttons into one dense row.
+        """
+        from ui.widgets import LedgerSearchEdit
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 6, 20, 14)
+        root.setSpacing(6)
+
+        bar = QFrame()
+        bar.setObjectName("card")
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(12, 6, 12, 6)
+        h.setSpacing(10)
+
+        title = QLabel("📒 Ledger Account")
+        title.setStyleSheet(
+            f"font-size:14px; font-weight:bold; color:{THEME['text_primary']};"
+        )
+        h.addWidget(title)
+
+        h.addSpacing(6)
+
+        self._ledger_picker = LedgerSearchEdit(
+            self.tree, calculator=None,
+            placeholder="Pick a ledger…",
+        )
+        self._ledger_picker.setFixedWidth(260)
+        self._ledger_picker.ledger_selected.connect(lambda *_: self.refresh())
+        h.addWidget(self._ledger_picker)
+
+        h.addSpacing(8)
+        h.addWidget(make_label("From"))
+        self.from_date = QDateEdit(_fy_start())
+        self.from_date.setCalendarPopup(True)
+        self.from_date.setDisplayFormat("dd-MMM-yyyy")
+        self.from_date.setFixedHeight(28)
+        h.addWidget(self.from_date)
+
+        h.addWidget(make_label("To"))
+        self.to_date = QDateEdit(QDate.currentDate())
+        self.to_date.setCalendarPopup(True)
+        self.to_date.setDisplayFormat("dd-MMM-yyyy")
+        self.to_date.setFixedHeight(28)
+        h.addWidget(self.to_date)
+
+        h.addStretch()
+
+        ref_btn = QPushButton("↻ Refresh")
+        ref_btn.setFixedHeight(28)
+        ref_btn.clicked.connect(self.refresh)
+        h.addWidget(ref_btn)
+
+        xl_btn = QPushButton("⬇ Excel")
+        xl_btn.setFixedHeight(28)
+        xl_btn.clicked.connect(self._save_excel)
+        h.addWidget(xl_btn)
+
+        pdf_btn = QPushButton("⬇ PDF")
+        pdf_btn.setFixedHeight(28)
+        pdf_btn.clicked.connect(self._save_pdf)
+        h.addWidget(pdf_btn)
+
+        root.addWidget(bar)
+
+        # Body
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll_widget = QWidget()
+        self._scroll_layout = QVBoxLayout(self._scroll_widget)
+        self._scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self._scroll_layout.setSpacing(8)
+        self._scroll_layout.addStretch()
+        scroll.setWidget(self._scroll_widget)
+        root.addWidget(scroll, 1)
+
+        # Status
+        self._status = QLabel("")
+        self._status.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px;"
+        )
+        root.addWidget(self._status)
+
+        # Body layout reference for compatibility with parent's hooks
+        self._body = root
+
+    def _clear_scroll(self):
+        while self._scroll_layout.count() > 1:
+            item = self._scroll_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def refresh(self):
+        self._clear_scroll()
+        fd, td = self._dates()
+        ledger_id = self._ledger_picker.selected_id
+        if not ledger_id:
+            self._status.setText("Pick a ledger to view its account.")
+            return
+
+        self._data = self.rpt.ledger_account(ledger_id, fd, td)
+        if not self._data:
+            self._status.setText("Ledger not found.")
+            return
+
+        self._render_book(self._data)
+        n = len(self._data["transactions"])
+        self._status.setText(
+            f"{self._data['ledger']}  ·  {self._data['group']}  ·  "
+            f"Period: {fd} → {td}  ·  {n} transaction(s)  ·  "
+            f"Net: {_fmt(self._data['closing'] - self._data['opening'])}"
+        )
+
+    def _render_book(self, data: dict):
+        frame = QFrame()
+        frame.setObjectName("card")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(6)
+
+        # Header
+        title_row = QHBoxLayout()
+        title = QLabel(data["ledger"])
+        title.setStyleSheet("font-weight:bold; font-size:14px;")
+        title_row.addWidget(title)
+
+        meta_bits = [data["group"]]
+        if data.get("account_number"):
+            meta_bits.append(f"A/C {data['account_number']}")
+        if data.get("bank_name"):
+            meta_bits.append(data["bank_name"])
+        meta = QLabel("  ·  ".join(meta_bits))
+        meta.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px; padding-left:8px;"
+        )
+        title_row.addWidget(meta)
+        title_row.addStretch()
+        lay.addLayout(title_row)
+
+        opening = QLabel(f"Opening Balance:  {_fmt(data['opening'])}")
+        opening.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+        lay.addWidget(opening)
+
+        # Table
+        show_cleared = bool(data.get("is_bank"))
+        headers = ["Date", "Voucher No", "Type", "Narration", "Ref", "Dr", "Cr", "Balance"]
+        if show_cleared:
+            headers.append("Cleared")
+        t = _make_table(headers, stretch_cols=[3])
+        # Map row index → voucher_id, for click-to-open
+        row_to_voucher: dict[int, int] = {}
+        for tx in data["transactions"]:
+            r = t.rowCount()
+            t.insertRow(r)
+            row_to_voucher[r] = tx["voucher_id"]
+            t.setItem(r, 0, _item(tx["date"]))
+            t.setItem(r, 1, _item(tx["voucher_no"]))
+            t.setItem(r, 2, _item(tx["type"].replace("_", " ")))
+            t.setItem(r, 3, _item(tx["narration"]))
+            t.setItem(r, 4, _item(tx["reference"]))
+            t.setItem(r, 5, _item(_fmt(tx["dr"]) if tx["dr"] else "", right=True,
+                                  colour=THEME["accent"] if tx["dr"] else None))
+            t.setItem(r, 6, _item(_fmt(tx["cr"]) if tx["cr"] else "", right=True,
+                                  colour=THEME["warning"] if tx["cr"] else None))
+            bal_col = THEME["success"] if tx["balance"] >= 0 else THEME["danger"]
+            t.setItem(r, 7, _item(_fmt(tx["balance"]), right=True, colour=bal_col))
+            if show_cleared:
+                cleared = bool(tx.get("cleared"))
+                t.setItem(r, 8, _item(
+                    "✓" if cleared else "",
+                    colour=THEME["success"] if cleared else None,
+                ))
+        # Open voucher detail on double-click (deliberate; single click is selection)
+        t.cellDoubleClicked.connect(
+            lambda row, _col, m=row_to_voucher: self._open_voucher(m.get(row))
+        )
+        t.setToolTip("Double-click a row to open the voucher")
+        lay.addWidget(t)
+
+        closing = QLabel(f"Closing Balance:  {_fmt(data['closing'])}")
+        closing.setStyleSheet("font-weight:bold; font-size:12px;")
+        lay.addWidget(closing)
+
+        insert_pos = self._scroll_layout.count() - 1
+        self._scroll_layout.insertWidget(insert_pos, frame)
+
+    def _open_voucher(self, voucher_id):
+        """Open the voucher in the main Post Voucher form (edit mode)."""
+        if not voucher_id:
+            return
+        # Walk up to MainWindow which owns the voucher form.
+        win = self.window()
+        if hasattr(win, "open_voucher_for_edit"):
+            win.open_voucher_for_edit(voucher_id)
+
+    # Excel / PDF — wrap into the ledger_book exporter's expected shape.
+    def _wrap_for_export(self) -> dict:
+        return {
+            "books": [{
+                "ledger":       self._data["ledger"],
+                "opening":      self._data["opening"],
+                "transactions": self._data["transactions"],
+                "closing":      self._data["closing"],
+            }],
+            "from_date": self._data["from_date"],
+            "to_date":   self._data["to_date"],
+        }
+
+    def _do_excel(self, exp, path):
+        if not self._data:
+            return
+        exp.ledger_book(self._wrap_for_export(), self.rpt.get_company(),
+                        f"Ledger - {self._data['ledger']}", path)
+
+    def _do_pdf(self, exp, path):
+        if not self._data:
+            return
+        exp.ledger_book(self._wrap_for_export(), self.rpt.get_company(),
+                        f"Ledger - {self._data['ledger']}", path)

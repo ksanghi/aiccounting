@@ -240,7 +240,9 @@ class ReportsEngine:
 
     def ledger_account(self, ledger_id: int, from_date: str, to_date: str) -> dict:
         ldg = self.db.execute(
-            """SELECT l.name, l.opening_balance, l.opening_type, g.name as grp
+            """SELECT l.id, l.name, l.opening_balance, l.opening_type,
+                      l.is_bank, l.is_cash, l.account_number, l.bank_name,
+                      g.name as grp, g.nature as grp_nature
                FROM ledgers l JOIN account_groups g ON l.group_id=g.id
                WHERE l.id=?""",
             (ledger_id,)
@@ -263,9 +265,12 @@ class ReportsEngine:
         opening = round((ob_dr + (ob_txn["dr"] or 0)) - (ob_cr + (ob_txn["cr"] or 0)), 2)
 
         lines = self.db.execute(
-            """SELECT v.voucher_date, v.voucher_number, v.voucher_type,
+            """SELECT v.id as voucher_id,
+                      v.voucher_date, v.voucher_number, v.voucher_type,
                       v.narration, v.reference,
-                      vl.dr_amount, vl.cr_amount, vl.line_narration
+                      vl.id as voucher_line_id,
+                      vl.dr_amount, vl.cr_amount, vl.line_narration,
+                      vl.cleared_date
                FROM voucher_lines vl
                JOIN vouchers v ON vl.voucher_id=v.id
                WHERE vl.ledger_id=? AND v.is_cancelled=0
@@ -280,24 +285,38 @@ class ReportsEngine:
             dr = line["dr_amount"] or 0.0
             cr = line["cr_amount"] or 0.0
             running = round(running + dr - cr, 2)
+            try:
+                cleared_date = line["cleared_date"] or ""
+            except (KeyError, IndexError):
+                cleared_date = ""
             transactions.append({
-                "date":       line["voucher_date"],
-                "voucher_no": line["voucher_number"],
-                "type":       line["voucher_type"],
-                "narration":  line["line_narration"] or line["narration"] or "",
-                "reference":  line["reference"] or "",
-                "dr":         dr,
-                "cr":         cr,
-                "balance":    running,
+                "voucher_id":      line["voucher_id"],
+                "voucher_line_id": line["voucher_line_id"],
+                "date":            line["voucher_date"],
+                "voucher_no":      line["voucher_number"],
+                "type":            line["voucher_type"],
+                "narration":       line["line_narration"] or line["narration"] or "",
+                "reference":       line["reference"] or "",
+                "dr":              dr,
+                "cr":              cr,
+                "balance":         running,
+                "cleared":         bool(cleared_date),
+                "cleared_date":    cleared_date,
             })
         return {
-            "ledger":       ldg["name"],
-            "group":        ldg["grp"],
-            "opening":      opening,
-            "transactions": transactions,
-            "closing":      running if transactions else opening,
-            "from_date":    from_date,
-            "to_date":      to_date,
+            "ledger":         ldg["name"],
+            "ledger_id":      ldg["id"],
+            "group":          ldg["grp"],
+            "group_nature":   ldg["grp_nature"],
+            "is_bank":        bool(ldg["is_bank"]),
+            "is_cash":        bool(ldg["is_cash"]),
+            "account_number": ldg["account_number"],
+            "bank_name":      ldg["bank_name"],
+            "opening":        opening,
+            "transactions":   transactions,
+            "closing":        running if transactions else opening,
+            "from_date":      from_date,
+            "to_date":        to_date,
         }
 
     # ── 7. Receipts & Payments Summary ────────────────────────────────────────

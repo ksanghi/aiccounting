@@ -274,6 +274,34 @@ class MainWindow(QMainWindow):
                 self._select_page(idx)
                 return
 
+    def open_voucher_for_edit(self, voucher_id: int) -> None:
+        """
+        Switch to the Post Voucher page and load the given voucher in
+        edit mode. Remembers the origin page so we can return there
+        after Update / Cancel.
+        """
+        if not hasattr(self, "_voucher_page"):
+            return
+        ok = self._voucher_page.load_voucher_for_edit(voucher_id)
+        if not ok:
+            return
+        # Remember where we came from so update/cancel can return there.
+        self._voucher_origin_idx = self._current_idx
+        for idx, (label, _, _, _) in enumerate(self._pages):
+            if label == "Post Voucher":
+                self._select_page(idx)
+                return
+
+    def return_from_voucher_edit(self) -> None:
+        """Called by VoucherEntryPage after Update / Cancel in edit mode."""
+        idx = getattr(self, "_voucher_origin_idx", None)
+        self._voucher_origin_idx = None
+        if idx is None:
+            return
+        # _select_page calls widget.refresh() automatically if available,
+        # so the ledger view picks up the updated voucher.
+        self._select_page(idx)
+
     def _build_pages_inner(self):
         from ui.voucher_form     import VoucherEntryPage
         from ui.daybook          import DayBookPage, LedgerBalancePage
@@ -284,6 +312,7 @@ class MainWindow(QMainWindow):
         voucher_page = VoucherEntryPage(self.engine, self.tree, self.calculator)
         voucher_page.voucher_posted.connect(self._on_voucher_posted)
         self.register_page("Post Voucher", "✏", voucher_page)
+        self._voucher_page = voucher_page
 
         self._daybook_page = DayBookPage(self.engine)
         self.register_page("Day Book", "📋", self._daybook_page)
@@ -298,14 +327,17 @@ class MainWindow(QMainWindow):
             from ui.reports_page import (
                 TrialBalancePage, ProfitLossPage, BalanceSheetPage,
                 CashBookPage, BankBookPage, ReceiptsPaymentsPage,
+                LedgerAccountPage,
             )
             rpt = ReportsEngine(self.db, self.company_id)
-            self.register_page("Trial Balance", "📊", TrialBalancePage(rpt))
-            self.register_page("P & L",         "📈", ProfitLossPage(rpt))
-            self.register_page("Balance Sheet", "🏦", BalanceSheetPage(rpt))
-            self.register_page("Cash Book",     "💵", CashBookPage(rpt))
-            self.register_page("Bank Book",     "🏛", BankBookPage(rpt))
-            self.register_page("Rcpts & Pmts",  "↕",  ReceiptsPaymentsPage(rpt))
+            self.register_page("Trial Balance",  "📊", TrialBalancePage(rpt))
+            self.register_page("P & L",          "📈", ProfitLossPage(rpt))
+            self.register_page("Balance Sheet",  "🏦", BalanceSheetPage(rpt))
+            self.register_page("Cash Book",      "💵", CashBookPage(rpt))
+            self.register_page("Bank Book",      "🏛", BankBookPage(rpt))
+            self.register_page("Ledger Account", "📒",
+                LedgerAccountPage(rpt, self.tree, self.engine))
+            self.register_page("Rcpts & Pmts",   "↕",  ReceiptsPaymentsPage(rpt))
         else:
             self.register_page(
                 "Reports", "📊",

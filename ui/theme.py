@@ -297,29 +297,41 @@ QHeaderView::section {{
 
 /* ── Scrollbars ──────────────────────────── */
 QScrollBar:vertical {{
-    background: transparent;
-    width: 7px;
+    background: {t['bg_input']};
+    width: 14px;
     margin: 0;
+    border-radius: 7px;
 }}
 QScrollBar::handle:vertical {{
-    background: {t['border']};
-    border-radius: 3px;
-    min-height: 24px;
+    background: {t['accent']};
+    border-radius: 7px;
+    min-height: 32px;
+    margin: 2px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: {t['text_secondary']};
+    background: {t['accent_hover']};
 }}
 QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {{
     height: 0;
 }}
-QScrollBar:horizontal {{
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {{
     background: transparent;
-    height: 7px;
+}}
+QScrollBar:horizontal {{
+    background: {t['bg_input']};
+    height: 14px;
+    border-radius: 7px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {t['border']};
-    border-radius: 3px;
+    background: {t['accent']};
+    border-radius: 7px;
+    min-width: 32px;
+    margin: 2px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {t['accent_hover']};
 }}
 
 /* ── Separators ──────────────────────────── */
