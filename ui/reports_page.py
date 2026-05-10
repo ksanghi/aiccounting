@@ -426,7 +426,8 @@ class BalanceSheetPage(_ReportBase):
 # ── shared: ledger book (cash / bank) ─────────────────────────────────────────
 
 class _LedgerBookPage(_ReportBase):
-    BOOK_TITLE = "Book"
+    BOOK_TITLE   = "Book"
+    SHOW_CLEARED = False    # Bank Book overrides → True (for reconciliation status)
 
     def _build_shell(self):
         super()._build_shell()
@@ -461,10 +462,10 @@ class _LedgerBookPage(_ReportBase):
         opening.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
         lay.addWidget(opening)
 
-        t = _make_table(
-            ["Date","Voucher No","Type","Narration","Ref","Dr","Cr","Balance"],
-            stretch_cols=[3]
-        )
+        headers = ["Date","Voucher No","Type","Narration","Ref","Dr","Cr","Balance"]
+        if self.SHOW_CLEARED:
+            headers.append("Cleared")
+        t = _make_table(headers, stretch_cols=[3])
         for tx in book["transactions"]:
             r = t.rowCount()
             t.insertRow(r)
@@ -479,6 +480,12 @@ class _LedgerBookPage(_ReportBase):
                                   colour=THEME["warning"] if tx["cr"] else None))
             bal_col = THEME["success"] if tx["balance"] >= 0 else THEME["danger"]
             t.setItem(r, 7, _item(_fmt(tx["balance"]), right=True, colour=bal_col))
+            if self.SHOW_CLEARED:
+                cleared = bool(tx.get("cleared"))
+                t.setItem(r, 8, _item(
+                    "✓" if cleared else "",
+                    colour=THEME["success"] if cleared else None,
+                ))
         lay.addWidget(t)
 
         closing = QLabel(f"Closing Balance:  {_fmt(book['closing'])}")
@@ -518,6 +525,7 @@ class CashBookPage(_LedgerBookPage):
 
 
 class BankBookPage(_LedgerBookPage):
+    SHOW_CLEARED = True
     TITLE      = "Bank Book"
     SUBTITLE   = "All transactions through bank ledgers"
     BOOK_TITLE = "Bank Book"

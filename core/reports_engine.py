@@ -196,7 +196,7 @@ class ReportsEngine:
             lines = self.db.execute(
                 """SELECT v.voucher_date, v.voucher_number, v.voucher_type,
                           v.narration, v.reference,
-                          vl.dr_amount, vl.cr_amount
+                          vl.dr_amount, vl.cr_amount, vl.cleared_date
                    FROM voucher_lines vl
                    JOIN vouchers v ON vl.voucher_id=v.id
                    WHERE vl.ledger_id=? AND v.is_cancelled=0
@@ -211,6 +211,12 @@ class ReportsEngine:
                 dr = line["dr_amount"] or 0.0
                 cr = line["cr_amount"] or 0.0
                 running = round(running + dr - cr, 2)
+                # Defensive: cleared_date column was added by an additive
+                # migration; older rows may not have it on every connection.
+                try:
+                    cleared = bool(line["cleared_date"])
+                except (IndexError, KeyError):
+                    cleared = False
                 transactions.append({
                     "date":         line["voucher_date"],
                     "voucher_no":   line["voucher_number"],
@@ -220,6 +226,7 @@ class ReportsEngine:
                     "dr":           dr,
                     "cr":           cr,
                     "balance":      running,
+                    "cleared":      cleared,
                 })
             books.append({
                 "ledger":       ldg["name"],

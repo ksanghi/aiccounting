@@ -58,6 +58,36 @@ _ACCOUNT_LABEL_RE = re.compile(
     """,
 )
 
+# Opening / Closing balance: "Opening Balance: 150000.00", "Closing Bal Rs. 1,50,000",
+# "Balance Brought Forward: ...", "Balance Carried Forward: ...", with optional
+# trailing Cr/Dr indicator.
+_OPENING_RE = re.compile(
+    r"""(?ix)
+    (?:
+        opening \s* (?:balance|bal\.?)
+      | balance \s* (?:brought \s* forward|b/?f)
+      | b/?f \s* balance
+    )
+    \s* [:\-]? \s*
+    (?: rs\.? | inr | ₹ )? \s*
+    ( \d[\d,]*(?:\.\d+)? )
+    \s* (cr|dr)?
+    """,
+)
+_CLOSING_RE = re.compile(
+    r"""(?ix)
+    (?:
+        closing \s* (?:balance|bal\.?)
+      | balance \s* (?:carried \s* forward|c/?f)
+      | c/?f \s* balance
+    )
+    \s* [:\-]? \s*
+    (?: rs\.? | inr | ₹ )? \s*
+    ( \d[\d,]*(?:\.\d+)? )
+    \s* (cr|dr)?
+    """,
+)
+
 # Period: "From X to Y", "Period: X to Y", "Statement Period X – Y", etc.
 _PERIOD_RE = re.compile(
     r"""(?ix)
@@ -175,13 +205,15 @@ def _pick_header(headers, candidates: tuple[str, ...]) -> Optional[int]:
 @dataclass
 class ParseResult:
     success: bool
-    bank_name: Optional[str]      = None
-    account_number: Optional[str] = None
-    period_from: Optional[str]    = None       # ISO yyyy-mm-dd
-    period_to: Optional[str]      = None
-    lines: list[dict]             = field(default_factory=list)
-    error: Optional[str]          = None
-    file_text: str                = ""         # for AI fallback
+    bank_name: Optional[str]         = None
+    account_number: Optional[str]    = None
+    period_from: Optional[str]       = None       # ISO yyyy-mm-dd
+    period_to: Optional[str]         = None
+    statement_opening: Optional[float] = None
+    statement_closing: Optional[float] = None
+    lines: list[dict]                = field(default_factory=list)
+    error: Optional[str]             = None
+    file_text: str                   = ""         # for AI fallback
 
 
 # ── Main parser ─────────────────────────────────────────────────────────────
@@ -214,6 +246,8 @@ class LocalDocumentParser:
         bank_name      = self._detect_bank_name(text)
         account_number = self._detect_account_number(text)
         period_from, period_to = self._detect_period(text)
+        opening = self._detect_balance(text, _OPENING_RE)
+        closing = self._detect_balance(text, _CLOSING_RE)
 
         lines = self._extract_lines(
             tables,
@@ -227,6 +261,8 @@ class LocalDocumentParser:
                 account_number=account_number,
                 period_from=period_from,
                 period_to=period_to,
+                statement_opening=opening,
+                statement_closing=closing,
                 file_text=text,
                 error=(
                     "Could not locate a transaction table. The file may be a "
@@ -241,6 +277,8 @@ class LocalDocumentParser:
             account_number=account_number,
             period_from=period_from,
             period_to=period_to,
+            statement_opening=opening,
+            statement_closing=closing,
             lines=lines,
             file_text=text,
         )
@@ -341,7 +379,24 @@ class LocalDocumentParser:
             tables.append(rows)
         return tables, text
 
-    # ── Meta detection (reusable) ───────────────────────────────────────────
+    # ── Meta detection (reusable; also called by the AI fallback path) ──────
+
+    def extract_meta_from_text(self, text: str) -> dict:
+        """
+        Run the meta-detection regexes on raw document text and return
+        whatever is found. Public so the AI fallback in BankReconciler can
+        validate statement ownership using the same heuristics as the
+        local parser, without duplicating the regex.
+        """
+        period_from, period_to = self._detect_period(text)
+        return {
+            "bank_name":         self._detect_bank_name(text),
+            "account_number":    self._detect_account_number(text),
+            "period_from":       period_from,
+            "period_to":         period_to,
+            "statement_opening": self._detect_balance(text, _OPENING_RE),
+            "statement_closing": self._detect_balance(text, _CLOSING_RE),
+        }
 
     def _detect_bank_name(self, text: str) -> Optional[str]:
         lower = text.lower()
@@ -361,6 +416,25 @@ class LocalDocumentParser:
         if not m:
             return None, None
         return _parse_date(m.group(1)), _parse_date(m.group(2))
+
+    @staticmethod
+    def _detect_balance(text: str, regex: re.Pattern) -> Optional[float]:
+        """
+        Extract opening/closing balance. Treats trailing 'Cr' as positive
+        (bank's natural balance), 'Dr' as negative (overdraft).
+        """
+        m = regex.search(text)
+        if not m:
+            return None
+        raw = m.group(1).replace(",", "")
+        try:
+            val = float(raw)
+        except ValueError:
+            return None
+        suffix = (m.group(2) or "").lower() if m.lastindex and m.lastindex >= 2 else ""
+        if suffix == "dr":
+            val = -val
+        return val
 
     # ── Generic line extraction ─────────────────────────────────────────────
 

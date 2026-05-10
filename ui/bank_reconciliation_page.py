@@ -520,6 +520,32 @@ class BankReconciliationPage(QWidget):
 
         layout.addWidget(drop_card)
 
+        # Imported statements (un-finalised + finalised) with delete action
+        imp_card = QFrame()
+        imp_card.setObjectName("card")
+        imp_lay = QVBoxLayout(imp_card)
+        imp_lay.setContentsMargins(20, 16, 20, 16)
+        imp_lay.setSpacing(8)
+        imp_title = QLabel("Imported statements for this bank")
+        imp_title.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px; font-weight:bold;"
+        )
+        imp_lay.addWidget(imp_title)
+        self._imports_table = QTableWidget(0, 6)
+        self._imports_table.setHorizontalHeaderLabels(
+            ["File", "Period", "Method", "Lines (m / u / o)", "Status", ""]
+        )
+        self._imports_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        h = self._imports_table.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col, w in ((1, 180), (2, 70), (3, 130), (4, 100), (5, 100)):
+            h.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            self._imports_table.setColumnWidth(col, w)
+        self._imports_table.verticalHeader().setDefaultSectionSize(44)
+        self._imports_table.setMinimumHeight(120)
+        imp_lay.addWidget(self._imports_table)
+        layout.addWidget(imp_card)
+
         # History
         hist_card = QFrame()
         hist_card.setObjectName("card")
@@ -580,8 +606,36 @@ class BankReconciliationPage(QWidget):
 
     def _refresh_history(self):
         self._history_table.setRowCount(0)
+        self._imports_table.setRowCount(0)
         if not self._bank_ledger_id:
             return
+
+        # Imported statements
+        imports = self.reconciler.recent_imports(self._bank_ledger_id)
+        self._imports_table.setRowCount(len(imports))
+        for r, row in enumerate(imports):
+            self._imports_table.setItem(r, 0, QTableWidgetItem(row["file_name"]))
+            self._imports_table.setItem(r, 1, QTableWidgetItem(
+                f"{row['period_from']}  →  {row['period_to']}"
+            ))
+            self._imports_table.setItem(r, 2, QTableWidgetItem(row["import_method"]))
+            self._imports_table.setItem(r, 3, QTableWidgetItem(
+                f"{row['matched']} / {row['unmatched']} / {row['resolved_other']}"
+            ))
+            status = "Finalised" if row["finalised"] else "In progress"
+            self._imports_table.setItem(r, 4, QTableWidgetItem(status))
+            del_btn = self._compact_btn("Delete")
+            del_btn.clicked.connect(
+                lambda _, sid=row["id"], summary=row: self._on_delete_statement(sid, summary)
+            )
+            cell = QWidget()
+            ch = QHBoxLayout(cell)
+            ch.setContentsMargins(6, 0, 6, 0)
+            ch.addWidget(del_btn)
+            ch.addStretch()
+            self._imports_table.setCellWidget(r, 5, cell)
+
+        # Past reconciliations
         rows = self.reconciler.history_for_ledger(self._bank_ledger_id)
         self._history_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
@@ -599,6 +653,33 @@ class BankReconciliationPage(QWidget):
             self._history_table.setItem(r, 4, QTableWidgetItem(
                 row["finalised_at"][:16]
             ))
+
+    def _on_delete_statement(self, statement_id: int, summary: dict):
+        matched = summary.get("matched") or 0
+        warn = ""
+        if matched:
+            warn = (
+                f"\n\nThis statement has {matched} matched line(s). "
+                "Deleting it will reset the cleared-date on those "
+                "voucher lines (the vouchers themselves are kept)."
+            )
+        reply = QMessageBox.question(
+            self,
+            "Delete statement?",
+            f"Delete '{summary.get('file_name')}' "
+            f"({summary.get('period_from')} → {summary.get('period_to')})?"
+            f"{warn}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.reconciler.delete_statement(statement_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Delete failed", str(e))
+            return
+        self._refresh_history()
 
     def _on_file_dropped(self, path: str):
         if not self._bank_ledger_id:

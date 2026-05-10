@@ -207,6 +207,9 @@ class BankReconciler:
                 period_from=period_from,
                 period_to=period_to,
                 user_id=user_id,
+                confirm_account_population=confirm_account_population,
+                force_mismatch_override=force_mismatch_override,
+                confirm_unverified=confirm_unverified,
             )
 
         # ── 2. Statement-belongs-to-ledger qualification ──
@@ -233,8 +236,8 @@ class BankReconciler:
             file_hash=file_hash,
             period_from=stmt_period_from,
             period_to=stmt_period_to,
-            statement_opening=None,
-            statement_closing=None,
+            statement_opening=result.statement_opening,
+            statement_closing=result.statement_closing,
             import_method="LOCAL",
             imported_by_user_id=user_id,
             raw_meta=json.dumps({
@@ -258,6 +261,9 @@ class BankReconciler:
         period_from: str | None = None,
         period_to: str | None = None,
         user_id: int | None = None,
+        confirm_account_population: bool = False,
+        force_mismatch_override: bool = False,
+        confirm_unverified: bool = False,
     ) -> int:
         from ai.document_parser import DocumentParser
         from ai.voucher_ai import VoucherAI
@@ -281,6 +287,19 @@ class BankReconciler:
                 f"balance Rs.{cm.balance_paise/100:.2f}."
             )
         cm.deduct(result.local_pages, result.claude_pages, str(path))
+
+        # Use the same regex-based meta detection on the AI-OCR'd text so
+        # the AI fallback path enforces the same statement-belongs-to-ledger
+        # qualification as the local path.
+        meta = LocalDocumentParser().extract_meta_from_text(result.full_text)
+        self._validate_statement_ownership(
+            bank_ledger_id,
+            file_account=meta["account_number"],
+            file_bank_name=meta["bank_name"],
+            confirm_account_population=confirm_account_population,
+            force_mismatch_override=force_mismatch_override,
+            confirm_unverified=confirm_unverified,
+        )
 
         # Look up the bank ledger name + all ledger names
         bank_row = self.db.execute(
@@ -348,11 +367,19 @@ class BankReconciler:
             file_hash=file_hash,
             period_from=stmt_period_from,
             period_to=stmt_period_to,
-            statement_opening=extract.get("statement_opening"),
-            statement_closing=extract.get("statement_closing"),
+            statement_opening=(
+                extract.get("statement_opening") or meta["statement_opening"]
+            ),
+            statement_closing=(
+                extract.get("statement_closing") or meta["statement_closing"]
+            ),
             import_method="AI",
             imported_by_user_id=user_id,
-            raw_meta=json.dumps({"file_type": result.file_type}),
+            raw_meta=json.dumps({
+                "file_type":      result.file_type,
+                "bank_name":      meta["bank_name"],
+                "account_number": meta["account_number"],
+            }),
             lines=lines,
         )
 
@@ -1015,6 +1042,78 @@ class BankReconciler:
             (bank_ledger_id, self.company_id),
         ).fetchone()
         return row["last"] if row and row["last"] else None
+
+    def recent_imports(self, bank_ledger_id: int) -> list[dict]:
+        """
+        All bank_statements rows for this ledger (finalised or not), each
+        annotated with its match-status counts and whether it has a
+        finalised reconciliation pointing at it. Drives the Step-1
+        'Imported statements' table.
+        """
+        rows = self.db.execute(
+            """SELECT bs.id, bs.file_name, bs.period_from, bs.period_to,
+                      bs.statement_opening, bs.statement_closing,
+                      bs.import_method, bs.imported_at,
+                      (SELECT COUNT(*) FROM bank_statement_lines
+                          WHERE statement_id=bs.id) AS total_lines,
+                      (SELECT COUNT(*) FROM bank_statement_lines
+                          WHERE statement_id=bs.id
+                            AND match_status IN ('AUTO_MATCHED','MANUAL_MATCHED','VOUCHER_CREATED'))
+                          AS matched,
+                      (SELECT COUNT(*) FROM bank_statement_lines
+                          WHERE statement_id=bs.id AND match_status='UNMATCHED')
+                          AS unmatched,
+                      (SELECT COUNT(*) FROM bank_statement_lines
+                          WHERE statement_id=bs.id
+                            AND match_status IN ('IGNORED','FLAGGED'))
+                          AS resolved_other,
+                      (SELECT COUNT(*) FROM bank_reconciliations
+                          WHERE statement_id=bs.id) AS finalised
+                 FROM bank_statements bs
+                WHERE bs.company_id=? AND bs.bank_ledger_id=?
+             ORDER BY bs.imported_at DESC""",
+            (self.company_id, bank_ledger_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_statement(
+        self,
+        statement_id: int,
+        user_id: int | None = None,
+    ) -> None:
+        """
+        Drop a statement and reset any voucher_lines it had cleared. Refuses
+        if a finalised reconciliation references this statement (caller must
+        delete that snapshot first).
+        """
+        finalised = self.db.execute(
+            "SELECT COUNT(*) AS c FROM bank_reconciliations WHERE statement_id=?",
+            (statement_id,),
+        ).fetchone()
+        if finalised and finalised["c"]:
+            raise ValueError(
+                f"This statement is referenced by {finalised['c']} "
+                "finalised reconciliation(s). Delete the reconciliation "
+                "snapshot(s) first."
+            )
+
+        with self.db:
+            # Reset voucher_lines that were cleared by this statement's lines
+            self.db.execute(
+                """UPDATE voucher_lines
+                      SET cleared_date=NULL,
+                          bank_statement_line_id=NULL,
+                          cleared_by_user_id=NULL
+                    WHERE bank_statement_line_id IN
+                          (SELECT id FROM bank_statement_lines
+                            WHERE statement_id=?)""",
+                (statement_id,),
+            )
+            # Delete the statement; CASCADE on bank_statement_lines drops the rest
+            self.db.execute(
+                "DELETE FROM bank_statements WHERE id=?",
+                (statement_id,),
+            )
 
     def history_for_ledger(self, bank_ledger_id: int) -> list[dict]:
         rows = self.db.execute(
