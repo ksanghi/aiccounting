@@ -465,6 +465,21 @@ class MainWindow(QMainWindow):
                 section_above="DATA",
             )
 
+        # ── Book Migration — STANDARD+ ──
+        if lmgr.has_feature("book_migration"):
+            from ui.migration_page import MigrationPage
+            self.register_page(
+                "Migration", "📦",
+                MigrationPage(self.db, self.company_id, self.tree),
+            )
+        else:
+            self.register_page(
+                "Migration", "📦",
+                self._locked_page(
+                    "book_migration", "STANDARD", "Book Migration"
+                ),
+            )
+
         # ── License page ──
         from ui.license_page import LicensePage
         lic_page = LicensePage(lmgr)

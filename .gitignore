@@ -7,6 +7,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# …but keep the packaging build inputs (Nuitka + Inno Setup scripts):
+!build/
+build/output/
+build/dist/
 
 # Database files — NEVER commit company data
 data/companies/*.db

@@ -1,0 +1,22 @@
+# Build-only dependencies — installed only on the machine doing the
+# packaging build, NOT distributed with the app.
+#
+#   pip install -r requirements-build.txt
+
+-r requirements.txt
+
+# Nuitka — Python → C compiler. Standalone mode produces a folder with
+# a real .exe and bundled Qt DLLs. Acts as both bundler and source
+# protection (compiles to native code; no .pyc bytecode in the output).
+nuitka>=2.4
+
+# zstandard speeds up Nuitka's onefile compression (optional but recommended).
+zstandard>=0.22
+
+# ordered-set helps Nuitka deduplicate plugin imports — speeds up
+# the analysis phase noticeably.
+ordered-set>=4.1
+
+# Inno Setup is downloaded separately (https://jrsoftware.org/isdl.php).
+# It runs as iscc.exe, not a Python package. The build.bat expects it
+# on PATH or at the default install location.

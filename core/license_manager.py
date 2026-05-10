@@ -14,8 +14,10 @@ import urllib.error
 from pathlib import Path
 from datetime import datetime, date, timedelta
 
+from core.paths import license_file as _license_file_path
+
 BASE_DIR     = Path(__file__).parent.parent
-LICENSE_FILE = BASE_DIR / "data" / "license.json"
+LICENSE_FILE = _license_file_path()
 SERVER_URL   = "https://license.aiccounting.in/api/v1"
 
 PLANS = ["FREE", "STANDARD", "PRO", "PREMIUM"]
@@ -50,6 +52,7 @@ PLAN_FEATURES = {
         "export_pdf",
         "bank_reconciliation",
         "ledger_reconciliation",
+        "book_migration",
         "backup",
         "multi_user_2",
     ],
@@ -62,6 +65,7 @@ PLAN_FEATURES = {
         "export_pdf",
         "bank_reconciliation",
         "ledger_reconciliation",
+        "book_migration",
         "backup",
         "multi_user_5",
         "gst",
@@ -79,6 +83,7 @@ PLAN_FEATURES = {
         "export_pdf",
         "bank_reconciliation",
         "ledger_reconciliation",
+        "book_migration",
         "backup",
         "multi_user_unlimited",
         "gst",
@@ -99,6 +104,7 @@ FEATURE_UPGRADE_MAP = {
     "export_pdf":          "STANDARD",
     "bank_reconciliation":   "STANDARD",
     "ledger_reconciliation": "STANDARD",
+    "book_migration":        "STANDARD",
     "gst":                 "PRO",
     "tds":                 "PRO",
     "ai_document_reader":  "PRO",

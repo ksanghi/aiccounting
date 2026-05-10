@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-CREDIT_FILE = Path(__file__).parent.parent / "data" / "credits.json"
+from core.paths import credits_file as _credits_file_path
+CREDIT_FILE = _credits_file_path()
 
 
 class CreditManager:

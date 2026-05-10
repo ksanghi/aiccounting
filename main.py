@@ -94,33 +94,44 @@ class CompanyDialog(QDialog):
 
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("e.g. My Trading Co Pvt Ltd")
-        self.name_edit.setFixedHeight(32)
+        self.name_edit.setFixedHeight(34)
         form.addRow(QLabel("Company Name *"), self.name_edit)
 
         self.gstin_edit = QLineEdit()
         self.gstin_edit.setPlaceholderText("e.g. 07AABCD1234E1ZK")
-        self.gstin_edit.setFixedHeight(32)
+        self.gstin_edit.setFixedHeight(34)
         form.addRow(QLabel("GSTIN"), self.gstin_edit)
 
         self.state_edit = QLineEdit("07")
-        self.state_edit.setFixedHeight(32)
+        self.state_edit.setFixedHeight(34)
         self.state_edit.setMaximumWidth(60)
         form.addRow(QLabel("State Code"), self.state_edit)
 
         layout.addLayout(form)
 
+        btn_row = QHBoxLayout()
         create_btn = QPushButton("Create & Open")
         create_btn.setObjectName("btn_primary")
         create_btn.setFixedHeight(36)
         create_btn.clicked.connect(self._create_company)
-        layout.addWidget(create_btn)
+        btn_row.addWidget(create_btn)
+
+        migrate_btn = QPushButton("Create & Migrate from another system…")
+        migrate_btn.setFixedHeight(36)
+        migrate_btn.setToolTip(
+            "Create the company, then launch the migration wizard "
+            "(Tally / Excel / Zoho / QuickBooks)."
+        )
+        migrate_btn.clicked.connect(lambda: self._create_company(migrate=True))
+        btn_row.addWidget(migrate_btn)
+        layout.addLayout(btn_row)
 
         self.name_edit.returnPressed.connect(self._create_company)
 
     def _get_existing(self):
-        """Return list of (slug, company_name) from data/companies/."""
-        from pathlib import Path
-        db_dir = Path(BASE_DIR) / "data" / "companies"
+        """Return list of (slug, company_name) from the companies dir."""
+        from core.paths import companies_dir
+        db_dir = companies_dir()
         result = []
         if db_dir.exists():
             for f in sorted(db_dir.glob("*.db")):
@@ -153,7 +164,7 @@ class CompanyDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
-    def _create_company(self):
+    def _create_company(self, migrate: bool = False):
         name = self.name_edit.text().strip()
         if not name:
             self.name_edit.setStyleSheet(f"border: 1px solid {THEME['danger']};")
@@ -197,6 +208,22 @@ class CompanyDialog(QDialog):
             self.selected_db   = db
             self.selected_cid  = company_id
             self.selected_tree = tree
+
+            # If launched via "Create & Migrate", run the wizard before
+            # accepting the dialog. The user can still cancel — the
+            # company is already created either way.
+            if migrate:
+                try:
+                    from ui.migration_wizard import MigrationWizard
+                    w = MigrationWizard(db, company_id, tree, parent=self)
+                    w.exec()
+                except Exception as e:
+                    QMessageBox.warning(
+                        self, "Migration",
+                        f"Company created, but migration wizard failed: {e}\n"
+                        "You can run migration later from the sidebar.",
+                    )
+
             self.accept()
 
         except Exception as e:

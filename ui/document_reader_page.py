@@ -28,7 +28,8 @@ DOC_TYPES = [
     ("other",            "Other Document"),
 ]
 
-_CFG_PATH = Path(__file__).parent.parent / "config" / "display_config.json"
+from core.paths import config_dir as _config_dir
+_CFG_PATH = _config_dir() / "display_config.json"
 
 
 def _load_cfg() -> dict:

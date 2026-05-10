@@ -1,0 +1,12 @@
+# Aiccounting / AccGenie — runtime dependencies
+#
+# Pin major versions to keep the build reproducible. Bump deliberately.
+
+PyQt6>=6.6,<7
+
+# Document parsing (AI Doc Reader, Bank Reconciliation, Migration)
+pdfplumber>=0.11
+openpyxl>=3.1
+python-docx>=1.1
+
+# stdlib-only otherwise (sqlite3, csv, json, urllib, xml.etree).

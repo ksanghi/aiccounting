@@ -8,9 +8,20 @@ import os
 from pathlib import Path
 from datetime import date, datetime
 
+from core.paths import companies_dir
 
-DB_DIR = Path(__file__).parent.parent / "data" / "companies"
-DB_DIR.mkdir(parents=True, exist_ok=True)
+
+def _db_dir() -> Path:
+    """
+    Resolved at first call (not import time) so PyInstaller's frozen
+    detection works correctly even when this module is imported very
+    early during startup.
+    """
+    return companies_dir()
+
+
+# Back-compat alias for any code reading DB_DIR directly.
+DB_DIR = _db_dir()
 
 
 # ─── Schema DDL ───────────────────────────────────────────────────────────────
@@ -279,6 +290,24 @@ CREATE TABLE IF NOT EXISTS ledger_reconciliations (
     notes                 TEXT
 );
 
+-- ── Migration runs (book migration from other software) ──────────────
+CREATE TABLE IF NOT EXISTS migration_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id    INTEGER NOT NULL REFERENCES companies(id),
+    source_type   TEXT NOT NULL,        -- 'TALLY_XML' | 'EXCEL_COA' | 'CLOUD_CSV'
+    source_label  TEXT,                 -- e.g. 'Zoho Books', 'QuickBooks', filename
+    file_name     TEXT NOT NULL,
+    file_hash     TEXT NOT NULL,
+    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at  TEXT,
+    status        TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+                                        -- IN_PROGRESS | DRY_RUN | COMPLETED |
+                                        -- FAILED | ROLLED_BACK
+    counts        TEXT,                 -- JSON {groups, ledgers, vouchers, ...}
+    error_log     TEXT,                 -- non-empty if failed
+    notes         TEXT
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_vouchers_date     ON vouchers(company_id, voucher_date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_type     ON vouchers(company_id, voucher_type);
@@ -291,6 +320,7 @@ CREATE INDEX IF NOT EXISTS idx_bstmt_ledger      ON bank_statements(company_id, 
 CREATE INDEX IF NOT EXISTS idx_lsl_status        ON ledger_statement_lines(statement_id, match_status);
 CREATE INDEX IF NOT EXISTS idx_lsl_match         ON ledger_statement_lines(matched_voucher_line_id);
 CREATE INDEX IF NOT EXISTS idx_lstmt_ledger      ON ledger_statements(company_id, ledger_id);
+CREATE INDEX IF NOT EXISTS idx_migration_company ON migration_runs(company_id, started_at);
 """
 
 
