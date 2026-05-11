@@ -1,0 +1,22 @@
+# Render.com Blueprint. Push to git, then "New Blueprint" pointing at this file.
+# Free tier sleeps after inactivity; use a paid tier for production.
+services:
+  - type: web
+    name: accgenie-license
+    runtime: python
+    plan: free
+    rootDir: license_server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn license_server.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////var/data/licenses.db
+      - key: MAX_MACHINES_PER_KEY
+        value: "3"
+      - key: ADMIN_TOKEN
+        generateValue: true
+    disk:
+      name: license-data
+      mountPath: /var/data
+      sizeGB: 1

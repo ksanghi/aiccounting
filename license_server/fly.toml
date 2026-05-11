@@ -1,0 +1,31 @@
+# Fly.io config. Adjust app name + region. Run `fly launch --copy-config` to deploy.
+app = "accgenie-license"
+primary_region = "bom"   # Mumbai — closest to India users
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATABASE_URL = "sqlite:////data/licenses.db"
+  MAX_MACHINES_PER_KEY = "3"
+
+[mounts]
+  source = "license_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/v1/health"
+
+# Set ADMIN_TOKEN as a secret, not in this file:
+#   fly secrets set ADMIN_TOKEN=$(python -c "import secrets;print(secrets.token_urlsafe(32))")

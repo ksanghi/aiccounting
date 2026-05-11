@@ -237,6 +237,13 @@ def main():
     app.setApplicationName("AccGenie")
     app.setStyle("Fusion")
 
+    # Anonymous install heartbeat — fire-and-forget on a background thread.
+    try:
+        from core.telemetry import send_install_heartbeat
+        send_install_heartbeat()
+    except Exception:
+        pass
+
     # Show company selector
     dlg = CompanyDialog()
     if dlg.exec() != QDialog.DialogCode.Accepted:

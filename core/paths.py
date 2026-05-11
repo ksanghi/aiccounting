@@ -79,6 +79,10 @@ def credits_file() -> Path:
     return user_data_dir() / "credits.json"
 
 
+def install_id_file() -> Path:
+    return user_data_dir() / "install_id.txt"
+
+
 def config_dir() -> Path:
     """Per-user config (API keys, theme prefs, etc.)."""
     if is_packaged():
