@@ -20,6 +20,14 @@ data/companies/*.db
 data/companies/*.db-wal
 data/companies/*.db-shm
 
+# Local license server SQLite (dev only — prod lives on Fly volume)
+licenses.db
+licenses.db-wal
+licenses.db-shm
+license_server/licenses.db
+license_server/licenses.db-wal
+license_server/licenses.db-shm
+
 # Eclipse
 .project
 .pydevproject
