@@ -17,7 +17,7 @@ from core.license_manager import (
     PLAN_FEATURES
 )
 
-UPGRADE_URL = "https://aiccounting.in/pricing"
+UPGRADE_URL = "https://accgenie.in/pricing"
 
 
 class ValidateThread(QThread):
@@ -276,7 +276,7 @@ class LicensePage(QWidget):
         kc.setSpacing(10)
 
         info = QLabel(
-            "Purchase a plan at aiccounting.in "
+            "Purchase a plan at accgenie.in "
             "to receive your license key by email."
         )
         info.setStyleSheet(
@@ -290,7 +290,7 @@ class LicensePage(QWidget):
 
         self._key_edit = QLineEdit()
         self._key_edit.setPlaceholderText(
-            "Enter license key — AICC-XXXX-XXXX-XXXX"
+            "Enter license key — ACCG-XXXX-XXXX-XXXX"
         )
         self._key_edit.setFixedHeight(38)
         self._key_edit.setStyleSheet(f"""

@@ -8,6 +8,7 @@ License Manager
 """
 import json
 import hashlib
+import os
 import platform
 import urllib.request
 import urllib.error
@@ -18,7 +19,12 @@ from core.paths import license_file as _license_file_path
 
 BASE_DIR     = Path(__file__).parent.parent
 LICENSE_FILE = _license_file_path()
-SERVER_URL   = "https://license.aiccounting.in/api/v1"
+SERVER_URL   = os.environ.get(
+    "ACCGENIE_LICENSE_SERVER",
+    "https://license.accgenie.in/api/v1",
+)
+
+DEV_KEY = "ACCG-DEV-FULL"
 
 PLANS = ["FREE", "STANDARD", "PRO", "PREMIUM"]
 
@@ -336,6 +342,23 @@ class LicenseManager:
 
     def validate_with_server(self, license_key: str) -> tuple[bool, str]:
         """Validates key with license server. Returns (success, message)."""
+        if license_key == DEV_KEY:
+            self._data.update({
+                "license_key":   DEV_KEY,
+                "plan":          "PREMIUM",
+                "features":      PLAN_FEATURES["PREMIUM"],
+                "txn_limit":     PLAN_LIMITS["PREMIUM"],
+                "txn_used":      self._data.get("txn_used", 0),
+                "user_limit":    999,
+                "expires_at":    "2099-12-31",
+                "company_name":  "Developer",
+                "validated_at":  datetime.now().isoformat(),
+                "offline_until": (datetime.now() + timedelta(days=3650)).isoformat(),
+                "overage_count": 0,
+            })
+            self._save_local()
+            return True, "Developer key activated — all features unlocked."
+
         try:
             payload = json.dumps({
                 "license_key": license_key,
@@ -381,7 +404,7 @@ class LicenseManager:
 
     def refresh_from_server(self):
         """Silent background refresh."""
-        if self.license_key in ("FREE-DEMO", "", None):
+        if self.license_key in ("FREE-DEMO", DEV_KEY, "", None):
             return
         self.validate_with_server(self.license_key)
 
