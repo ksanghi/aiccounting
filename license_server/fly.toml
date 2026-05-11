@@ -1,5 +1,5 @@
 # Fly.io config. Adjust app name + region. Run `fly launch --copy-config` to deploy.
-app = "accgenie-license"
+app = "accgenie-license-in"
 primary_region = "bom"   # Mumbai — closest to India users
 
 [build]
