@@ -100,12 +100,6 @@ QMainWindow {{
     padding: 20px 18px 14px 18px;
     border-bottom: 1px solid {t['border']};
 }}
-#logo_text {{
-    font-size: 17px;
-    font-weight: bold;
-    color: {t['accent']};
-    letter-spacing: 2px;
-}}
 #company_text {{
     font-size: 11px;
     color: {t['text_secondary']};

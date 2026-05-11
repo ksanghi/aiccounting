@@ -106,11 +106,24 @@ class ProcessThread(QThread):
 
 # ── Drop zone widget ──────────────────────────────────────────────────────────
 
+_DEFAULT_FILTER = (
+    "All supported (*.pdf *.xlsx *.xls *.csv *.jpg *.jpeg *.png *.docx *.txt)"
+    ";;PDF (*.pdf)"
+    ";;Excel (*.xlsx *.xls)"
+    ";;CSV (*.csv)"
+    ";;Images (*.jpg *.jpeg *.png)"
+    ";;Word (*.docx)"
+    ";;Text (*.txt)"
+)
+_DEFAULT_HINT = "PDF  ·  Excel  ·  CSV  ·  JPG  ·  PNG  ·  Word  ·  TXT"
+
+
 class DropZone(QFrame):
     file_dropped = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, file_filter: str = "", format_hint: str = ""):
         super().__init__(parent)
+        self._file_filter = file_filter or _DEFAULT_FILTER
         self.setAcceptDrops(True)
         self.setMinimumHeight(140)
         self._default_style()
@@ -131,7 +144,7 @@ class DropZone(QFrame):
         self._lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._lbl)
 
-        fmt = QLabel("PDF  ·  Excel  ·  CSV  ·  JPG  ·  PNG  ·  Word  ·  TXT")
+        fmt = QLabel(format_hint or _DEFAULT_HINT)
         fmt.setStyleSheet(f"color:{THEME['text_dim']};font-size:10px;")
         fmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(fmt)
@@ -168,14 +181,7 @@ class DropZone(QFrame):
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Document", "",
-            "All supported (*.pdf *.xlsx *.xls *.csv *.jpg *.jpeg *.png *.docx *.txt)"
-            ";;PDF (*.pdf)"
-            ";;Excel (*.xlsx *.xls)"
-            ";;CSV (*.csv)"
-            ";;Images (*.jpg *.jpeg *.png)"
-            ";;Word (*.docx)"
-            ";;Text (*.txt)"
+            self, "Open File", "", self._file_filter,
         )
         if path:
             self.file_dropped.emit(path)

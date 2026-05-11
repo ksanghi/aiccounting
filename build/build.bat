@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=AccGenie
-set VERSION=1.0.0
+set VERSION=1.0.2
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
@@ -34,6 +34,7 @@ python -m nuitka ^
     --include-package=ui ^
     --include-package=ai ^
     --include-package=core.migration ^
+    --include-data-files="ui/AccGenie final logo.png=ui/AccGenie final logo.png" ^
     --windows-console-mode=disable ^
     --output-dir=%OUTPUT_DIR% ^
     --output-filename=%APP_NAME%.exe ^

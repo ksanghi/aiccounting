@@ -152,6 +152,28 @@ def _log_validation(
 
 # ── Public endpoints ──────────────────────────────────────────────────────
 
+@app.get("/", include_in_schema=False)
+def root():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        "<!doctype html><meta charset=utf-8>"
+        "<title>AccGenie License Server</title>"
+        "<style>body{font-family:system-ui,sans-serif;max-width:560px;"
+        "margin:80px auto;padding:0 20px;color:#222;line-height:1.5}"
+        "a{color:#0a66c2}</style>"
+        "<h1>AccGenie License Server</h1>"
+        "<p>This is the API endpoint for the AccGenie desktop app. "
+        "It has no browsable home page.</p>"
+        "<ul>"
+        "<li><a href=\"/api/v1/health\">/api/v1/health</a> — health check</li>"
+        "<li><a href=\"/docs\">/docs</a> — interactive API documentation</li>"
+        "</ul>"
+        "<p style=\"color:#666;font-size:13px\">"
+        "Need a license key? Visit "
+        "<a href=\"https://accgenie.in\">accgenie.in</a>.</p>"
+    )
+
+
 @app.get("/api/v1/health")
 def health():
     return {"status": "ok", "version": settings.server_version}

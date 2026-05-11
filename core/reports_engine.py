@@ -152,11 +152,23 @@ class ReportsEngine:
 
         assets      = get_balances("ASSET")
         liabilities = get_balances("LIABILITY")
+
+        # A ledger whose balance lands on the side opposite its group's
+        # natural side (e.g. a bank overdraft → Asset nature with Cr balance,
+        # or a vendor advance refund → Liability with Dr balance) must
+        # *reduce* its side's total, not be dropped. Treat such balances as
+        # signed contributions.
+        def signed_total(rows: list[dict], natural_side: str) -> float:
+            return sum(
+                r["balance"] if r["side"] == natural_side else -r["balance"]
+                for r in rows
+            )
+
         return {
             "assets":            assets,
             "liabilities":       liabilities,
-            "total_assets":      round(sum(r["balance"] for r in assets      if r["side"] == "Dr"), 2),
-            "total_liabilities": round(sum(r["balance"] for r in liabilities if r["side"] == "Cr"), 2),
+            "total_assets":      round(signed_total(assets,      "Dr"), 2),
+            "total_liabilities": round(signed_total(liabilities, "Cr"), 2),
             "as_of":             as_of,
         }
 

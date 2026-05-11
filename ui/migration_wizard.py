@@ -201,7 +201,19 @@ class MigrationWizard(QDialog):
         )
         v.addWidget(lbl)
 
-        self._drop = DropZone()
+        # Migration accepts all three source formats — XML (Tally), Excel,
+        # and CSV. A single permissive filter avoids needing to recreate
+        # the widget when the user changes their step-1 source choice.
+        self._drop = DropZone(
+            file_filter=(
+                "All migration files (*.xml *.xlsx *.xls *.csv)"
+                ";;Tally XML (*.xml)"
+                ";;Excel (*.xlsx *.xls)"
+                ";;CSV (*.csv)"
+                ";;All Files (*)"
+            ),
+            format_hint="Tally XML  ·  Excel  ·  CSV",
+        )
         self._drop.file_dropped.connect(self._on_file_picked)
         v.addWidget(self._drop)
 

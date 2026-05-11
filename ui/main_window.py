@@ -15,7 +15,12 @@ from PySide6.QtWidgets import (
     QSizePolicy, QMessageBox, QSplitter, QScrollArea
 )
 from PySide6.QtCore  import Qt, QTimer, Signal, QSize
-from PySide6.QtGui   import QFont, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui   import QFont, QIcon, QPixmap, QKeySequence, QShortcut
+
+LOGO_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "ui", "AccGenie final logo.png",
+)
 
 from ui.theme              import THEME, get_stylesheet
 from ui.widgets            import CalculatorWidget
@@ -139,11 +144,17 @@ class MainWindow(QMainWindow):
         logo_layout.setContentsMargins(16, 14, 16, 12)
         logo_layout.setSpacing(2)
 
-        logo_lbl = QLabel("AccGenie")
-        logo_lbl.setObjectName("logo_text")
+        logo_lbl = QLabel()
+        logo_lbl.setPixmap(
+            QPixmap(LOGO_PATH).scaledToWidth(
+                140, Qt.TransformationMode.SmoothTransformation
+            )
+        )
+        logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         co_lbl = QLabel(self._company_name[:26])
         co_lbl.setObjectName("company_text")
         co_lbl.setWordWrap(True)
+        co_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_layout.addWidget(logo_lbl)
         logo_layout.addWidget(co_lbl)
         sidebar_layout.addWidget(logo_box)

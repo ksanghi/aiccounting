@@ -41,6 +41,13 @@ UninstallDisplayIcon={app}\{#AppExeName}
 DisableProgramGroupPage=yes
 ShowLanguageDialog=no
 
+; Upgrade behaviour: if AccGenie is running, ask to close it; never auto-
+; restart. The [Code] section below also silently uninstalls any prior
+; version before installing, so each upgrade is a clean replace.
+CloseApplications=yes
+RestartApplications=no
+UsePreviousAppDir=yes
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -62,3 +69,30 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 Filename: "{app}\{#AppExeName}"; \
     Description: "Launch {#AppName}"; \
     Flags: nowait postinstall skipifsilent
+
+[Code]
+{
+  Auto-uninstall any previously installed AccGenie before laying down the
+  new bits. User data lives under %APPDATA%\AccGenie and is NEVER named in
+  this installer, so it survives the uninstall.
+}
+const
+  PriorAppKey =
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
+    '{A1CC5E22-1234-4E78-9ABC-AICCOUNTING001}_is1';
+
+function InitializeSetup(): Boolean;
+var
+  UninstallString: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+  if RegQueryStringValue(HKCU, PriorAppKey, 'UninstallString',
+                         UninstallString) then
+  begin
+    UninstallString := RemoveQuotes(UninstallString);
+    Exec(UninstallString,
+         '/SILENT /NORESTART /SUPPRESSMSGBOXES',
+         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;

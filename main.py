@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QMessageBox
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui  import QFont
+from PySide6.QtGui  import QFont, QPixmap, QIcon
+
+LOGO_PATH = os.path.join(BASE_DIR, "ui", "AccGenie final logo.png")
 
 from core.models        import Database
 from core.account_tree  import AccountTree
@@ -48,15 +50,14 @@ class CompanyDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
 
         # Logo
-        logo = QLabel("⬡  LEDGER")
-        logo.setStyleSheet(f"font-size:22px; font-weight:bold; color:{THEME['accent']}; letter-spacing:2px;")
+        logo = QLabel()
+        logo.setPixmap(
+            QPixmap(LOGO_PATH).scaledToHeight(
+                160, Qt.TransformationMode.SmoothTransformation
+            )
+        )
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
-
-        tagline = QLabel("Indian accounting • GST • TDS • Multi-company")
-        tagline.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
-        tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(tagline)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         layout.addWidget(sep)
@@ -235,6 +236,7 @@ class CompanyDialog(QDialog):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("AccGenie")
+    app.setWindowIcon(QIcon(LOGO_PATH))
     app.setStyle("Fusion")
 
     # Anonymous install heartbeat — fire-and-forget on a background thread.
