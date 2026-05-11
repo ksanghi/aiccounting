@@ -5,10 +5,11 @@ Ledger Balance panel — searchable ledger summary
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox,
-    QDateEdit, QFrame, QHeaderView, QAbstractItemView, QSizePolicy
+    QDateEdit, QFrame, QHeaderView, QAbstractItemView, QSizePolicy,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, QDate, Signal
-from PySide6.QtGui  import QColor, QFont
+from PySide6.QtGui  import QColor, QFont, QKeySequence, QShortcut
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, make_separator
@@ -198,16 +199,31 @@ class LedgerBalancePage(QWidget):
 
         self.hide_zero = QPushButton("Hide zero balances")
         self.hide_zero.setCheckable(True)
-        self.hide_zero.setChecked(True)
+        self.hide_zero.setChecked(False)
         self.hide_zero.setFixedHeight(30)
         self.hide_zero.clicked.connect(self._filter)
         frow.addWidget(self.hide_zero)
+
+        add_btn = QPushButton("F2 — Add Ledger")
+        add_btn.setFixedHeight(30)
+        add_btn.setToolTip("F2 — create a new ledger")
+        add_btn.clicked.connect(self._add_ledger)
+        frow.addWidget(add_btn)
+
+        edit_btn = QPushButton("F3 — Edit")
+        edit_btn.setFixedHeight(30)
+        edit_btn.setToolTip("F3 — edit the selected ledger")
+        edit_btn.clicked.connect(self._edit_selected_ledger)
+        frow.addWidget(edit_btn)
 
         refresh_btn = QPushButton("↻ Refresh")
         refresh_btn.setFixedHeight(30)
         refresh_btn.clicked.connect(self.refresh)
         frow.addWidget(refresh_btn)
         layout.addWidget(fbar)
+
+        QShortcut(QKeySequence("F2"), self).activated.connect(self._add_ledger)
+        QShortcut(QKeySequence("F3"), self).activated.connect(self._edit_selected_ledger)
 
         # Table
         self.table = QTableWidget()
@@ -222,6 +238,7 @@ class LedgerBalancePage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
+        self.table.doubleClicked.connect(self._edit_selected_ledger)
         layout.addWidget(self.table, 1)
 
         self.summary_label = QLabel("")
@@ -243,6 +260,7 @@ class LedgerBalancePage(QWidget):
         for l in ledgers:
             b = self.tree.get_ledger_balance(l["id"])
             self._all_data.append({
+                "id":       l["id"],
                 "name":     l["name"],
                 "group":    l["group_name"],
                 "nature":   l["nature"],
@@ -279,6 +297,8 @@ class LedgerBalancePage(QWidget):
                 )
                 if j >= 2:
                     item.setForeground(QColor(colour))
+                if j == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, d["id"])
                 self.table.setItem(i, j, item)
 
             if is_dr:
@@ -290,3 +310,30 @@ class LedgerBalancePage(QWidget):
             f"{len(rows)} ledgers  |  "
             f"Total Dr ₹{total_dr:,.2f}  |  Total Cr ₹{total_cr:,.2f}"
         )
+
+    def _add_ledger(self):
+        from ui.widgets import QuickAddLedgerDialog
+        dlg = QuickAddLedgerDialog(self.tree, parent=self)
+        dlg.ledger_created.connect(lambda *_: self.refresh())
+        dlg.exec()
+
+    def _edit_selected_ledger(self, *_):
+        from ui.widgets import QuickAddLedgerDialog
+        row = self.table.currentRow()
+        if row < 0:
+            QMessageBox.information(
+                self, "No ledger selected",
+                "Pick a ledger from the list, then press F3 to edit it.",
+            )
+            return
+        item = self.table.item(row, 0)
+        if item is None:
+            return
+        lid = item.data(Qt.ItemDataRole.UserRole)
+        if not lid:
+            return
+        dlg = QuickAddLedgerDialog(
+            self.tree, parent=self, existing_ledger_id=lid,
+        )
+        dlg.ledger_updated.connect(lambda *_: self.refresh())
+        dlg.exec()
