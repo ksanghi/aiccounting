@@ -91,8 +91,32 @@ class DocumentParser:
         ".docx": "word",
     }
 
-    def __init__(self, api_key: str = ""):
+    def __init__(self, api_key: str = "", feature: str = "document_reader"):
+        # api_key is now legacy — callers should configure routing in
+        # Settings → AI Routing instead. We keep the param so existing call
+        # sites don't break; if passed, it's used as a one-shot BYOK
+        # override (handy for env-var test runs and the bank-reco fallback
+        # path which still surfaces an api-key field today).
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.feature = feature
+
+    @property
+    def ai_available(self) -> bool:
+        """True if any route (own-key or pooled) can be used right now."""
+        if self.api_key:
+            return True
+        try:
+            from core.ai_routing import routing
+            from core.license_manager import LicenseManager
+            if routing.has_own_key():
+                return True
+            # Pooled requires a paid license (DEMO/FREE-DEMO bounces out
+            # in ai_client.call_messages).
+            return LicenseManager().license_key not in (
+                "DEMO", "FREE-DEMO", "", None,
+            )
+        except Exception:
+            return False
 
     def parse(self, filepath: str, sheet_index: int = 0) -> ExtractionResult:
         result = ExtractionResult()
@@ -182,7 +206,7 @@ class DocumentParser:
         except Exception:
             pass
 
-        if self.api_key:
+        if self.ai_available:
             try:
                 import io
                 img = pdf_page.to_image(resolution=150)
@@ -199,7 +223,10 @@ class DocumentParser:
 
         return PageResult(
             page_num=page_num,
-            error="Scanned page — Tesseract not installed and no API key set."
+            error=(
+                "Scanned page — Tesseract not installed and AI routing not "
+                "configured. Open Settings → AI Routing to enable AI parsing."
+            ),
         )
 
     # ── Excel ─────────────────────────────────────────────────────────────────
@@ -296,10 +323,11 @@ class DocumentParser:
 
     def _parse_image(self, filepath: str, result: ExtractionResult,
                      sheet_index: int = 0):
-        if not self.api_key:
+        if not self.ai_available:
             result.error = (
-                "Claude API key required for image reading.\n"
-                "Go to Settings -> API Key."
+                "AI routing not configured.\n"
+                "Open Settings → AI Routing to paste your Anthropic key or "
+                "enable pooled credits."
             )
             return
         try:
@@ -326,7 +354,7 @@ class DocumentParser:
     # ── Claude Vision ─────────────────────────────────────────────────────────
 
     def _claude_vision(self, b64: str, mime: str) -> str:
-        payload = json.dumps({
+        payload = {
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 4096,
             "messages": [{
@@ -337,8 +365,8 @@ class DocumentParser:
                         "source": {
                             "type": "base64",
                             "media_type": mime,
-                            "data": b64
-                        }
+                            "data": b64,
+                        },
                     },
                     {
                         "type": "text",
@@ -346,21 +374,29 @@ class DocumentParser:
                             "Extract ALL text and transaction data from this document. "
                             "For each transaction include: date, description, debit amount, "
                             "credit amount, balance. Preserve table structure."
-                        )
-                    }
-                ]
-            }]
-        }).encode()
+                        ),
+                    },
+                ],
+            }],
+        }
+        # Legacy api_key override: when a caller still passes an explicit
+        # api_key (e.g. the bank-reco fallback before Phase 2b lands), we
+        # hit Anthropic directly so the legacy code path isn't disturbed.
+        if self.api_key:
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=json.dumps(payload).encode(),
+                headers={
+                    "Content-Type":      "application/json",
+                    "x-api-key":         self.api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read())
+            return data["content"][0]["text"]
 
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=payload,
-            headers={
-                "Content-Type":       "application/json",
-                "x-api-key":          self.api_key,
-                "anthropic-version":  "2023-06-01"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
+        # Routed call — honours user's Settings → AI Routing choice.
+        from ai.ai_client import call_messages
+        data = call_messages(self.feature, payload, timeout=60)
         return data["content"][0]["text"]

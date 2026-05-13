@@ -99,6 +99,14 @@ class VoucherValidationError(Exception):
         super().__init__(" | ".join(errors))
 
 
+class PeriodLockedError(VoucherValidationError):
+    """
+    Raised when a post/edit/cancel touches a date inside a locked period.
+    Subclasses VoucherValidationError so existing `except` paths in the UI
+    catch it without modification.
+    """
+
+
 # ─── GST Engine ───────────────────────────────────────────────────────────────
 
 class GSTEngine:
@@ -871,6 +879,76 @@ class VoucherEngine:
             reference=reference,
         )
 
+    # ── Period locks (FY closure + ad-hoc date-range locks) ───────────────────
+
+    def _check_period_lock(self, voucher_date: str) -> None:
+        """
+        Raise PeriodLockedError if `voucher_date` falls inside:
+          (a) a closed financial_year for this company, OR
+          (b) any period_locks row for this company that brackets the date.
+
+        Called from post() and from update_voucher() / cancel_voucher() so
+        the same rule applies to all three mutations.
+        """
+        conn = self.db.connect()
+
+        # (a) Closed FY?
+        fy_row = conn.execute(
+            """SELECT fy FROM financial_years
+                WHERE company_id=?
+                  AND is_closed=1
+                  AND ? BETWEEN start_date AND end_date""",
+            (self.company_id, voucher_date),
+        ).fetchone()
+        if fy_row:
+            raise PeriodLockedError([
+                f"Financial year {fy_row['fy']} is closed. "
+                f"Re-open it from Period Locks before editing {voucher_date}."
+            ])
+
+        # (b) Date-range lock?
+        lk_row = conn.execute(
+            """SELECT lock_from, lock_to, reason FROM period_locks
+                WHERE company_id=?
+                  AND ? BETWEEN lock_from AND lock_to
+                ORDER BY locked_at DESC
+                LIMIT 1""",
+            (self.company_id, voucher_date),
+        ).fetchone()
+        if lk_row:
+            reason = (lk_row["reason"] or "").strip()
+            tail = f" ({reason})" if reason else ""
+            raise PeriodLockedError([
+                f"Period {lk_row['lock_from']} to {lk_row['lock_to']} "
+                f"is locked{tail}. Remove the lock first."
+            ])
+
+    def _ensure_fy_exists(self, voucher_date: str) -> None:
+        """
+        Idempotent: insert a row into `financial_years` for the FY covering
+        `voucher_date` if it's missing. Lets users post into future or past
+        years without hitting "no FY row" errors.
+        """
+        fy = VoucherNumberer.get_fy(voucher_date)
+        conn = self.db.connect()
+        existing = conn.execute(
+            "SELECT 1 FROM financial_years WHERE company_id=? AND fy=?",
+            (self.company_id, fy),
+        ).fetchone()
+        if existing:
+            return
+        # April-March FY by convention; matches main.py's seed for 2025-26.
+        start_year = int(fy.split("-")[0])
+        start = f"{start_year:04d}-04-01"
+        end   = f"{start_year + 1:04d}-03-31"
+        conn.execute(
+            """INSERT OR IGNORE INTO financial_years
+               (company_id, fy, start_date, end_date)
+               VALUES (?,?,?,?)""",
+            (self.company_id, fy, start, end),
+        )
+        self.db.commit()
+
     # ── Post & Cancel ──────────────────────────────────────────────────────────
 
     def post(self, draft: VoucherDraft) -> PostedVoucher:
@@ -881,6 +959,12 @@ class VoucherEngine:
         """
         # Validate
         self.validator.validate(draft)
+
+        # Period-lock + FY-row guarantees (Phase 3). Order matters: ensure
+        # the FY row exists BEFORE checking is_closed so a missing row for
+        # an in-range posting isn't conflated with "closed".
+        self._ensure_fy_exists(draft.voucher_date)
+        self._check_period_lock(draft.voucher_date)
 
         conn = self.db.connect()
         fy = VoucherNumberer.get_fy(draft.voucher_date)
@@ -997,6 +1081,13 @@ class VoucherEngine:
         # Validate the draft (reuses existing validator — raises on failure)
         self.validator.validate(draft)
 
+        # Period-lock check on BOTH dates so a lock can't be circumvented by
+        # moving a voucher from a locked range into an open one, or vice versa.
+        self._ensure_fy_exists(draft.voucher_date)
+        self._check_period_lock(old["voucher_date"])
+        if draft.voucher_date != old["voucher_date"]:
+            self._check_period_lock(draft.voucher_date)
+
         old_lines = [
             dict(r) for r in conn.execute(
                 "SELECT * FROM voucher_lines WHERE voucher_id=? ORDER BY id",
@@ -1100,6 +1191,9 @@ class VoucherEngine:
             raise ValueError(f"Voucher {voucher_id} not found.")
         if row["is_cancelled"]:
             raise ValueError("Voucher is already cancelled.")
+
+        # Cancelling alters the books for that date — same lock rules as edit.
+        self._check_period_lock(row["voucher_date"])
 
         conn.execute(
             """UPDATE vouchers SET is_cancelled=1, updated_at=datetime('now')

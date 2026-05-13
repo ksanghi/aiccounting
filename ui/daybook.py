@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui  import QColor, QFont, QKeySequence, QShortcut
 
 from ui.theme   import THEME, VOUCHER_COLOURS
-from ui.widgets import make_label, make_separator
+from ui.widgets import make_label, make_separator, SmartDateEdit
 
 
 class DayBookPage(QWidget):
@@ -43,15 +43,13 @@ class DayBookPage(QWidget):
         frow.setSpacing(10)
 
         frow.addWidget(make_label("From"))
-        self.from_date = QDateEdit(QDate(QDate.currentDate().year(), 4, 1))
-        self.from_date.setCalendarPopup(True)
+        self.from_date = SmartDateEdit(QDate(QDate.currentDate().year(), 4, 1))
         self.from_date.setDisplayFormat("dd-MMM-yyyy")
         self.from_date.setFixedHeight(30)
         frow.addWidget(self.from_date)
 
         frow.addWidget(make_label("To"))
-        self.to_date = QDateEdit(QDate.currentDate())
-        self.to_date.setCalendarPopup(True)
+        self.to_date = SmartDateEdit(QDate.currentDate())
         self.to_date.setDisplayFormat("dd-MMM-yyyy")
         self.to_date.setFixedHeight(30)
         frow.addWidget(self.to_date)

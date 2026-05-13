@@ -7,6 +7,7 @@ PySide6>=6.6,<7
 # Document parsing (AI Doc Reader, Bank Reconciliation, Migration)
 pdfplumber>=0.11
 openpyxl>=3.1
+xlrd==1.2.0  # legacy .xls support (openpyxl refuses .xls)
 python-docx>=1.1
 
 # stdlib-only otherwise (sqlite3, csv, json, urllib, xml.etree).

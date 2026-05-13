@@ -5,13 +5,13 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QDateEdit, QFrame,
     QHeaderView, QAbstractItemView, QMessageBox, QFileDialog,
-    QScrollArea, QSplitter, QSizePolicy,
+    QScrollArea, QSplitter, QSizePolicy, QComboBox,
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME, VOUCHER_COLOURS
-from ui.widgets import make_label
+from ui.widgets import make_label, SmartDateEdit
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -95,22 +95,19 @@ class _ReportBase(QWidget):
 
         if self.AS_OF:
             frow.addWidget(make_label("As of"))
-            self.as_of = QDateEdit(QDate.currentDate())
-            self.as_of.setCalendarPopup(True)
+            self.as_of = SmartDateEdit(QDate.currentDate())
             self.as_of.setDisplayFormat("dd-MMM-yyyy")
             self.as_of.setFixedHeight(30)
             frow.addWidget(self.as_of)
         else:
             frow.addWidget(make_label("From"))
-            self.from_date = QDateEdit(_fy_start())
-            self.from_date.setCalendarPopup(True)
+            self.from_date = SmartDateEdit(_fy_start())
             self.from_date.setDisplayFormat("dd-MMM-yyyy")
             self.from_date.setFixedHeight(30)
             frow.addWidget(self.from_date)
 
             frow.addWidget(make_label("To"))
-            self.to_date = QDateEdit(QDate.currentDate())
-            self.to_date.setCalendarPopup(True)
+            self.to_date = SmartDateEdit(QDate.currentDate())
             self.to_date.setDisplayFormat("dd-MMM-yyyy")
             self.to_date.setFixedHeight(30)
             frow.addWidget(self.to_date)
@@ -134,6 +131,13 @@ class _ReportBase(QWidget):
         pdf_btn.setFixedWidth(76)
         pdf_btn.clicked.connect(self._save_pdf)
         frow.addWidget(pdf_btn)
+
+        print_btn = QPushButton("🖶  Print")
+        print_btn.setFixedHeight(30)
+        print_btn.setFixedWidth(80)
+        print_btn.setToolTip("Print preview — opens a Print dialog (Ctrl+P)")
+        print_btn.clicked.connect(self._print)
+        frow.addWidget(print_btn)
 
         root.addWidget(fbar)
 
@@ -161,6 +165,26 @@ class _ReportBase(QWidget):
 
     # ── export ────────────────────────────────────────────────────────────────
 
+    def _default_export_name(self, ext: str) -> str:
+        """Suggested filename:  <Company>_<Report>_<Date>.<ext>"""
+        import re, os
+        from pathlib import Path
+
+        co = (self.rpt.get_company().get("name") or "AccGenie").strip()
+        # Sanitise for cross-platform filename use: drop punctuation,
+        # collapse whitespace to a single underscore.
+        co = re.sub(r"[^\w\s-]", "", co)
+        co = re.sub(r"\s+", "_", co).strip("_") or "AccGenie"
+
+        title = self.TITLE.replace(" & ", "_").replace(" ", "_")
+
+        d = self._dates()
+        date_part = d if isinstance(d, str) else f"{d[0]}_to_{d[1]}"
+
+        downloads = Path.home() / "Downloads"
+        folder = downloads if downloads.exists() else Path.home()
+        return str(folder / f"{co}_{title}_{date_part}.{ext}")
+
     def _save_excel(self):
         from core.exporters import ExcelExporter
         exp = ExcelExporter()
@@ -169,7 +193,8 @@ class _ReportBase(QWidget):
                 "openpyxl is not installed.\nRun:  pip install openpyxl")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save as Excel", f"{self.TITLE}.xlsx", "Excel (*.xlsx)")
+            self, "Save as Excel", self._default_export_name("xlsx"),
+            "Excel (*.xlsx)")
         if path:
             try:
                 self._do_excel(exp, path)
@@ -185,13 +210,84 @@ class _ReportBase(QWidget):
                 "reportlab is not installed.\nRun:  pip install reportlab")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save as PDF", f"{self.TITLE}.pdf", "PDF (*.pdf)")
+            self, "Save as PDF", self._default_export_name("pdf"),
+            "PDF (*.pdf)")
         if path:
             try:
                 self._do_pdf(exp, path)
                 QMessageBox.information(self, "Saved", path)
             except Exception as e:
                 QMessageBox.critical(self, "Export Error", str(e))
+
+    # ── print preview ─────────────────────────────────────────────────────────
+
+    def _print(self):
+        from PySide6.QtPrintSupport import QPrintPreviewDialog, QPrinter
+        from PySide6.QtGui  import QTextDocument, QPageSize
+        from PySide6.QtCore import QMarginsF
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        printer.setPageMargins(QMarginsF(12, 12, 12, 12))
+
+        doc = QTextDocument()
+        doc.setHtml(self._build_print_html())
+
+        dlg = QPrintPreviewDialog(printer, self)
+        dlg.setWindowTitle(f"Print — {self.TITLE}")
+        dlg.resize(900, 700)
+        dlg.paintRequested.connect(doc.print_)
+        dlg.exec()
+
+    def _build_print_html(self) -> str:
+        """Stitch all visible QTableWidgets on the page into a print-ready
+        HTML document. Subclasses can override for custom layouts (e.g. the
+        side-by-side Balance Sheet)."""
+        co = self.rpt.get_company().get("name", "")
+        d = self._dates()
+        period = d if isinstance(d, str) else f"{d[0]} to {d[1]}"
+
+        parts = [
+            "<div style='font-family:sans-serif'>",
+            f"<h2 style='margin:0'>{co}</h2>" if co else "",
+            f"<h3 style='margin:4px 0;color:#444'>{self.TITLE}</h3>",
+            f"<p style='color:#666;margin:0 0 12px 0'>{period}</p>",
+        ]
+        for tbl in self.findChildren(QTableWidget):
+            parts.append(self._table_to_html(tbl))
+        parts.append("</div>")
+        return "".join(parts)
+
+    def _table_to_html(self, table: QTableWidget) -> str:
+        rows = [
+            "<table border=1 cellspacing=0 cellpadding=4 "
+            "style='border-collapse:collapse;width:100%;"
+            "margin-bottom:12px;font-size:10pt'>"
+        ]
+        headers = []
+        for c in range(table.columnCount()):
+            h = table.horizontalHeaderItem(c)
+            headers.append(h.text() if h else "")
+        rows.append(
+            "<thead><tr>" + "".join(
+                f"<th style='background:#eee;text-align:left;padding:4px'>"
+                f"{h}</th>" for h in headers
+            ) + "</tr></thead><tbody>"
+        )
+        for r in range(table.rowCount()):
+            cells = []
+            for c in range(table.columnCount()):
+                it = table.item(r, c)
+                txt = it.text() if it else ""
+                # Right-align money columns (heuristic: 3rd column onward).
+                align = "right" if c >= 2 else "left"
+                cells.append(
+                    f"<td style='text-align:{align};padding:3px 4px'>"
+                    f"{txt}</td>"
+                )
+            rows.append("<tr>" + "".join(cells) + "</tr>")
+        rows.append("</tbody></table>")
+        return "".join(rows)
 
     def _do_excel(self, exp, path): pass
     def _do_pdf(self, exp, path):   pass
@@ -393,19 +489,88 @@ class BalanceSheetPage(_ReportBase):
 
         self._body.addWidget(splitter, 1)
 
-    def _fill(self, table, rows, colour):
-        table.setRowCount(len(rows))
-        for i, d in enumerate(rows):
-            table.setItem(i, 0, _item(d["ledger"]))
-            table.setItem(i, 1, _item(d["group"]))
-            table.setItem(i, 2, _item(_fmt(d["balance"]), right=True))
-            table.setItem(i, 3, _item(d["side"]))
+    def _extra_filters(self, row):
+        row.addWidget(make_label("Format"))
+        self._fmt_combo = QComboBox()
+        self._fmt_combo.addItem("Grouped", "grouped")
+        self._fmt_combo.addItem("Flat",    "flat")
+        self._fmt_combo.addItem("Schedule III (coming soon)", "schedule3")
+        self._fmt_combo.model().item(2).setEnabled(False)
+        self._fmt_combo.setFixedHeight(30)
+        self._fmt_combo.currentIndexChanged.connect(self._on_fmt_change)
+        row.addWidget(self._fmt_combo)
+
+    def _on_fmt_change(self):
+        if getattr(self, "_data", None):
+            # Re-render with the new format. Don't re-hit the DB.
+            self._fill(self._ast_table, self._data["assets"],
+                       THEME["accent"],  natural_side="Dr")
+            self._fill(self._lib_table, self._data["liabilities"],
+                       THEME["warning"], natural_side="Cr")
+
+    def _fill(self, table, rows, colour, natural_side="Dr"):
+        fmt = (self._fmt_combo.currentData()
+               if hasattr(self, "_fmt_combo") else "grouped")
+
+        if fmt == "flat":
+            table.setRowCount(len(rows))
+            for i, d in enumerate(rows):
+                table.setItem(i, 0, _item(d["ledger"]))
+                table.setItem(i, 1, _item(d["group"]))
+                table.setItem(i, 2, _item(_fmt(d["balance"]),
+                                          right=True, colour=colour))
+                table.setItem(i, 3, _item(d["side"]))
+            return
+
+        # Grouped: bucket by chart-of-accounts group, header + ledgers +
+        # implicit subtotal in the group header row.
+        groups: dict[str, list[dict]] = {}
+        for r in rows:
+            groups.setdefault(r["group"], []).append(r)
+
+        total_rows = sum(len(ls) + 1 for ls in groups.values())
+        table.setRowCount(total_rows)
+        bg = QColor(THEME["bg_input"])
+
+        i = 0
+        for group_name in sorted(groups.keys()):
+            ledgers = groups[group_name]
+            signed = sum(
+                l["balance"] if l["side"] == natural_side else -l["balance"]
+                for l in ledgers
+            )
+            sub_side = (natural_side if signed >= 0
+                        else ("Cr" if natural_side == "Dr" else "Dr"))
+
+            # Group header row — bold + tinted background.
+            cells = [
+                _item(group_name,             bold=True),
+                _item("",                     bold=True),
+                _item(_fmt(abs(signed)),      right=True, bold=True,
+                      colour=colour),
+                _item(sub_side,               bold=True),
+            ]
+            for c, it in enumerate(cells):
+                it.setBackground(bg)
+                table.setItem(i, c, it)
+            i += 1
+
+            # Indented ledger rows under the header.
+            for d in ledgers:
+                table.setItem(i, 0, _item(f"    {d['ledger']}"))
+                table.setItem(i, 1, _item(""))
+                table.setItem(i, 2, _item(_fmt(d["balance"]),
+                                          right=True, colour=colour))
+                table.setItem(i, 3, _item(d["side"]))
+                i += 1
 
     def refresh(self):
         as_of = self._dates()
         self._data = self.rpt.balance_sheet(as_of)
-        self._fill(self._ast_table, self._data["assets"],      THEME["accent"])
-        self._fill(self._lib_table, self._data["liabilities"], THEME["warning"])
+        self._fill(self._ast_table, self._data["assets"],
+                   THEME["accent"],  natural_side="Dr")
+        self._fill(self._lib_table, self._data["liabilities"],
+                   THEME["warning"], natural_side="Cr")
         self._ast_total.setText(f"Total Assets: {_fmt(self._data['total_assets'])}")
         self._lib_total.setText(f"Total Liabilities: {_fmt(self._data['total_liabilities'])}")
         diff = round(self._data["total_assets"] - self._data["total_liabilities"], 2)
@@ -737,15 +902,13 @@ class LedgerAccountPage(_ReportBase):
 
         h.addSpacing(8)
         h.addWidget(make_label("From"))
-        self.from_date = QDateEdit(_fy_start())
-        self.from_date.setCalendarPopup(True)
+        self.from_date = SmartDateEdit(_fy_start())
         self.from_date.setDisplayFormat("dd-MMM-yyyy")
         self.from_date.setFixedHeight(28)
         h.addWidget(self.from_date)
 
         h.addWidget(make_label("To"))
-        self.to_date = QDateEdit(QDate.currentDate())
-        self.to_date.setCalendarPopup(True)
+        self.to_date = SmartDateEdit(QDate.currentDate())
         self.to_date.setDisplayFormat("dd-MMM-yyyy")
         self.to_date.setFixedHeight(28)
         h.addWidget(self.to_date)

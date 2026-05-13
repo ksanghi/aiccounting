@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS financial_years (
     UNIQUE(company_id, fy)
 );
 
+-- ── Period Locks (ad-hoc date-range locks; FY-level uses financial_years.is_closed) ──
+CREATE TABLE IF NOT EXISTS period_locks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id  INTEGER NOT NULL REFERENCES companies(id),
+    lock_from   TEXT NOT NULL,                         -- ISO date inclusive
+    lock_to     TEXT NOT NULL,                         -- ISO date inclusive
+    reason      TEXT,
+    locked_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    locked_by   INTEGER REFERENCES users(id)
+);
+
 -- ── Audit Log ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -321,6 +332,7 @@ CREATE INDEX IF NOT EXISTS idx_lsl_status        ON ledger_statement_lines(state
 CREATE INDEX IF NOT EXISTS idx_lsl_match         ON ledger_statement_lines(matched_voucher_line_id);
 CREATE INDEX IF NOT EXISTS idx_lstmt_ledger      ON ledger_statements(company_id, ledger_id);
 CREATE INDEX IF NOT EXISTS idx_migration_company ON migration_runs(company_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_period_locks_company ON period_locks(company_id, lock_from, lock_to);
 """
 
 

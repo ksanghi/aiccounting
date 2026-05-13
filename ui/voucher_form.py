@@ -180,8 +180,8 @@ class VoucherEntryPage(QWidget):
         date_col = QVBoxLayout()
         date_col.setSpacing(3)
         date_col.addWidget(make_label("Voucher Date", required=True))
-        self.date_edit = QDateEdit(QDate.currentDate())
-        self.date_edit.setCalendarPopup(True)
+        from ui.widgets import SmartDateEdit
+        self.date_edit = SmartDateEdit(QDate.currentDate())
         self.date_edit.setFixedHeight(34)
         self.date_edit.setDisplayFormat("dd-MMM-yyyy")
         date_col.addWidget(self.date_edit)
@@ -903,12 +903,14 @@ class VoucherEntryPage(QWidget):
             colour = VOUCHER_COLOURS.get(vtype, THEME["success"])
             self.voucher_posted.emit(posted.voucher_number, vtype, posted.total_amount)
 
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Posted")
-            msg.setText(f"✓  {posted.voucher_number}\n₹{posted.total_amount:,.2f}")
-            msg.setInformativeText(narration or vtype)
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            from core.user_prefs import prefs as _prefs
+            if _prefs.get("after_post_toast", True):
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Posted")
+                msg.setText(f"✓  {posted.voucher_number}\n₹{posted.total_amount:,.2f}")
+                msg.setInformativeText(narration or vtype)
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.exec()
 
             # If we were prefilled from another page (Ledger Reconciliation etc.),
             # run the callback so it can link the posted voucher back, then hop
@@ -1159,7 +1161,11 @@ class VoucherEntryPage(QWidget):
             self.field2_ledger.clear()
         except Exception:
             pass
-        self.date_edit.setDate(QDate.currentDate())
+        # Honor the 'default_voucher_date' pref: "today" (default) or
+        # "last_used" — in which case we keep whatever was on the field.
+        from core.user_prefs import prefs as _prefs
+        if _prefs.get("default_voucher_date", "today") == "today":
+            self.date_edit.setDate(QDate.currentDate())
         for row in self._journal_rows[:]:
             self._rows_layout.removeWidget(row)
             row.deleteLater()

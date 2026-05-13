@@ -342,6 +342,12 @@ class LocalDocumentParser:
         raise ValueError("Could not decode CSV with utf-8/latin-1/cp1252.")
 
     def _read_excel(self, path: Path):
+        # openpyxl handles .xlsx but explicitly rejects the legacy .xls
+        # binary format — many banks still email .xls. Route .xls through
+        # xlrd 1.2.0 (the last release that supports it).
+        if path.suffix.lower() == ".xls":
+            return self._read_xls_legacy(path)
+
         from openpyxl import load_workbook
         wb = load_workbook(path, data_only=True, read_only=True)
         tables = []
@@ -350,6 +356,28 @@ class LocalDocumentParser:
             rows = []
             for row in sheet.iter_rows(values_only=True):
                 rows.append(["" if c is None else str(c) for c in row])
+            tables.append(rows)
+            text_parts.append("\n".join(",".join(r) for r in rows))
+        return tables, "\n\n".join(text_parts)
+
+    def _read_xls_legacy(self, path: Path):
+        try:
+            import xlrd
+        except ImportError as e:
+            raise RuntimeError(
+                "This is a legacy .xls file. Install xlrd to read it "
+                "(pip install \"xlrd==1.2.0\"), or re-save the file as "
+                ".xlsx / .csv."
+            ) from e
+
+        book = xlrd.open_workbook(str(path))
+        tables: list[list[list[str]]] = []
+        text_parts: list[str] = []
+        for sheet in book.sheets():
+            rows: list[list[str]] = []
+            for r in range(sheet.nrows):
+                cells = sheet.row_values(r)
+                rows.append(["" if c is None else str(c) for c in cells])
             tables.append(rows)
             text_parts.append("\n".join(",".join(r) for r in rows))
         return tables, "\n\n".join(text_parts)

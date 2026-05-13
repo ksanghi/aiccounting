@@ -1,9 +1,15 @@
 """
-App-wide config — label style, fiscal year, etc.
-Kept in memory; call set_label_style() to change at runtime.
-"""
+App-wide config — label style etc.
 
-_LABEL_STYLE = "natural"
+Backed by `core.user_prefs` so the setting persists across restarts. Earlier
+versions kept this in a module global, which silently dropped the user's
+choice on every app close.
+"""
+from __future__ import annotations
+
+from core.user_prefs import prefs
+
+DEFAULT_STYLE = "natural"
 
 _STYLES = {
     "natural": {
@@ -27,21 +33,20 @@ _STYLES = {
 }
 
 
-def set_label_style(style: str):
-    global _LABEL_STYLE
+def set_label_style(style: str) -> None:
     if style in _STYLES:
-        _LABEL_STYLE = style
+        prefs.set("label_style", style)
 
 
 def get_dr_label(short: bool = True) -> str:
-    s = _STYLES.get(_LABEL_STYLE, _STYLES["natural"])
+    s = _STYLES.get(current_style(), _STYLES[DEFAULT_STYLE])
     return s["dr_short"] if short else s["dr_label"]
 
 
 def get_cr_label(short: bool = True) -> str:
-    s = _STYLES.get(_LABEL_STYLE, _STYLES["natural"])
+    s = _STYLES.get(current_style(), _STYLES[DEFAULT_STYLE])
     return s["cr_short"] if short else s["cr_label"]
 
 
 def current_style() -> str:
-    return _LABEL_STYLE
+    return prefs.get("label_style", DEFAULT_STYLE)

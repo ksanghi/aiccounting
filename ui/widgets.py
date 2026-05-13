@@ -11,12 +11,15 @@ from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLineEdit, QPushButton, QLabel, QCompleter, QComboBox,
     QFrame, QSizePolicy, QFormLayout, QApplication, QMessageBox,
-    QDoubleSpinBox
+    QDoubleSpinBox, QDateEdit, QCalendarWidget
 )
 from PySide6.QtCore import (
-    Qt, QStringListModel, Signal, QTimer, QEvent, QPoint
+    Qt, QStringListModel, Signal, QTimer, QEvent, QPoint, QDate
 )
 from PySide6.QtGui import QFont, QKeySequence, QShortcut, QColor, QPalette
+
+import re as _re
+from datetime import date as _date, timedelta as _timedelta
 
 from ui.theme import THEME
 
@@ -1043,3 +1046,308 @@ class VoucherLineRow(QWidget):
             "cr_amount":      self.cr_amount,
             "line_narration": self.narration.text().strip(),
         }
+
+
+# ── Smart Date Edit ───────────────────────────────────────────────────────────
+
+class SmartDateEdit(QWidget):
+    """
+    Drop-in replacement for QDateEdit with a much friendlier UX:
+
+      - Type free-text and press Tab/Enter to commit:
+          12              → today's month, day 12
+          12/5            → 12-May, current year
+          12/5/26         → 12-May-2026
+          12 may          → 12-May, current year
+          15-Aug-25       → 15-Aug-2025
+          t / today / .   → today
+          y / yest        → yesterday
+          tom             → tomorrow
+      - Single-key shortcuts while focused:
+          T  today        Y  yesterday
+          +/= +1 day      -  -1 day
+          ]  +1 month     [  -1 month
+          }  +1 year      {  -1 year
+      - Up/Down arrows: +/- 1 day  (PageUp/Down: +/- 1 month)
+      - Calendar button on the right opens a popup picker.
+
+    Public API mirrors the bits the rest of the app uses on QDateEdit:
+      date(), setDate(qd), dateChanged signal, setDisplayFormat(s),
+      setMinimumDate / setMaximumDate.
+    """
+
+    dateChanged = Signal(QDate)
+
+    def __init__(self, initial: QDate | None = None, parent=None):
+        super().__init__(parent)
+        self._fmt = "dd-MMM-yyyy"
+        self._min: QDate | None = None
+        self._max: QDate | None = None
+        self._date = initial if isinstance(initial, QDate) else QDate.currentDate()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._edit = QLineEdit(self)
+        self._edit.setFixedHeight(34)
+        self._edit.setPlaceholderText("dd-mmm-yyyy or 12/5 or 'today'")
+        self._edit.setToolTip(
+            "Type a date and press Enter.\n"
+            "Shortcuts: T=today  Y=yesterday  +/- day  [ ] month  { } year\n"
+            "Examples: 12   12/5   12/5/26   12 may   today"
+        )
+        layout.addWidget(self._edit, 1)
+
+        self._btn = QPushButton("📅", self)
+        self._btn.setFixedSize(30, 34)
+        self._btn.setToolTip("Open calendar")
+        self._btn.setStyleSheet(f"""
+            QPushButton {{
+                border: 1px solid {THEME['border']};
+                border-left: none;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+                background: {THEME['bg_card']};
+            }}
+            QPushButton:hover {{
+                background: {THEME['bg_hover']};
+            }}
+        """)
+        self._btn.clicked.connect(self._show_popup)
+        layout.addWidget(self._btn)
+
+        self._popup: QDialog | None = None
+        self._edit.editingFinished.connect(self._commit_text)
+        self._edit.installEventFilter(self)
+        self._render()
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def date(self) -> QDate:
+        return QDate(self._date)
+
+    def setDate(self, qd: QDate):
+        if not isinstance(qd, QDate) or not qd.isValid():
+            return
+        qd = self._clamp(qd)
+        if qd == self._date:
+            self._render()  # repaint if user typed garbage
+            return
+        self._date = qd
+        self._render()
+        self.dateChanged.emit(qd)
+
+    def setDisplayFormat(self, fmt: str):
+        self._fmt = fmt
+        self._render()
+
+    def setMinimumDate(self, qd: QDate):
+        self._min = qd
+        self.setDate(self._clamp(self._date))
+
+    def setMaximumDate(self, qd: QDate):
+        self._max = qd
+        self.setDate(self._clamp(self._date))
+
+    def setCalendarPopup(self, _on: bool):
+        # The calendar button is always there; keeping this no-op so existing
+        # callers (which pass True) don't have to change.
+        pass
+
+    def setFixedHeight(self, h: int):
+        super().setFixedHeight(h)
+        self._edit.setFixedHeight(h)
+        self._btn.setFixedHeight(h)
+
+    # ── Rendering / parsing ───────────────────────────────────────────────────
+
+    def _render(self):
+        block = self._edit.blockSignals(True)
+        try:
+            self._edit.setText(self._date.toString(self._fmt))
+        finally:
+            self._edit.blockSignals(block)
+
+    def _clamp(self, qd: QDate) -> QDate:
+        if self._min and qd < self._min:
+            return QDate(self._min)
+        if self._max and qd > self._max:
+            return QDate(self._max)
+        return qd
+
+    def _commit_text(self):
+        text = self._edit.text().strip()
+        if not text:
+            self._render()
+            return
+        parsed = _parse_smart_date(text, self._date)
+        if parsed is None:
+            # Couldn't parse — flash red briefly then restore.
+            self._edit.setStyleSheet(f"border: 1px solid {THEME['danger']};")
+            QTimer.singleShot(700, lambda: self._edit.setStyleSheet(""))
+            self._render()
+            return
+        self.setDate(parsed)
+
+    # ── Keyboard shortcuts ────────────────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        if obj is self._edit and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            txt = event.text().lower()
+            # Single-char shortcuts only when the field is unchanged from
+            # the rendered value (so we don't intercept the user typing).
+            rendered = self._date.toString(self._fmt)
+            if self._edit.text() == rendered or self._edit.text().strip() == "":
+                qd = self._date
+                if txt in ("t", "."):
+                    self.setDate(QDate.currentDate()); return True
+                if txt == "y":
+                    self.setDate(QDate.currentDate().addDays(-1)); return True
+                if txt in ("+", "="):
+                    self.setDate(qd.addDays(1)); return True
+                if txt == "-":
+                    self.setDate(qd.addDays(-1)); return True
+                if txt == "]":
+                    self.setDate(qd.addMonths(1)); return True
+                if txt == "[":
+                    self.setDate(qd.addMonths(-1)); return True
+                if txt == "}":
+                    self.setDate(qd.addYears(1)); return True
+                if txt == "{":
+                    self.setDate(qd.addYears(-1)); return True
+            # Arrow keys always step
+            if key == Qt.Key.Key_Up:
+                self.setDate(self._date.addDays(1)); return True
+            if key == Qt.Key.Key_Down:
+                self.setDate(self._date.addDays(-1)); return True
+            if key == Qt.Key.Key_PageUp:
+                self.setDate(self._date.addMonths(1)); return True
+            if key == Qt.Key.Key_PageDown:
+                self.setDate(self._date.addMonths(-1)); return True
+            if key == Qt.Key.Key_F4:
+                self._show_popup(); return True
+        return super().eventFilter(obj, event)
+
+    # ── Calendar popup ────────────────────────────────────────────────────────
+
+    def _show_popup(self):
+        if self._popup is not None:
+            self._popup.close()
+        dlg = QDialog(self)
+        dlg.setWindowFlags(Qt.WindowType.Popup)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(4, 4, 4, 4)
+        cal = QCalendarWidget(dlg)
+        cal.setGridVisible(True)
+        cal.setSelectedDate(self._date)
+        if self._min:
+            cal.setMinimumDate(self._min)
+        if self._max:
+            cal.setMaximumDate(self._max)
+        cal.clicked.connect(lambda qd: (self.setDate(qd), dlg.accept()))
+        v.addWidget(cal)
+        # Position popup right below the widget
+        gp = self.mapToGlobal(QPoint(0, self.height()))
+        dlg.move(gp)
+        self._popup = dlg
+        dlg.exec()
+        self._popup = None
+
+
+# ── Smart-date string parsing (pure function — easier to test) ────────────────
+
+_MONTH_LOOKUP = {
+    "jan": 1, "january": 1,   "feb": 2, "february": 2,
+    "mar": 3, "march": 3,     "apr": 4, "april": 4,
+    "may": 5,                 "jun": 6, "june": 6,
+    "jul": 7, "july": 7,      "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
+
+
+def _parse_smart_date(text: str, anchor: QDate) -> QDate | None:
+    """
+    Parse a user-typed date relative to `anchor` (used to fill in the missing
+    month / year). Returns None if it can't be parsed.
+    """
+    s = text.strip().lower()
+    if not s:
+        return None
+    if s in ("t", "today", ".", "now"):
+        return QDate.currentDate()
+    if s in ("y", "yest", "yesterday"):
+        return QDate.currentDate().addDays(-1)
+    if s in ("tom", "tomorrow"):
+        return QDate.currentDate().addDays(1)
+
+    # Pure day-of-month integer (1–31) — keep anchor's month/year.
+    if s.isdigit():
+        d = int(s)
+        if 1 <= d <= 31:
+            qd = QDate(anchor.year(), anchor.month(), 1)
+            if d > qd.daysInMonth():
+                return None
+            return QDate(anchor.year(), anchor.month(), d)
+        return None
+
+    # Replace separators so we can split uniformly. Keep month-name tokens.
+    norm = _re.sub(r"[\.\s/\-]+", " ", s).strip()
+    parts = norm.split(" ")
+
+    # Detect month-name token
+    month: int | None = None
+    leftover: list[str] = []
+    for p in parts:
+        if p in _MONTH_LOOKUP and month is None:
+            month = _MONTH_LOOKUP[p]
+        else:
+            leftover.append(p)
+
+    nums = []
+    for p in leftover:
+        if p.isdigit():
+            nums.append(int(p))
+        else:
+            return None
+
+    if month is not None:
+        # Month name path: nums may be [day] or [day, year]
+        if len(nums) == 1:
+            day, year = nums[0], anchor.year()
+        elif len(nums) == 2:
+            day, year = nums
+            year = _expand_2digit_year(year)
+        else:
+            return None
+    else:
+        # Numeric path: 1, 2, or 3 numbers
+        if len(nums) == 1:
+            return None  # handled above as pure-digit
+        elif len(nums) == 2:
+            day, m = nums
+            year = anchor.year()
+            month = m
+        elif len(nums) == 3:
+            day, m, y = nums
+            month = m
+            year = _expand_2digit_year(y)
+        else:
+            return None
+
+    if not (1 <= month <= 12):
+        return None
+    qd = QDate(year, month, 1)
+    if not qd.isValid() or day < 1 or day > qd.daysInMonth():
+        return None
+    return QDate(year, month, day)
+
+
+def _expand_2digit_year(y: int) -> int:
+    if y < 100:
+        # Tip toward the current century: 0–69 → 20xx, 70–99 → 19xx
+        return 2000 + y if y < 70 else 1900 + y
+    return y

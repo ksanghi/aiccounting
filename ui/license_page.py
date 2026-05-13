@@ -181,6 +181,7 @@ class LicensePage(QWidget):
         self._txn_limit_val = make_stat("LIMIT")
         self._overage_val   = make_stat("OVERAGE")
         self._users_val     = make_stat("USERS")
+        self._seats_val     = make_stat("SEATS")
         sc.addLayout(stats_row)
 
         sc.addWidget(divider())
@@ -307,7 +308,7 @@ class LicensePage(QWidget):
             }}
         """)
         current_key = self._mgr.license_key
-        if current_key not in ("FREE-DEMO", "", None):
+        if current_key not in ("DEMO", "FREE-DEMO", "", None):
             self._key_edit.setText(current_key)
 
         self._activate_btn = QPushButton("Activate")
@@ -341,6 +342,46 @@ class LicensePage(QWidget):
             f"font-size: 11px; color: transparent;"
         )
         kc.addWidget(self._key_status)
+
+        # Release-seat row — only visible when a paid key is bound here.
+        self._release_row = QHBoxLayout()
+        self._release_row.setContentsMargins(0, 4, 0, 0)
+        self._release_row.setSpacing(8)
+
+        self._release_hint = QLabel(
+            "Moving to a different PC? Release this machine's seat to free "
+            "it up for another install."
+        )
+        self._release_hint.setWordWrap(True)
+        self._release_hint.setStyleSheet(
+            f"color: {THEME['text_secondary']}; font-size: 11px;"
+        )
+
+        self._release_btn = QPushButton("Release this machine's seat")
+        self._release_btn.setFixedHeight(34)
+        self._release_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {THEME['danger']};
+                border: 1px solid {THEME['danger']};
+                border-radius: 7px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px 14px;
+            }}
+            QPushButton:hover {{
+                background: {THEME['danger']};
+                color: white;
+            }}
+            QPushButton:disabled {{
+                color: {THEME['text_dim']};
+                border-color: {THEME['text_dim']};
+            }}
+        """)
+        self._release_btn.clicked.connect(self._release_seat)
+        self._release_row.addWidget(self._release_hint, 1)
+        self._release_row.addWidget(self._release_btn)
+        kc.addLayout(self._release_row)
 
         layout.addWidget(key_card)
 
@@ -566,6 +607,18 @@ class LicensePage(QWidget):
         ul = self._mgr.user_limit
         self._users_val.setText("Unlimited" if ul >= 999 else str(ul))
 
+        # SEATS card: shown as "used / allowed" when a real per-seat license is
+        # active; '—' for DEMO / DEV which don't consume server seats.
+        seats_allowed = self._mgr.seats_allowed
+        if seats_allowed > 0:
+            self._seats_val.setText(f"{self._mgr.seats_used} / {seats_allowed}")
+            self._release_btn.setVisible(True)
+            self._release_hint.setVisible(True)
+        else:
+            self._seats_val.setText("—")
+            self._release_btn.setVisible(False)
+            self._release_hint.setVisible(False)
+
         fill_pct = min(pct, 100) / 100
         if pct >= 100:
             bar_color = THEME["danger"]
@@ -656,3 +709,44 @@ class LicensePage(QWidget):
         self._key_status.setStyleSheet(
             f"font-size: 11px; color: {colour};"
         )
+
+    def _release_seat(self):
+        """Confirm with the user, hit /deactivate, drop to DEMO on success."""
+        reply = QMessageBox.question(
+            self,
+            "Release this machine's seat?",
+            "This will free up this machine's seat on your license, "
+            "so you can activate the same key on another machine.\n\n"
+            "After releasing, this machine will fall back to DEMO mode "
+            "(10-voucher cap) until you activate again here.\n\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._release_btn.setEnabled(False)
+        self._release_btn.setText("Releasing…")
+        try:
+            ok, msg = self._mgr.release_this_machine_seat()
+        finally:
+            self._release_btn.setEnabled(True)
+            self._release_btn.setText("Release this machine's seat")
+
+        if ok:
+            QMessageBox.information(self, "Seat released", msg)
+            self.refresh()
+            self.plan_changed.emit(self._mgr.plan)
+        else:
+            QMessageBox.warning(self, "Could not release seat", msg)
+
+    def showEvent(self, event):
+        """When the page is navigated to, re-validate against the server so
+        the seat count reflects what happened on other machines."""
+        super().showEvent(event)
+        try:
+            self._mgr.refresh_from_server()
+        except Exception:
+            pass
+        self.refresh()

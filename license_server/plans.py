@@ -22,6 +22,17 @@ PLAN_USER_LIMITS = {
     "PREMIUM":  999,
 }
 
+# Per-tier machine seat caps. Replaces the old global
+# settings.max_machines_per_key. Mirrors what the desktop's pricing.json
+# 'tiers' section will eventually express; once the operator fills that file
+# in we can lift these from there instead of hard-coding.
+PLAN_SEATS = {
+    "FREE":     1,
+    "STANDARD": 2,
+    "PRO":      5,
+    "PREMIUM":  10,
+}
+
 PLAN_FEATURES = {
     "FREE": [
         "vouchers",

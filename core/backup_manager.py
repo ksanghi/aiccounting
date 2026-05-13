@@ -125,8 +125,13 @@ class BackupManager:
         if not log:
             return True
         try:
+            from core.user_prefs import prefs
+            threshold = int(prefs.get("backup_reminder_days", 7))
+        except Exception:
+            threshold = 7
+        try:
             last = datetime.fromisoformat(log[-1]["timestamp"]).date()
-            return (date.today() - last).days >= 7
+            return (date.today() - last).days >= threshold
         except Exception:
             return True
 

@@ -83,6 +83,35 @@ def install_id_file() -> Path:
     return user_data_dir() / "install_id.txt"
 
 
+def all_companies_voucher_count() -> tuple[int, int]:
+    """
+    Return (companies_count, total_vouchers) across every .db file in the
+    companies dir. Uses raw sqlite3.connect (read-only mode) to avoid
+    triggering schema bootstrap and to stay cheap on the status bar.
+    Cancelled vouchers are excluded.
+    """
+    import sqlite3
+    cdir = companies_dir()
+    total = 0
+    n_co  = 0
+    for f in cdir.glob("*.db"):
+        try:
+            uri = f"file:{f.as_posix()}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=1.0)
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM vouchers WHERE is_cancelled=0"
+                ).fetchone()
+                if row:
+                    total += int(row[0] or 0)
+                n_co += 1
+            finally:
+                conn.close()
+        except Exception:
+            continue
+    return n_co, total
+
+
 def config_dir() -> Path:
     """Per-user config (API keys, theme prefs, etc.)."""
     if is_packaged():

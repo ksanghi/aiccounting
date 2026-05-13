@@ -246,6 +246,26 @@ def main():
     except Exception:
         pass
 
+    # Seed config/pricing.json on first run only — never overwrites later.
+    try:
+        from core.pricing import ensure_pricing_file
+        ensure_pricing_file()
+    except Exception:
+        pass
+
+    # Silent license re-validation in the background — refreshes seat counts
+    # without blocking the splash. The cached license still gates posting if
+    # the server is offline (7-day grace).
+    try:
+        import threading
+        from core.license_manager import LicenseManager
+        threading.Thread(
+            target=lambda: LicenseManager().validate_on_startup(),
+            daemon=True,
+        ).start()
+    except Exception:
+        pass
+
     # Show company selector
     dlg = CompanyDialog()
     if dlg.exec() != QDialog.DialogCode.Accepted:

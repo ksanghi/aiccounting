@@ -48,3 +48,19 @@ env/
 .env
 *.key
 api_keys.txt
+
+# Agent worktrees (Claude Code creates these for parallel subagents)
+.claude/
+
+# Per-machine runtime state lives in data/ in dev mode (DBs, credits, license)
+data/
+
+# Per-machine / per-deployment config — seeded by app on first run
+config/user_prefs.json
+config/pricing.json
+config/ai_routing.json
+config/display_config.json
+
+# Stray drafts / one-off HTML
+theme.html
+docs/*.html

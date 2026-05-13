@@ -19,6 +19,9 @@ class License(Base):
     expires_at:     Mapped[date]     = mapped_column(Date)
     txn_limit:      Mapped[int]      = mapped_column(Integer)
     user_limit:     Mapped[int]      = mapped_column(Integer)
+    # Per-license seat cap. Replaces the global settings.max_machines_per_key.
+    # Backfilled to 3 on existing rows via db.init_db()'s additive migration.
+    seats_allowed:  Mapped[int]      = mapped_column(Integer, default=3, server_default="3")
     revoked:        Mapped[bool]     = mapped_column(Boolean, default=False)
     notes:          Mapped[str]      = mapped_column(String(512), default="")
     created_at:     Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -76,3 +79,45 @@ class ValidationLog(Base):
     created_at:   Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     license: Mapped["License | None"] = relationship(back_populates="validations")
+
+
+# ── AI credits ledger (Phase 2b) ─────────────────────────────────────────────
+
+class Credit(Base):
+    """One row per License: current balance in paise. Source of truth."""
+    __tablename__ = "credits"
+
+    id:            Mapped[int]      = mapped_column(primary_key=True)
+    license_id:    Mapped[int]      = mapped_column(ForeignKey("licenses.id"),
+                                                    unique=True, index=True)
+    balance_paise: Mapped[int]      = mapped_column(Integer, default=0)
+    updated_at:    Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CreditTopup(Base):
+    """Audit row for every credit-add operation (payment, admin grant, refund)."""
+    __tablename__ = "credit_topups"
+
+    id:            Mapped[int]      = mapped_column(primary_key=True)
+    license_id:    Mapped[int]      = mapped_column(ForeignKey("licenses.id"), index=True)
+    amount_paise:  Mapped[int]      = mapped_column(Integer)        # positive=add, negative=refund
+    ref:           Mapped[str]      = mapped_column(String(128), default="")  # razorpay payment id, admin user, etc.
+    source:        Mapped[str]      = mapped_column(String(32), default="admin")  # 'admin' | 'razorpay' | 'demo'
+    created_at:    Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AIUsageLog(Base):
+    """Per-call audit of every /ai/proxy hit. Used for billing review + abuse detection."""
+    __tablename__ = "ai_usage_logs"
+
+    id:             Mapped[int]      = mapped_column(primary_key=True)
+    license_id:     Mapped[int]      = mapped_column(ForeignKey("licenses.id"), index=True)
+    machine_id:     Mapped[str]      = mapped_column(String(64), index=True)
+    feature:        Mapped[str]      = mapped_column(String(32))
+    model:          Mapped[str]      = mapped_column(String(64), default="")
+    tokens_in:      Mapped[int]      = mapped_column(Integer, default=0)
+    tokens_out:     Mapped[int]      = mapped_column(Integer, default=0)
+    paise_charged:  Mapped[int]      = mapped_column(Integer, default=0)
+    success:        Mapped[bool]     = mapped_column(Boolean, default=True)
+    error:          Mapped[str]      = mapped_column(String(256), default="")
+    created_at:     Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

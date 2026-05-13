@@ -459,14 +459,15 @@ class DocumentReaderPage(QWidget):
         if not self._current_file:
             return
 
-        api_key = self._api_key_edit.text().strip()
-        if not api_key:
-            QMessageBox.warning(
-                self, "API Key Required",
-                "Please enter your Anthropic API key in the field above.\n\n"
-                "Get one at: console.anthropic.com"
-            )
-            return
+        # Phase 2: route via AI Routing (pooled vs BYOK). The legacy
+        # api_key field still works for power users — if it's non-empty,
+        # it overrides the routing config one-shot.
+        legacy_key = self._api_key_edit.text().strip()
+        if not legacy_key:
+            from ui.ai_routing_dialog import ensure_routed
+            route = ensure_routed("document_reader", parent=self)
+            if route is None:
+                return  # user cancelled the routing dialog
 
         try:
             ledger_names = [l["name"] for l in self._tree.get_all_ledgers()]
@@ -487,7 +488,7 @@ class DocumentReaderPage(QWidget):
         self._thread = ProcessThread(
             self._current_file,
             self._doc_type.currentData(),
-            api_key,
+            legacy_key,                          # "" means use routing
             ledger_names,
             company,
         )

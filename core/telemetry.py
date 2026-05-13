@@ -86,7 +86,7 @@ def send_install_heartbeat(license_mgr: LicenseManager | None = None,
         "machine_id":  LicenseManager.get_machine_id(),
         "app_version": app_version,
         "plan":        mgr.plan,
-        "license_key": mgr.license_key if mgr.license_key not in ("FREE-DEMO", "") else "",
+        "license_key": mgr.license_key if mgr.license_key not in ("DEMO", "FREE-DEMO", "") else "",
         "os_name":     _os_name(),
     }
     t = threading.Thread(target=_post_heartbeat, args=(payload,), daemon=True)

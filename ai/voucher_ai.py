@@ -13,8 +13,46 @@ class VoucherAI:
 
     MODEL = "claude-sonnet-4-20250514"
 
-    def __init__(self, api_key: str = ""):
+    def __init__(self, api_key: str = "", feature: str = "document_reader"):
+        # api_key is legacy — keep the param so existing call sites don't
+        # break; the routing config in Settings → AI Routing is the new
+        # source of truth. If a caller passes api_key explicitly we use it
+        # directly (handy for env-var test runs and the bank-reco fallback
+        # path's still-surfaced api_key field).
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.feature = feature
+
+    @property
+    def ai_available(self) -> bool:
+        if self.api_key:
+            return True
+        try:
+            from core.ai_routing import routing
+            from core.license_manager import LicenseManager
+            if routing.has_own_key():
+                return True
+            return LicenseManager().license_key not in (
+                "DEMO", "FREE-DEMO", "", None,
+            )
+        except Exception:
+            return False
+
+    def _call_anthropic(self, payload: dict, timeout: int = 120) -> dict:
+        """Centralised call: legacy api_key → direct, else routed."""
+        if self.api_key:
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=json.dumps(payload).encode(),
+                headers={
+                    "Content-Type":      "application/json",
+                    "x-api-key":         self.api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read())
+        from ai.ai_client import call_messages
+        return call_messages(self.feature, payload, timeout=timeout)
 
     def extract_vouchers(
         self,
@@ -24,9 +62,11 @@ class VoucherAI:
         company_name: str = "",
     ) -> list:
 
-        if not self.api_key:
+        if not self.ai_available:
             raise ValueError(
-                "Anthropic API key not set. Enter it in the API Key field."
+                "AI routing not configured. Open Settings → AI Routing to "
+                "paste your Anthropic key, or activate a paid license for "
+                "pooled credits."
             )
 
         ledger_list = "\n".join(f"- {n}" for n in ledger_names[:150])
@@ -146,27 +186,15 @@ Start directly with [ and end with ].
 DOCUMENT CONTENT:
 {document_text[:20000]}"""
 
-        payload = json.dumps({
+        payload = {
             "model":      self.MODEL,
             "max_tokens": 8192,
             "messages":   [{"role": "user", "content": prompt}],
-        }).encode()
-
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=payload,
-            headers={
-                "Content-Type":      "application/json",
-                "x-api-key":         self.api_key,
-                "anthropic-version": "2023-06-01",
-            },
-        )
-
+        }
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = json.loads(resp.read())
+            data = self._call_anthropic(payload, timeout=120)
         except urllib.error.HTTPError as e:
-            body = e.read().decode()
+            body = getattr(e, "body_text", "") or ""
             raise ValueError(f"API error {e.code}: {body}")
         except urllib.error.URLError as e:
             raise ValueError(f"Cannot reach Claude API: {e}")
@@ -326,7 +354,7 @@ DOCUMENT CONTENT:
         is_debit: bool = True,
     ) -> str:
         """Quick ledger suggestion for a single narration line."""
-        if not self.api_key or len(ledger_names) < 2:
+        if not self.ai_available or len(ledger_names) < 2:
             return ""
         try:
             ledger_list = "\n".join(f"- {n}" for n in ledger_names[:80])
@@ -337,23 +365,12 @@ DOCUMENT CONTENT:
                 f'"{narration}"\n\n'
                 f"Reply with ONLY the exact ledger name from the list. Nothing else."
             )
-            payload = json.dumps({
+            payload = {
                 "model":      self.MODEL,
                 "max_tokens": 30,
                 "messages":   [{"role": "user", "content": prompt}],
-            }).encode()
-
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=payload,
-                headers={
-                    "Content-Type":      "application/json",
-                    "x-api-key":         self.api_key,
-                    "anthropic-version": "2023-06-01",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read())
+            }
+            data = self._call_anthropic(payload, timeout=15)
             return data["content"][0]["text"].strip()
         except Exception:
             return ""

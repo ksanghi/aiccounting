@@ -33,6 +33,41 @@ def get_db():
 
 
 def init_db():
-    """Create tables if missing. Called at app startup."""
+    """Create tables if missing + apply idempotent additive migrations."""
     from license_server import models  # noqa: F401  (registers models)
     Base.metadata.create_all(bind=engine)
+    _apply_additive_columns()
+
+
+# ── Additive-column migrations ────────────────────────────────────────────
+#
+# SQLAlchemy's create_all doesn't add columns to existing tables. We have no
+# migration framework on the server; instead we mirror the desktop's pattern
+# (core/models.py::_apply_additive_columns) — list (table, column, type_ddl,
+# default_sql) and ALTER if absent. Idempotent on every startup.
+
+_ADDITIVE_COLUMNS: list[tuple[str, str, str, str]] = [
+    ("licenses", "seats_allowed", "INTEGER NOT NULL DEFAULT 3", "3"),
+]
+
+
+def _apply_additive_columns() -> None:
+    from sqlalchemy import text
+    if not settings.database_url.startswith("sqlite"):
+        # Other backends would need provider-specific SQL — keep it sqlite-only
+        # for now (matches actual deploy on Fly.io).
+        return
+    with engine.begin() as conn:
+        for table, col, ddl, default_sql in _ADDITIVE_COLUMNS:
+            cols = {
+                row[1] for row in conn.execute(
+                    text(f"PRAGMA table_info({table})")
+                ).fetchall()
+            }
+            if col not in cols:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+                if default_sql:
+                    conn.execute(text(
+                        f"UPDATE {table} SET {col} = {default_sql} "
+                        f"WHERE {col} IS NULL"
+                    ))

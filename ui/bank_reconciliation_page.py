@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 
 from ui.theme   import THEME
-from ui.widgets import FilteredLedgerSearchEdit, AmountEdit
+from ui.widgets import FilteredLedgerSearchEdit, AmountEdit, SmartDateEdit
 from core.bank_reconciliation import (
     BankReconciler,
     LocalParseFailed,
@@ -431,16 +431,14 @@ class BankReconciliationPage(QWidget):
         today = QDate.currentDate()
         fy_start = QDate(today.year() if today.month() >= 4 else today.year() - 1,
                          4, 1)
-        self._period_from_edit = QDateEdit(fy_start)
-        self._period_from_edit.setCalendarPopup(True)
+        self._period_from_edit = SmartDateEdit(fy_start)
         self._period_from_edit.setDisplayFormat("dd-MMM-yyyy")
         self._period_from_edit.setFixedHeight(36)
         period_row.addWidget(self._period_from_edit)
 
         period_row.addWidget(QLabel("→"))
 
-        self._period_to_edit = QDateEdit(today)
-        self._period_to_edit.setCalendarPopup(True)
+        self._period_to_edit = SmartDateEdit(today)
         self._period_to_edit.setDisplayFormat("dd-MMM-yyyy")
         self._period_to_edit.setFixedHeight(36)
         period_row.addWidget(self._period_to_edit)
@@ -716,17 +714,21 @@ class BankReconciliationPage(QWidget):
                     "ensure your file is a CSV/Excel/text-PDF, or upgrade.",
                 )
                 return
-            self._api_row.setVisible(True)
-            api_key = self._api_key_edit.text().strip()
-            if not api_key:
-                QMessageBox.warning(
-                    self, "API key needed",
-                    "Enter your Anthropic API key to use the AI parser.",
-                )
-                return
-            cfg = self._load_cfg()
-            cfg["anthropic_api_key"] = api_key
-            self._save_cfg(cfg)
+            # Phase 2: prefer the routing config; the legacy api_key field
+            # still works as a one-shot override for users mid-migration.
+            legacy_key = self._api_key_edit.text().strip()
+            if legacy_key:
+                self._api_row.setVisible(True)
+                api_key = legacy_key
+                cfg = self._load_cfg()
+                cfg["anthropic_api_key"] = api_key
+                self._save_cfg(cfg)
+            else:
+                from ui.ai_routing_dialog import ensure_routed
+                route = ensure_routed("bank_reconciliation", parent=self)
+                if route is None:
+                    return  # user cancelled
+                api_key = ""  # downstream uses ai_client routing
 
         self._status_lbl.setText(
             "Sending to AI…" if allow_ai else "Parsing locally…"
@@ -1070,12 +1072,16 @@ class BankReconciliationPage(QWidget):
         dlg.exec()
 
     def _on_ignore(self, stmt_line: dict):
-        note, ok = QInputDialog.getText(
-            self, "Ignore line",
-            "Optional note (e.g. 'duplicate', 'bank fee already booked'):",
-        )
-        if not ok:
-            return
+        # Pref governs whether we even prompt for a note. Off = silent ignore.
+        from core.user_prefs import prefs as _prefs
+        note = ""
+        if _prefs.get("bank_reco_comment_on_ignore", True):
+            note, ok = QInputDialog.getText(
+                self, "Ignore line",
+                "Optional note (e.g. 'duplicate', 'bank fee already booked'):",
+            )
+            if not ok:
+                return
         try:
             self.reconciler.mark_ignored(stmt_line["id"], note=note)
         except Exception as e:

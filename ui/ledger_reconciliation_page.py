@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 
 from ui.theme import THEME
-from ui.widgets import FilteredLedgerSearchEdit
+from ui.widgets import FilteredLedgerSearchEdit, SmartDateEdit
 from core.ledger_reconciliation import (
     LedgerReconciler, LocalParseFailed,
 )
@@ -208,14 +208,12 @@ class LedgerReconciliationPage(QWidget):
         fy_start = QDate(
             today.year() if today.month() >= 4 else today.year() - 1, 4, 1
         )
-        self._period_from_edit = QDateEdit(fy_start)
-        self._period_from_edit.setCalendarPopup(True)
+        self._period_from_edit = SmartDateEdit(fy_start)
         self._period_from_edit.setDisplayFormat("dd-MMM-yyyy")
         self._period_from_edit.setFixedHeight(34)
         period_row.addWidget(self._period_from_edit)
         period_row.addWidget(QLabel("→"))
-        self._period_to_edit = QDateEdit(today)
-        self._period_to_edit.setCalendarPopup(True)
+        self._period_to_edit = SmartDateEdit(today)
         self._period_to_edit.setDisplayFormat("dd-MMM-yyyy")
         self._period_to_edit.setFixedHeight(34)
         period_row.addWidget(self._period_to_edit)

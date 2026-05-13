@@ -161,8 +161,8 @@ class FeedbackPage(QWidget):
         sc.addWidget(sys_hdr)
 
         key = self._mgr.license_key
-        if key in ("FREE-DEMO", "", None):
-            key = "Free (no key)"
+        if key in ("DEMO", "FREE-DEMO", "", None):
+            key = "Demo (no key)" if self._mgr.plan == "DEMO" else "Free (no key)"
         self._sys_key  = key
         self._sys_plan = self._mgr.plan
 

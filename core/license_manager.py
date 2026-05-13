@@ -26,9 +26,12 @@ SERVER_URL   = os.environ.get(
 
 DEV_KEY = "ACCG-DEV-FULL"
 
-PLANS = ["FREE", "STANDARD", "PRO", "PREMIUM"]
+PLANS = ["DEMO", "FREE", "STANDARD", "PRO", "PREMIUM"]
+
+DEMO_TXN_LIMIT = 10  # full-feature trial cap
 
 PLAN_LIMITS = {
+    "DEMO":     DEMO_TXN_LIMIT,
     "FREE":     5_000,
     "STANDARD": 20_000,
     "PRO":      50_000,
@@ -36,6 +39,7 @@ PLAN_LIMITS = {
 }
 
 OVERAGE_RATES = {
+    "DEMO":     0.0,
     "FREE":     0.0,
     "STANDARD": 0.30,
     "PRO":      0.30,
@@ -43,6 +47,30 @@ OVERAGE_RATES = {
 }
 
 PLAN_FEATURES = {
+    # DEMO mirrors PREMIUM (everything unlocked) but is capped at
+    # DEMO_TXN_LIMIT vouchers — see can_post_voucher().
+    "DEMO": [
+        "vouchers",
+        "daybook",
+        "ledger_balances",
+        "reports",
+        "export_excel",
+        "export_pdf",
+        "bank_reconciliation",
+        "ledger_reconciliation",
+        "book_migration",
+        "backup",
+        "multi_user_unlimited",
+        "gst",
+        "tds",
+        "ai_document_reader",
+        "verbal_entry",
+        "auto_billing",
+        "whatsapp",
+        "audit_export",
+        "api_access",
+        "verticals",
+    ],
     "FREE": [
         "vouchers",
         "daybook",
@@ -123,6 +151,7 @@ FEATURE_UPGRADE_MAP = {
 }
 
 PLAN_PRICES = {
+    "DEMO":     0,
     "FREE":     0,
     "STANDARD": 1999,
     "PRO":      4999,
@@ -162,20 +191,33 @@ class LicenseManager:
         return self._demo_license()
 
     def _demo_license(self) -> dict:
-        """Default FREE license for new installs."""
+        """Default DEMO license for new installs — all features, 10 vouchers."""
         return {
-            "license_key":   "FREE-DEMO",
-            "plan":          "FREE",
-            "features":      PLAN_FEATURES["FREE"],
-            "txn_limit":     PLAN_LIMITS["FREE"],
-            "txn_used":      0,
-            "user_limit":    1,
-            "expires_at":    "2099-12-31",
-            "company_name":  "",
-            "validated_at":  datetime.now().isoformat(),
-            "offline_until": (datetime.now() + timedelta(days=7)).isoformat(),
-            "overage_count": 0,
+            "license_key":     "DEMO",
+            "plan":            "DEMO",
+            "features":        PLAN_FEATURES["DEMO"],
+            "txn_limit":       PLAN_LIMITS["DEMO"],
+            "txn_used":        0,
+            "user_limit":      1,
+            "seats_allowed":   0,   # DEMO doesn't consume server-side seats
+            "seats_used":      0,
+            "expires_at":      "2099-12-31",
+            "company_name":    "",
+            "validated_at":    datetime.now().isoformat(),
+            "offline_until":   (datetime.now() + timedelta(days=7)).isoformat(),
+            "overage_count":   0,
         }
+
+    def _drop_to_demo(self) -> None:
+        """
+        Reset the cached license to DEMO while preserving local voucher counts.
+        Used when the server reports our seat was released elsewhere, or after
+        the user clicks 'Release this machine's seat'.
+        """
+        kept_txn_used = self._data.get("txn_used", 0)
+        self._data = self._demo_license()
+        self._data["txn_used"] = kept_txn_used
+        self._save_local()
 
     def _save_local(self):
         LICENSE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -227,6 +269,18 @@ class LicenseManager:
         if self.plan == "PREMIUM":
             return 999
         return self._data.get("user_limit", 1)
+
+    @property
+    def seats_allowed(self) -> int:
+        return int(self._data.get("seats_allowed") or 0)
+
+    @property
+    def seats_used(self) -> int:
+        return int(self._data.get("seats_used") or 0)
+
+    @property
+    def seats_remaining(self) -> int:
+        return max(0, self.seats_allowed - self.seats_used)
 
     @property
     def company_name(self) -> str:
@@ -282,6 +336,16 @@ class LicenseManager:
 
         used  = self.txn_used
         limit = self.txn_limit
+
+        if self.plan == "DEMO":
+            if used >= limit:
+                return (
+                    False,
+                    f"Demo limit of {limit} transactions reached. "
+                    f"Activate a paid plan to continue.",
+                    0.0,
+                )
+            return True, "", 0.0
 
         if self.plan == "FREE":
             if used >= limit:
@@ -350,6 +414,8 @@ class LicenseManager:
                 "txn_limit":     PLAN_LIMITS["PREMIUM"],
                 "txn_used":      self._data.get("txn_used", 0),
                 "user_limit":    999,
+                "seats_allowed": 0,   # DEV bypasses seat counting
+                "seats_used":    0,
                 "expires_at":    "2099-12-31",
                 "company_name":  "Developer",
                 "validated_at":  datetime.now().isoformat(),
@@ -386,6 +452,8 @@ class LicenseManager:
                 "txn_limit":     data.get("txn_limit", PLAN_LIMITS.get(plan, 5000)),
                 "txn_used":      data.get("txn_used", 0),
                 "user_limit":    data.get("user_limit", 1),
+                "seats_allowed": data.get("seats_allowed") or 0,
+                "seats_used":    data.get("seats_used") or 0,
                 "expires_at":    data.get("expires_at", "2026-12-31"),
                 "company_name":  data.get("company_name", ""),
                 "validated_at":  datetime.now().isoformat(),
@@ -404,9 +472,77 @@ class LicenseManager:
 
     def refresh_from_server(self):
         """Silent background refresh."""
-        if self.license_key in ("FREE-DEMO", DEV_KEY, "", None):
+        if self.license_key in ("DEMO", "FREE-DEMO", DEV_KEY, "", None):
             return
         self.validate_with_server(self.license_key)
+
+    def validate_on_startup(self, timeout: float = 3.0) -> None:
+        """
+        Silent re-validation at app startup. Falls back to the cached license
+        on any network error so a slow / offline boot doesn't block the UI.
+        Caller should run this on a worker thread to avoid blocking the splash.
+        """
+        if self.license_key in ("DEMO", "FREE-DEMO", DEV_KEY, "", None):
+            return
+        try:
+            payload = json.dumps({
+                "license_key": self.license_key,
+                "machine_id":  self.get_machine_id(),
+                "app_version": "1.0.0",
+            }).encode()
+            req = urllib.request.Request(
+                f"{SERVER_URL}/license/validate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read())
+            if not data.get("valid"):
+                return  # Don't crash startup if server says revoked — UI surfaces it later.
+            self._data["seats_allowed"] = data.get("seats_allowed") or 0
+            self._data["seats_used"]    = data.get("seats_used") or 0
+            self._save_local()
+        except Exception:
+            # Offline / DNS / timeout — keep the cached license, the 7-day
+            # grace handles posting.
+            return
+
+    def release_this_machine_seat(self) -> tuple[bool, str]:
+        """
+        Tell the server to free this machine's seat for this license key, then
+        drop the local cache to DEMO (preserving the local voucher count).
+        Returns (success, message) — success means the seat was released
+        cleanly OR was already absent server-side. Network failure returns
+        False; caller should keep retrying instead of force-dropping.
+        """
+        key = self.license_key
+        if key in ("DEMO", "FREE-DEMO", DEV_KEY, "", None):
+            return False, "No paid license is active on this machine."
+        try:
+            payload = json.dumps({
+                "license_key": key,
+                "machine_id":  self.get_machine_id(),
+            }).encode()
+            req = urllib.request.Request(
+                f"{SERVER_URL}/license/deactivate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            if not data.get("ok"):
+                return False, data.get("error") or "Server refused to release the seat."
+            self._drop_to_demo()
+            return True, (
+                "This machine's seat has been released. "
+                "You can activate the same key on a different machine now."
+            )
+        except urllib.error.URLError:
+            return False, "Cannot reach license server. Check internet connection."
+        except Exception as e:
+            return False, str(e)
 
     # ── Display helpers ───────────────────────────────────────────────────────
 

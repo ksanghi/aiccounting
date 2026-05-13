@@ -88,6 +88,14 @@ class MainWindow(QMainWindow):
         self.tree       = tree
         self.engine     = engine
 
+        # FY housekeeping — make sure current (and next, if within 60 days)
+        # FY rows exist so period-lock checks have something to read.
+        try:
+            from core.fy_manager import ensure_current_and_next
+            ensure_current_and_next(self.db, self.company_id)
+        except Exception:
+            pass
+
         self.license_mgr = LicenseManager()
 
         # Shared calculator (one instance, shown/hidden)
@@ -194,6 +202,30 @@ class MainWindow(QMainWindow):
         self._nav_scroll.setWidget(nav_host)
         sidebar_layout.addWidget(self._nav_scroll, 1)
 
+        # Switch company button (just above calc)
+        switch_btn = QPushButton("  🔄   Switch Company…")
+        switch_btn.setFixedHeight(36)
+        switch_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 7px;
+                padding: 0px 14px;
+                text-align: left;
+                font-size: 12px;
+                color: {THEME['text_secondary']};
+                height: 36px;
+                min-height: 36px;
+                max-height: 36px;
+            }}
+            QPushButton:hover {{
+                background-color: {THEME['bg_hover']};
+                color: {THEME['text_primary']};
+            }}
+        """)
+        switch_btn.clicked.connect(self.change_company)
+        sidebar_layout.addWidget(switch_btn)
+
         # Calc button at bottom
         calc_btn = QPushButton("  ⌨   Calculator   (Alt+C)")
         calc_btn.setFixedHeight(36)
@@ -233,6 +265,12 @@ class MainWindow(QMainWindow):
         # Status bar
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self._all_co_label = QLabel("")
+        self._all_co_label.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; padding-right:10px;"
+        )
+        self.status.addPermanentWidget(self._all_co_label)
+        self._refresh_all_co_total()
         self.status.showMessage(f"  {self._company_name}  |  Ready")
 
     # ── Page registration ─────────────────────────────────────────────────────
@@ -501,25 +539,45 @@ class MainWindow(QMainWindow):
         feedback_page = FeedbackPage(self.license_mgr)
         self.register_page("Feedback", "💬", feedback_page)
 
+        from ui.period_locks_page import PeriodLocksPage
+        self.register_page(
+            "Period Locks", "🔒",
+            PeriodLocksPage(self.db, self.company_id),
+            section_above="SETTINGS",
+        )
+
         settings_page = self._build_settings_page()
-        self.register_page("Settings", "⚙", settings_page, section_above="SETTINGS")
+        self.register_page("Settings", "⚙", settings_page)
 
     def _build_settings_page(self) -> QWidget:
-        from ui.widgets import make_label, make_separator
+        from PySide6.QtWidgets import QCheckBox, QComboBox
+        from ui.widgets import make_label
+        from core.user_prefs import prefs
+
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(20)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(32, 24, 32, 24)
+        outer.setSpacing(0)
 
         title = QLabel("Settings")
         title.setObjectName("page_title")
-        layout.addWidget(title)
+        outer.addWidget(title)
 
-        sub = QLabel("Customise labels and display preferences.")
+        sub = QLabel("Preferences are saved per machine and persist across restarts.")
         sub.setObjectName("page_subtitle")
-        layout.addWidget(sub)
+        outer.addWidget(sub)
 
-        # ── Label style section ──
+        # Scrollable body so the page stays usable as more cards are added.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 16, 8, 0)
+        layout.setSpacing(20)
+
+        # ── Card: Dr / Cr Label Style ─────────────────────────────────────────
         card = QFrame()
         card.setObjectName("card")
         card_layout = QVBoxLayout(card)
@@ -570,8 +628,250 @@ class MainWindow(QMainWindow):
         btn_row.addStretch()
         card_layout.addLayout(btn_row)
         layout.addWidget(card)
+
+        # ── Card: Voucher form ────────────────────────────────────────────────
+        v_card = self._pref_card("Voucher form")
+
+        v_card.addWidget(self._pref_checkbox(
+            "Show success toast after posting a voucher",
+            "Tick to keep the post-success popup. Untick for silent posting — "
+            "the voucher still gets saved.",
+            key="after_post_toast", default=True,
+        ))
+
+        v_card.addWidget(self._pref_choice(
+            "Default voucher date",
+            "What date the form should start with each time.",
+            key="default_voucher_date", default="today",
+            options=[("today", "Today"), ("last_used", "Last used date")],
+        ))
+
+        layout.addWidget(v_card.parentWidget())
+
+        # ── Card: Bank reconciliation ─────────────────────────────────────────
+        b_card = self._pref_card("Bank reconciliation")
+
+        b_card.addWidget(self._pref_checkbox(
+            "Ask for a comment when ignoring a statement line",
+            "When you 'Ignore' a bank-statement line, AccGenie can ask why "
+            "(e.g. 'duplicate', 'bank fee already booked'). Untick to ignore silently.",
+            key="bank_reco_comment_on_ignore", default=True,
+        ))
+
+        layout.addWidget(b_card.parentWidget())
+
+        # ── Card: Backups ─────────────────────────────────────────────────────
+        bk_card = self._pref_card("Backups")
+
+        bk_card.addWidget(self._pref_choice(
+            "Backup reminder interval",
+            "How often AccGenie should nudge you to back up the current "
+            "company. The reminder fires when the app opens.",
+            key="backup_reminder_days", default=7,
+            options=[(1, "Every day"), (3, "Every 3 days"),
+                     (7, "Every 7 days"), (14, "Every 14 days"),
+                     (30, "Every 30 days")],
+        ))
+
+        layout.addWidget(bk_card.parentWidget())
+
+        # ── Card: AI Routing ──────────────────────────────────────────────────
+        ai_card = self._pref_card("AI Routing")
+        ai_card_widget = ai_card.parentWidget()
+
+        ai_hint = QLabel(
+            "Pick how each AI feature reaches Anthropic — pooled credits "
+            "(billed from your AccGenie balance) or your own Anthropic key "
+            "(billed directly by Anthropic)."
+        )
+        ai_hint.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+        ai_hint.setWordWrap(True)
+        ai_card.addWidget(ai_hint)
+
+        from core.ai_routing import routing as _routing, FEATURES
+        from ui.ai_routing_dialog import FEATURE_LABELS
+
+        for feat in FEATURES:
+            row = QHBoxLayout()
+            label = QLabel(FEATURE_LABELS.get(feat, feat))
+            label.setStyleSheet(f"color:{THEME['text_primary']}; font-size:12px;")
+            row.addWidget(label)
+            row.addStretch()
+            route_badge = QLabel(_routing.route_for(feat).upper())
+            badge_color = (THEME['accent']
+                           if _routing.route_for(feat) == "own"
+                           else THEME['success'])
+            route_badge.setStyleSheet(
+                f"color: {badge_color}; font-size: 11px; font-weight: bold;"
+                f" padding: 2px 8px; border: 1px solid {badge_color};"
+                f" border-radius: 4px;"
+            )
+            row.addWidget(route_badge)
+            edit_btn = QPushButton("Change…")
+            edit_btn.setFixedHeight(28)
+            edit_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: {THEME['accent']};
+                    border: 1px solid {THEME['accent']};
+                    border-radius: 6px;
+                    padding: 2px 12px;
+                    font-size: 11px;
+                }}
+                QPushButton:hover {{ background: {THEME['accent']}; color: white; }}
+            """)
+            edit_btn.clicked.connect(
+                lambda _, f=feat: self._edit_ai_route(f)
+            )
+            row.addWidget(edit_btn)
+            ai_card.addLayout(row)
+
+        layout.addWidget(ai_card_widget)
+
+        # ── Card: Period locks shortcut ───────────────────────────────────────
+        p_card = self._pref_card("Accounting period locks")
+        p_card_widget = p_card.parentWidget()
+
+        p_card.addWidget(QLabel(
+            "Close financial years or lock arbitrary date ranges to prevent "
+            "further posting / editing / cancelling. See the Period Locks page "
+            "in the sidebar."
+        ))
+        # Style the label
+        for w in p_card_widget.findChildren(QLabel):
+            if "Close financial years" in (w.text() or ""):
+                w.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+                w.setWordWrap(True)
+
+        open_btn = QPushButton("Open Period Locks →")
+        open_btn.setFixedHeight(34)
+        open_btn.setFixedWidth(180)
+        open_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {THEME['accent']};
+                border: 1px solid {THEME['accent']};
+                border-radius: 7px;
+                padding: 4px 14px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background: {THEME['accent']}; color: white; }}
+        """)
+        open_btn.clicked.connect(self._navigate_to_period_locks)
+        p_card.addWidget(open_btn)
+
+        layout.addWidget(p_card_widget)
+
         layout.addStretch()
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
         return page
+
+    # ── Settings-card helpers ─────────────────────────────────────────────────
+
+    def _pref_card(self, title: str) -> QVBoxLayout:
+        """Create a Settings card with a title; returns its inner layout."""
+        from ui.widgets import make_label
+        card = QFrame()
+        card.setObjectName("card")
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setSpacing(12)
+        cl.addWidget(make_label(title))
+        return cl
+
+    def _pref_checkbox(self, label: str, hint: str, key: str,
+                       default: bool) -> QWidget:
+        from PySide6.QtWidgets import QCheckBox
+        from core.user_prefs import prefs
+
+        w = QWidget()
+        col = QVBoxLayout(w)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
+        cb = QCheckBox(label)
+        cb.setChecked(bool(prefs.get(key, default)))
+        cb.toggled.connect(lambda v, k=key: prefs.set(k, bool(v)))
+        cb.setStyleSheet(f"color:{THEME['text_primary']}; font-size:12px;")
+        col.addWidget(cb)
+        h = QLabel(hint)
+        h.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px; padding-left:22px;")
+        h.setWordWrap(True)
+        col.addWidget(h)
+        return w
+
+    def _pref_choice(self, label: str, hint: str, key: str,
+                     default, options: list[tuple]) -> QWidget:
+        """One-of choice rendered as a labeled QComboBox."""
+        from PySide6.QtWidgets import QComboBox
+        from core.user_prefs import prefs
+
+        w = QWidget()
+        col = QVBoxLayout(w)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
+
+        head = QHBoxLayout()
+        head_lbl = QLabel(label)
+        head_lbl.setStyleSheet(f"color:{THEME['text_primary']}; font-size:12px;")
+        head.addWidget(head_lbl)
+        head.addStretch()
+
+        combo = QComboBox()
+        combo.setFixedHeight(30)
+        combo.setMinimumWidth(180)
+        current = prefs.get(key, default)
+        for value, text in options:
+            combo.addItem(text, value)
+        # Select the current value
+        for i in range(combo.count()):
+            if combo.itemData(i) == current:
+                combo.setCurrentIndex(i)
+                break
+        combo.currentIndexChanged.connect(
+            lambda _i, c=combo, k=key: prefs.set(k, c.currentData())
+        )
+        head.addWidget(combo)
+        col.addLayout(head)
+
+        h = QLabel(hint)
+        h.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        h.setWordWrap(True)
+        col.addWidget(h)
+        return w
+
+    def _navigate_to_period_locks(self) -> None:
+        for idx, (label, _, _, _) in enumerate(self._pages):
+            if label == "Period Locks":
+                self._select_page(idx)
+                return
+
+    def _edit_ai_route(self, feature: str) -> None:
+        """Open the AI Routing dialog for a feature and refresh Settings."""
+        from ui.ai_routing_dialog import AIRoutingDialog
+        dlg = AIRoutingDialog(feature, parent=self)
+        dlg.exec()
+        # Rebuild the Settings page so the badges and key field reflect the
+        # new state. Cheap — it's just one QWidget tree.
+        settings_idx = next(
+            (i for i, (l, _, _, _) in enumerate(self._pages) if l == "Settings"),
+            None,
+        )
+        if settings_idx is not None:
+            old_widget = self._pages[settings_idx][2]
+            new_widget = self._build_settings_page()
+            self._stack.removeWidget(old_widget)
+            old_widget.deleteLater()
+            self._stack.insertWidget(settings_idx, new_widget)
+            self._pages[settings_idx] = (
+                self._pages[settings_idx][0],
+                self._pages[settings_idx][1],
+                new_widget,
+                self._pages[settings_idx][3],
+            )
+            if self._current_idx == settings_idx:
+                self._stack.setCurrentWidget(new_widget)
 
     def _apply_style(self, style: str):
         set_label_style(style)
@@ -632,6 +932,50 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"  ✓  {vno}  posted  |  ₹{amount:,.2f}  |  {self._company_name}"
         )
+        self._refresh_all_co_total()
+
+    def _refresh_all_co_total(self):
+        try:
+            from core.paths import all_companies_voucher_count
+            n_co, total = all_companies_voucher_count()
+            self._all_co_label.setText(
+                f"All companies: {n_co} co · {total:,} vouchers"
+            )
+        except Exception:
+            self._all_co_label.setText("")
+
+    def change_company(self):
+        """Close the current company and re-open the selector. The new
+        MainWindow is parked on the QApplication so it survives this
+        window closing."""
+        from main import CompanyDialog
+        from core.voucher_engine import VoucherEngine
+
+        dlg = CompanyDialog(self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+
+        new_db    = dlg.selected_db
+        new_cid   = dlg.selected_cid
+        new_tree  = dlg.selected_tree
+        new_engine = VoucherEngine(new_db, new_cid)
+
+        old_db = self.db
+        new_window = MainWindow(new_db, new_cid, new_tree, new_engine)
+
+        # Stash on the QApplication so Python doesn't GC it when `self` dies.
+        app = QApplication.instance()
+        if app is not None:
+            existing = getattr(app, "_accgenie_windows", [])
+            existing.append(new_window)
+            app._accgenie_windows = existing
+
+        new_window.show()
+        self.close()
+        try:
+            old_db.close()
+        except Exception:
+            pass
 
     def _show_calculator(self):
         sidebar_pos = self._sidebar.mapToGlobal(self._sidebar.rect().bottomLeft())
