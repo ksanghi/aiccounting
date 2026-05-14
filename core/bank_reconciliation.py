@@ -267,26 +267,24 @@ class BankReconciler:
     ) -> int:
         from ai.document_parser import DocumentParser
         from ai.voucher_ai import VoucherAI
-        from ai.credit_manager import CreditManager
 
-        if not api_key:
-            raise ValueError("API key required for AI fallback.")
+        # api_key empty is fine now (Phase 2a): the AI modules will route
+        # through ai_client per the user's Settings → AI Routing choice
+        # (pooled via our server, or BYOK against their own Anthropic key).
+        # The old "API key required for AI fallback" early-fail is gone.
         path = Path(file_path)
 
-        # Parse the document → text
-        parser = DocumentParser(api_key=api_key)
+        # Parse the document → text. DocumentParser uses the supplied
+        # legacy api_key if non-empty, otherwise routes via ai_client.
+        parser = DocumentParser(api_key=api_key, feature="bank_reconciliation")
         result = parser.parse(str(path))
         if not result.success:
             raise ValueError(result.error or "Document parsing failed.")
 
-        # Charge for the local + claude pages
-        cm = CreditManager()
-        if not cm.can_afford(result.local_pages, result.claude_pages):
-            raise ValueError(
-                f"Insufficient credits. Need {result.cost_summary()}; "
-                f"balance Rs.{cm.balance_paise/100:.2f}."
-            )
-        cm.deduct(result.local_pages, result.claude_pages, str(path))
+        # Credit metering moved server-side in Phase 2b — the /ai/proxy
+        # endpoint deducts paise on each call and updates the local cache
+        # via x-accgenie-balance-paise response headers. No local pre-flight
+        # check needed; a 402 from the server surfaces as a clear error.
 
         # Use the same regex-based meta detection on the AI-OCR'd text so
         # the AI fallback path enforces the same statement-belongs-to-ledger

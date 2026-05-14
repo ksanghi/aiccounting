@@ -182,6 +182,7 @@ class LicensePage(QWidget):
         self._overage_val   = make_stat("OVERAGE")
         self._users_val     = make_stat("USERS")
         self._seats_val     = make_stat("SEATS")
+        self._credits_val   = make_stat("AI CREDITS")
         sc.addLayout(stats_row)
 
         sc.addWidget(divider())
@@ -342,6 +343,31 @@ class LicensePage(QWidget):
             f"font-size: 11px; color: transparent;"
         )
         kc.addWidget(self._key_status)
+
+        # Activated-state row: a green "✓ Activated" badge + a "Change key"
+        # link, shown when a real paid licence is active. Toggled by
+        # _apply_activation_state(), called from refresh().
+        act_row = QHBoxLayout()
+        act_row.setContentsMargins(0, 0, 0, 0)
+        act_row.setSpacing(10)
+        self._activated_lbl = QLabel("✓ Activated")
+        self._activated_lbl.setStyleSheet(
+            f"color: {THEME['success']}; font-size: 12px; font-weight: bold;"
+        )
+        self._activated_lbl.setVisible(False)
+        self._change_key_link = QPushButton("Change key")
+        self._change_key_link.setFlat(True)
+        self._change_key_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._change_key_link.setStyleSheet(
+            f"QPushButton {{ color: {THEME['accent']}; border: none; "
+            f"font-size: 11px; text-decoration: underline; }}"
+        )
+        self._change_key_link.setVisible(False)
+        self._change_key_link.clicked.connect(self._enable_key_edit)
+        act_row.addWidget(self._activated_lbl)
+        act_row.addWidget(self._change_key_link)
+        act_row.addStretch()
+        kc.addLayout(act_row)
 
         # Release-seat row — only visible when a paid key is bound here.
         self._release_row = QHBoxLayout()
@@ -541,6 +567,14 @@ class LicensePage(QWidget):
     # ── Refresh ──────────────────────────────────────────────────────────────
 
     def refresh(self):
+        # Re-read license.json from disk first. voucher_form increments
+        # txn_used through its own LicenseManager instance, so this page's
+        # _mgr would otherwise show a stale count.
+        try:
+            self._mgr.reload()
+        except Exception:
+            pass
+        self._apply_activation_state()
         s     = self._mgr.status_summary()
         plan  = s["plan"]
         used  = s["txn_used"]
@@ -619,6 +653,15 @@ class LicensePage(QWidget):
             self._release_btn.setVisible(False)
             self._release_hint.setVisible(False)
 
+        # AI CREDITS card — server is source of truth. The local credit
+        # cache is updated by /ai/proxy response headers and by an explicit
+        # refresh in showEvent below.
+        try:
+            from ai.credit_manager import CreditManager
+            self._credits_val.setText(CreditManager().balance_display)
+        except Exception:
+            self._credits_val.setText("—")
+
         fill_pct = min(pct, 100) / 100
         if pct >= 100:
             bar_color = THEME["danger"]
@@ -690,11 +733,10 @@ class LicensePage(QWidget):
 
     def _on_validate(self, ok: bool, msg: str):
         self._activate_btn.setEnabled(True)
-        self._activate_btn.setText("Activate")
 
         if ok:
             self._show_key_status(f"✓  {msg}", THEME["success"])
-            self.refresh()
+            self.refresh()   # refresh() calls _apply_activation_state()
             self.plan_changed.emit(self._mgr.plan)
             QMessageBox.information(
                 self, "Activated",
@@ -703,12 +745,44 @@ class LicensePage(QWidget):
             )
         else:
             self._show_key_status(f"✗  {msg}", THEME["danger"])
+            self._apply_activation_state()
 
     def _show_key_status(self, text: str, colour: str):
         self._key_status.setText(text)
         self._key_status.setStyleSheet(
             f"font-size: 11px; color: {colour};"
         )
+
+    # ── Activated-state toggle ───────────────────────────────────────────────
+
+    def _apply_activation_state(self):
+        """Reflect whether a real paid licence is active. When it is, the
+        key field goes read-only, the button reads 'Re-validate', and a
+        green '✓ Activated' badge shows. DEMO / FREE / unactivated keeps
+        the plain editable 'Activate' state."""
+        key = self._mgr.license_key
+        is_paid_active = key not in ("DEMO", "FREE-DEMO", "", None)
+        if is_paid_active:
+            self._key_edit.setText(key)
+            self._key_edit.setReadOnly(True)
+            self._activate_btn.setText("Re-validate")
+            self._activated_lbl.setVisible(True)
+            self._change_key_link.setVisible(True)
+        else:
+            self._key_edit.setReadOnly(False)
+            self._activate_btn.setText("Activate")
+            self._activated_lbl.setVisible(False)
+            self._change_key_link.setVisible(False)
+
+    def _enable_key_edit(self):
+        """'Change key' link — re-enable the field so the user can paste a
+        different licence key, then Activate it."""
+        self._key_edit.setReadOnly(False)
+        self._key_edit.setFocus()
+        self._key_edit.selectAll()
+        self._activate_btn.setText("Activate")
+        self._activated_lbl.setVisible(False)
+        self._change_key_link.setVisible(False)
 
     def _release_seat(self):
         """Confirm with the user, hit /deactivate, drop to DEMO on success."""
@@ -743,10 +817,16 @@ class LicensePage(QWidget):
 
     def showEvent(self, event):
         """When the page is navigated to, re-validate against the server so
-        the seat count reflects what happened on other machines."""
+        the seat count + AI credit balance reflect what happened on other
+        machines / from other AI calls."""
         super().showEvent(event)
         try:
             self._mgr.refresh_from_server()
+        except Exception:
+            pass
+        try:
+            from ai.credit_manager import CreditManager
+            CreditManager().refresh_from_server()
         except Exception:
             pass
         self.refresh()

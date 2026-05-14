@@ -630,15 +630,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
 
         # ── Card: Voucher form ────────────────────────────────────────────────
-        v_card = self._pref_card("Voucher form")
-
+        v_card = self._pref_card("Voucher form", layout)
         v_card.addWidget(self._pref_checkbox(
             "Show success toast after posting a voucher",
             "Tick to keep the post-success popup. Untick for silent posting — "
             "the voucher still gets saved.",
             key="after_post_toast", default=True,
         ))
-
         v_card.addWidget(self._pref_choice(
             "Default voucher date",
             "What date the form should start with each time.",
@@ -646,11 +644,8 @@ class MainWindow(QMainWindow):
             options=[("today", "Today"), ("last_used", "Last used date")],
         ))
 
-        layout.addWidget(v_card.parentWidget())
-
         # ── Card: Bank reconciliation ─────────────────────────────────────────
-        b_card = self._pref_card("Bank reconciliation")
-
+        b_card = self._pref_card("Bank reconciliation", layout)
         b_card.addWidget(self._pref_checkbox(
             "Ask for a comment when ignoring a statement line",
             "When you 'Ignore' a bank-statement line, AccGenie can ask why "
@@ -658,11 +653,8 @@ class MainWindow(QMainWindow):
             key="bank_reco_comment_on_ignore", default=True,
         ))
 
-        layout.addWidget(b_card.parentWidget())
-
         # ── Card: Backups ─────────────────────────────────────────────────────
-        bk_card = self._pref_card("Backups")
-
+        bk_card = self._pref_card("Backups", layout)
         bk_card.addWidget(self._pref_choice(
             "Backup reminder interval",
             "How often AccGenie should nudge you to back up the current "
@@ -673,11 +665,8 @@ class MainWindow(QMainWindow):
                      (30, "Every 30 days")],
         ))
 
-        layout.addWidget(bk_card.parentWidget())
-
         # ── Card: AI Routing ──────────────────────────────────────────────────
-        ai_card = self._pref_card("AI Routing")
-        ai_card_widget = ai_card.parentWidget()
+        ai_card = self._pref_card("AI Routing", layout)
 
         ai_hint = QLabel(
             "Pick how each AI feature reaches Anthropic — pooled credits "
@@ -726,22 +715,17 @@ class MainWindow(QMainWindow):
             row.addWidget(edit_btn)
             ai_card.addLayout(row)
 
-        layout.addWidget(ai_card_widget)
-
         # ── Card: Period locks shortcut ───────────────────────────────────────
-        p_card = self._pref_card("Accounting period locks")
-        p_card_widget = p_card.parentWidget()
+        p_card = self._pref_card("Accounting period locks", layout)
 
-        p_card.addWidget(QLabel(
+        p_lbl = QLabel(
             "Close financial years or lock arbitrary date ranges to prevent "
             "further posting / editing / cancelling. See the Period Locks page "
             "in the sidebar."
-        ))
-        # Style the label
-        for w in p_card_widget.findChildren(QLabel):
-            if "Close financial years" in (w.text() or ""):
-                w.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
-                w.setWordWrap(True)
+        )
+        p_lbl.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+        p_lbl.setWordWrap(True)
+        p_card.addWidget(p_lbl)
 
         open_btn = QPushButton("Open Period Locks →")
         open_btn.setFixedHeight(34)
@@ -761,8 +745,6 @@ class MainWindow(QMainWindow):
         open_btn.clicked.connect(self._navigate_to_period_locks)
         p_card.addWidget(open_btn)
 
-        layout.addWidget(p_card_widget)
-
         layout.addStretch()
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
@@ -770,8 +752,15 @@ class MainWindow(QMainWindow):
 
     # ── Settings-card helpers ─────────────────────────────────────────────────
 
-    def _pref_card(self, title: str) -> QVBoxLayout:
-        """Create a Settings card with a title; returns its inner layout."""
+    def _pref_card(self, title: str, parent_layout: QVBoxLayout) -> QVBoxLayout:
+        """Create a Settings card with a title, append it to `parent_layout`,
+        and return its inner layout for callers to addWidget into.
+
+        Why we take `parent_layout` instead of just returning the inner
+        layout: without it, the QFrame `card` has no Python or Qt parent
+        once this function returns — Python's GC kills it, which deletes
+        its child layout, and the caller crashes with
+        'Internal C++ object already deleted' on the first addWidget."""
         from ui.widgets import make_label
         card = QFrame()
         card.setObjectName("card")
@@ -779,6 +768,7 @@ class MainWindow(QMainWindow):
         cl.setContentsMargins(20, 16, 20, 16)
         cl.setSpacing(12)
         cl.addWidget(make_label(title))
+        parent_layout.addWidget(card)
         return cl
 
     def _pref_checkbox(self, label: str, hint: str, key: str,

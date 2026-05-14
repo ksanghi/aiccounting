@@ -488,25 +488,15 @@ class BankReconciliationPage(QWidget):
         self._drop.file_dropped.connect(self._on_file_dropped)
         drop_lay.addWidget(self._drop)
 
-        # API key (hidden until a non-CSV file lands AND PRO is licensed)
+        # Legacy api_key field removed in Phase 2a — AI Routing dialog
+        # (Settings → AI Routing, or auto-popped on first AI use) is the
+        # single entry point now. We keep an invisible QLineEdit only so
+        # the _fire_import path can still read .text() == "" safely.
+        from PySide6.QtWidgets import QLineEdit as _QLE
+        self._api_key_edit = _QLE()
+        self._api_key_edit.setVisible(False)
         self._api_row = QWidget()
-        api_lay = QHBoxLayout(self._api_row)
-        api_lay.setContentsMargins(0, 0, 0, 0)
-        api_key_label = QLabel("Anthropic API key")
-        api_key_label.setFixedWidth(150)
-        api_key_label.setStyleSheet(
-            f"color:{THEME['text_secondary']}; font-size:11px; font-weight:bold;"
-        )
-        self._api_key_edit = QLineEdit()
-        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key_edit.setFixedHeight(36)
-        self._api_key_edit.setPlaceholderText("sk-ant-…")
-        cfg = self._load_cfg()
-        self._api_key_edit.setText(cfg.get("anthropic_api_key", ""))
-        api_lay.addWidget(api_key_label)
-        api_lay.addWidget(self._api_key_edit, 1)
         self._api_row.setVisible(False)
-        drop_lay.addWidget(self._api_row)
 
         # Status / error label
         self._status_lbl = QLabel("")
@@ -714,21 +704,12 @@ class BankReconciliationPage(QWidget):
                     "ensure your file is a CSV/Excel/text-PDF, or upgrade.",
                 )
                 return
-            # Phase 2: prefer the routing config; the legacy api_key field
-            # still works as a one-shot override for users mid-migration.
-            legacy_key = self._api_key_edit.text().strip()
-            if legacy_key:
-                self._api_row.setVisible(True)
-                api_key = legacy_key
-                cfg = self._load_cfg()
-                cfg["anthropic_api_key"] = api_key
-                self._save_cfg(cfg)
-            else:
-                from ui.ai_routing_dialog import ensure_routed
-                route = ensure_routed("bank_reconciliation", parent=self)
-                if route is None:
-                    return  # user cancelled
-                api_key = ""  # downstream uses ai_client routing
+            # AI Routing dialog is the single entry point — pops on first
+            # use, then remembered. User cancelled = abort the import.
+            from ui.ai_routing_dialog import ensure_routed
+            route = ensure_routed("bank_reconciliation", parent=self)
+            if route is None:
+                return
 
         self._status_lbl.setText(
             "Sending to AI…" if allow_ai else "Parsing locally…"

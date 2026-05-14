@@ -11,7 +11,7 @@ import urllib.error
 
 class VoucherAI:
 
-    MODEL = "claude-sonnet-4-20250514"
+    MODEL = "claude-sonnet-4-6"
 
     def __init__(self, api_key: str = "", feature: str = "document_reader"):
         # api_key is legacy — keep the param so existing call sites don't

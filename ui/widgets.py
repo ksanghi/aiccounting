@@ -1104,14 +1104,17 @@ class SmartDateEdit(QWidget):
         self._btn.setToolTip("Open calendar")
         self._btn.setStyleSheet(f"""
             QPushButton {{
-                border: 1px solid {THEME['border']};
+                border: 1px solid {THEME['accent']};
                 border-left: none;
                 border-top-right-radius: 6px;
                 border-bottom-right-radius: 6px;
-                background: {THEME['bg_card']};
+                background: {THEME['accent_dim']};
+                color: {THEME['accent']};
+                font-size: 14px;
             }}
             QPushButton:hover {{
-                background: {THEME['bg_hover']};
+                background: {THEME['accent']};
+                color: white;
             }}
         """)
         self._btn.clicked.connect(self._show_popup)

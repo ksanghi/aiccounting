@@ -64,3 +64,6 @@ config/display_config.json
 # Stray drafts / one-off HTML
 theme.html
 docs/*.html
+
+# Local scratch area for test files (bank statements, sample docs, etc.)
+File exchange/

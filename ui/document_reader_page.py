@@ -265,13 +265,28 @@ class DocumentReaderPage(QWidget):
             self._doc_type.addItem(label, val)
         cfg.addWidget(self._doc_type)
 
-        cfg.addWidget(make_label("Anthropic API Key"))
-        self._api_key_edit = QLineEdit(self._api_key)
-        self._api_key_edit.setPlaceholderText("sk-ant-…")
-        self._api_key_edit.setFixedHeight(32)
-        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key_edit.textChanged.connect(self._save_api_key)
-        cfg.addWidget(self._api_key_edit)
+        # Legacy api_key field removed in Phase 2a — AI Routing dialog
+        # (Settings → AI Routing) is the single entry point. We keep a
+        # hidden QLineEdit so the existing _process() check on .text()
+        # keeps working without needing to hunt down every reference.
+        self._api_key_edit = QLineEdit()
+        self._api_key_edit.setVisible(False)
+
+        routing_btn = QPushButton("⚙  AI Routing settings…")
+        routing_btn.setFixedHeight(28)
+        routing_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {THEME['accent']};
+                border: 1px solid {THEME['accent']};
+                border-radius: 6px;
+                padding: 2px 10px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{ background: {THEME['accent']}; color: white; }}
+        """)
+        routing_btn.clicked.connect(self._open_ai_routing)
+        cfg.addWidget(routing_btn)
 
         bal_row = QHBoxLayout()
         bal_lbl = QLabel("Credits:")
@@ -397,6 +412,12 @@ class DocumentReaderPage(QWidget):
         cfg = _load_cfg()
         cfg["api_key"] = key
         _save_cfg(cfg)
+
+    def _open_ai_routing(self):
+        """Open the AI Routing dialog directly from this page."""
+        from ui.ai_routing_dialog import AIRoutingDialog
+        dlg = AIRoutingDialog("document_reader", parent=self)
+        dlg.exec()
 
     def _add_demo_credits(self):
         from ai.credit_manager import CreditManager

@@ -729,12 +729,20 @@ async def ai_proxy(
         db.add(AIUsageLog(
             license_id=lic.id, machine_id=machine_id, feature=feature,
             tokens_in=0, tokens_out=0, paise_charged=0,
-            success=False, error=f"HTTP {status_code}: {err_text[:200]}",
+            success=False, error=f"upstream {status_code}: {err_text[:200]}",
         ))
         db.commit()
-        if status_code == 502:
-            raise HTTPException(502, f"Cannot reach Anthropic: {err_text}")
-        raise HTTPException(status_code, f"Anthropic error: {err_text[:200]}")
+        # Never relay Anthropic's raw status code. Any failure forwarding to
+        # Anthropic — bad model name, rate limit, network, 4xx, 5xx — is an
+        # *upstream* error from the client's point of view, so it always
+        # comes back as 502. Relaying a raw 404 here previously made the
+        # desktop client think the /ai/proxy route itself was missing.
+        # The original upstream status is preserved in the detail for logs.
+        raise HTTPException(
+            502,
+            f"AI upstream error (Anthropic returned {status_code}): "
+            f"{err_text[:300]}",
+        )
 
     # Meter the response
     usage = resp_json.get("usage", {}) or {}

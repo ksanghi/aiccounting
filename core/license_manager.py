@@ -169,6 +169,13 @@ class FeatureNotAvailable(Exception):
 
 class LicenseManager:
 
+    def reload(self) -> None:
+        """Re-read license.json from disk, discarding the in-memory copy.
+        The License page calls this before refreshing its display because
+        voucher_form increments txn_used through a *separate* LicenseManager
+        instance — without a reload the page would show a stale count."""
+        self._data = self._load_local()
+
     def __init__(self):
         self._data = self._load_local()
 
@@ -450,7 +457,11 @@ class LicenseManager:
                 "plan":          plan,
                 "features":      data.get("features", PLAN_FEATURES["FREE"]),
                 "txn_limit":     data.get("txn_limit", PLAN_LIMITS.get(plan, 5000)),
-                "txn_used":      data.get("txn_used", 0),
+                # txn_used is tracked locally — the server does NOT track it
+                # yet and always returns 0. Overwriting with the server value
+                # silently reset the customer's count on every License-page
+                # refresh. Preserve whatever's already on disk.
+                "txn_used":      self._data.get("txn_used", 0),
                 "user_limit":    data.get("user_limit", 1),
                 "seats_allowed": data.get("seats_allowed") or 0,
                 "seats_used":    data.get("seats_used") or 0,
@@ -458,7 +469,8 @@ class LicenseManager:
                 "company_name":  data.get("company_name", ""),
                 "validated_at":  datetime.now().isoformat(),
                 "offline_until": (datetime.now() + timedelta(days=7)).isoformat(),
-                "overage_count": 0,
+                # overage_count is also a local tally — don't reset it.
+                "overage_count": self._data.get("overage_count", 0),
             })
             self._save_local()
             return True, "License activated!"

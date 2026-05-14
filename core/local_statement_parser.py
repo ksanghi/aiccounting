@@ -105,6 +105,10 @@ _DATE_FORMATS = [
     "%d/%m/%y", "%d-%m-%y", "%Y/%m/%d", "%d %b %Y",
     "%d-%B-%Y", "%d %B %Y", "%m/%d/%Y", "%d.%m.%Y",
     "%d %m %Y", "%d %b %y",
+    # ICICI: 09/May/2023 — slash + abbreviated month
+    "%d/%b/%Y", "%d/%B/%Y", "%d/%b/%y",
+    # Some banks pad with leading zero or use uppercase month
+    "%Y-%b-%d", "%Y/%b/%d",
 ]
 
 
@@ -112,11 +116,25 @@ def _parse_date(raw: str) -> Optional[str]:
     s = (raw or "").strip()
     if not s:
         return None
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.strptime(s, fmt).date().isoformat()
-        except ValueError:
-            continue
+    # Some PDFs put the date on line 1 and a timestamp on line 2 inside the
+    # same cell — e.g. Union Bank: "28-10-2024\n13:14:11". Other formats
+    # append a time directly: "23/05/2023 10:25:40 AM". Try the raw string
+    # first (handles "%d/%m/%Y %H:%M:%S" if anyone ever adds it), then
+    # peel the time off and retry with just the date token.
+    candidates = [s]
+    first_line = s.split("\n", 1)[0].strip()
+    if first_line != s:
+        candidates.append(first_line)
+    first_token = first_line.split()[0] if first_line.split() else first_line
+    if first_token != first_line:
+        candidates.append(first_token)
+
+    for candidate in candidates:
+        for fmt in _DATE_FORMATS:
+            try:
+                return datetime.strptime(candidate, fmt).date().isoformat()
+            except ValueError:
+                continue
     return None
 
 
@@ -349,7 +367,13 @@ class LocalDocumentParser:
             return self._read_xls_legacy(path)
 
         from openpyxl import load_workbook
-        wb = load_workbook(path, data_only=True, read_only=True)
+        # NOT read_only=True: in read-only mode openpyxl trusts the workbook's
+        # stored <dimension> tag, and some bank exports (e.g. ICICI's
+        # "Detailed Statement" xlsx) ship with missing/empty dimension
+        # metadata — read-only mode then yields a single empty row and the
+        # transaction table is never found. Bank statements are small, so
+        # the full (non-streaming) load is fine.
+        wb = load_workbook(path, data_only=True)
         tables = []
         text_parts: list[str] = []
         for sheet in wb.worksheets:

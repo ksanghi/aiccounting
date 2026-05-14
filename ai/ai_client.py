@@ -100,14 +100,28 @@ def call_messages(
     try:
         return _post(proxy_url, payload, headers=headers, timeout=timeout)
     except urllib.error.HTTPError as e:
-        if e.code == 404:
-            # Server doesn't have /ai/proxy yet (Phase 2b not deployed).
-            raise PooledNotAvailable(
-                "Pooled AI credits aren't available yet on the license server. "
-                "Open Settings → AI Routing to paste your own Anthropic key "
-                "and switch this feature to BYOK."
+        body = getattr(e, "body_text", "") or ""
+        # The server (post Phase-A fix) never relays Anthropic's raw status
+        # code. It uses distinct codes we can trust:
+        #   402 → customer wallet is out of credits
+        #   503 → /ai/proxy not configured on the server (no ANTHROPIC key)
+        #   502 → upstream Anthropic error (bad model, rate limit, …)
+        #   401 → license / machine binding not valid
+        # A genuine 404 now only means the route truly doesn't exist (very
+        # old server build) — still surface it as a real error, NOT as
+        # "go use your own key".
+        if e.code == 402:
+            raise AIRouteError(
+                "Out of AI credits — top up your AccGenie wallet to continue."
             ) from e
-        raise
+        if e.code == 503:
+            raise PooledNotAvailable(
+                "The AI service isn't configured on the licence server yet. "
+                "Contact support."
+            ) from e
+        raise AIRouteError(
+            f"AI request failed (HTTP {e.code}): {body[:300]}"
+        ) from e
 
 
 def _post(url: str, payload: dict, headers: dict, timeout: float) -> dict:
