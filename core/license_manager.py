@@ -221,15 +221,36 @@ class LicenseManager:
         Used when the server reports our seat was released elsewhere, or after
         the user clicks 'Release this machine's seat'.
         """
-        kept_txn_used = self._data.get("txn_used", 0)
+        self._sync_local_counters()
+        kept_txn_used      = self._data.get("txn_used", 0)
+        kept_overage_count = self._data.get("overage_count", 0)
         self._data = self._demo_license()
-        self._data["txn_used"] = kept_txn_used
+        self._data["txn_used"]      = kept_txn_used
+        self._data["overage_count"] = kept_overage_count
         self._save_local()
 
     def _save_local(self):
         LICENSE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LICENSE_FILE, "w") as f:
             json.dump(self._data, f, indent=2)
+
+    def _sync_local_counters(self) -> None:
+        """Pull the latest txn_used / overage_count from disk into _data.
+
+        These are LOCAL tallies that other LicenseManager instances mutate
+        independently — voucher_form increments txn_used through its own
+        instance on every post. Any code path that rewrites the whole
+        license.json blob (validate, startup re-validate, drop-to-demo)
+        must sync these first, or it clobbers a fresh count with its own
+        stale in-memory value. That bug silently reset the count whenever
+        the License page re-validated against the server."""
+        disk = self._load_local()
+        self._data["txn_used"] = disk.get(
+            "txn_used", self._data.get("txn_used", 0)
+        )
+        self._data["overage_count"] = disk.get(
+            "overage_count", self._data.get("overage_count", 0)
+        )
 
     # ── Properties ────────────────────────────────────────────────────────────
 
@@ -380,6 +401,8 @@ class LicenseManager:
 
     def record_voucher_posted(self):
         """Call after every successful voucher post."""
+        # Sync first so concurrent increments from other instances aren't lost.
+        self._sync_local_counters()
         self._data["txn_used"] = self._data.get("txn_used", 0) + 1
         if self.txn_used > self.txn_limit:
             self._data["overage_count"] = self._data.get("overage_count", 0) + 1
@@ -414,6 +437,8 @@ class LicenseManager:
     def validate_with_server(self, license_key: str) -> tuple[bool, str]:
         """Validates key with license server. Returns (success, message)."""
         if license_key == DEV_KEY:
+            # Re-sync local counters from disk before rewriting the blob.
+            self._sync_local_counters()
             self._data.update({
                 "license_key":   DEV_KEY,
                 "plan":          "PREMIUM",
@@ -452,6 +477,10 @@ class LicenseManager:
                 return False, data.get("error", "Invalid license key")
 
             plan = data.get("plan", "FREE")
+            # Re-sync local counters from disk before rewriting the blob —
+            # voucher_form may have incremented txn_used since this instance
+            # last loaded.
+            self._sync_local_counters()
             self._data.update({
                 "license_key":   license_key,
                 "plan":          plan,
@@ -512,6 +541,9 @@ class LicenseManager:
                 data = json.loads(resp.read())
             if not data.get("valid"):
                 return  # Don't crash startup if server says revoked — UI surfaces it later.
+            # Sync local counters before the whole-blob save so a voucher
+            # posted during startup isn't clobbered.
+            self._sync_local_counters()
             self._data["seats_allowed"] = data.get("seats_allowed") or 0
             self._data["seats_used"]    = data.get("seats_used") or 0
             self._save_local()

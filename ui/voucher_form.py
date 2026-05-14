@@ -1314,15 +1314,29 @@ class VoucherEntryPage(QWidget):
 
         v     = vouchers[0]
         vtype = self._current_type
-        dr    = (v.get("dr_ledger") or "").replace(" (NEW)", "").strip()
-        cr    = (v.get("cr_ledger") or "").replace(" (NEW)", "").strip()
+        cand  = [
+            (v.get("dr_ledger") or "").replace(" (NEW)", "").strip(),
+            (v.get("cr_ledger") or "").replace(" (NEW)", "").strip(),
+        ]
+        cand  = [c for c in cand if c]
 
-        # SALES:    field1 = income source (Cr), field2 = party billed (Dr)
-        # PURCHASE: field1 = expense account (Dr), field2 = party payable (Cr)
-        if vtype == "SALES":
-            f1_name, f2_name = cr, dr
-        else:
-            f1_name, f2_name = dr, cr
+        # The AI's Dr/Cr orientation is unreliable on invoices (extract_vouchers
+        # is bank-statement shaped), so don't trust it. Classify each returned
+        # ledger by what it actually IS: field1 = the income/expense account,
+        # field2 = the party. A wrong orientation otherwise lands an income
+        # ledger on the debit side and the engine rejects the post.
+        party_names = {l["name"] for l in self._party_bank_cash}
+        acct_src    = self._income_ledgers if vtype == "SALES" else self._expense_ledgers
+        acct_names  = {l["name"] for l in acct_src}
+
+        f1_name = next((c for c in cand if c in acct_names), "")
+        f2_name = next((c for c in cand if c in party_names), "")
+        # If only one side classified cleanly, the leftover fills the other.
+        leftover = [c for c in cand if c not in (f1_name, f2_name)]
+        if not f1_name and leftover:
+            f1_name = leftover.pop(0)
+        if not f2_name and leftover:
+            f2_name = leftover.pop(0)
 
         try:
             if f1_name:
