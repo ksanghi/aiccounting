@@ -276,7 +276,7 @@ class BankReconciler:
 
         # Parse the document → text. DocumentParser uses the supplied
         # legacy api_key if non-empty, otherwise routes via ai_client.
-        parser = DocumentParser(api_key=api_key, feature="bank_reconciliation")
+        parser = DocumentParser(api_key=api_key, feature="bank_statement_ai")
         result = parser.parse(str(path))
         if not result.success:
             raise ValueError(result.error or "Document parsing failed.")
@@ -313,7 +313,7 @@ class BankReconciler:
         company_name = company_row["name"] if company_row else ""
 
         # Extract statement lines (not vouchers)
-        ai = VoucherAI(api_key=api_key)
+        ai = VoucherAI(api_key=api_key, feature="bank_statement_ai")
         extract = ai.extract_bank_statement_lines(
             document_text=result.full_text,
             bank_ledger_name=bank_ledger_name,

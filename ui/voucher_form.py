@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QDateEdit, QTextEdit,
     QScrollArea, QFrame, QSizePolicy, QMessageBox, QStackedWidget,
-    QSpacerItem
+    QSpacerItem, QFileDialog
 )
-from PySide6.QtCore import Qt, QDate, Signal, QTimer
+from PySide6.QtCore import Qt, QDate, Signal, QTimer, QThread
 from PySide6.QtGui  import QFont, QShortcut, QKeySequence
 
 from ui.theme   import THEME, VOUCHER_COLOURS
@@ -35,6 +35,44 @@ VOUCHER_TYPES = [
 ]
 
 GST_RATES = [0, 5, 12, 18, 28]
+
+
+class _AiFillThread(QThread):
+    """Parses one document and extracts a single voucher, off the UI thread.
+    Used by the in-context 'AI fill from document' button on Sales/Purchase
+    entry. `feature` is 'sales_ai_fill' or 'purchase_ai_fill' — both are
+    ag_key class, so they route automatically (wallet, or the customer's own
+    key) and never hit the locked state."""
+    done  = Signal(list)   # list of extracted voucher dicts
+    error = Signal(str)
+
+    def __init__(self, filepath, doc_type, feature, ledger_names, company_name):
+        super().__init__()
+        self.filepath     = filepath
+        self.doc_type     = doc_type
+        self.feature      = feature
+        self.ledger_names = ledger_names
+        self.company_name = company_name
+
+    def run(self):
+        try:
+            from ai.document_parser import DocumentParser
+            from ai.voucher_ai      import VoucherAI
+            parser = DocumentParser(feature=self.feature)
+            result = parser.parse(self.filepath)
+            if not result.success:
+                self.error.emit(
+                    result.error or "Could not extract text from document."
+                )
+                return
+            ai = VoucherAI(feature=self.feature)
+            vouchers = ai.extract_vouchers(
+                result.full_text, self.ledger_names,
+                self.doc_type, self.company_name,
+            )
+            self.done.emit(vouchers)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class VoucherEntryPage(QWidget):
@@ -206,6 +244,20 @@ class VoucherEntryPage(QWidget):
         self.reference_edit.setFixedHeight(34)
         ref_col.addWidget(self.reference_edit)
         meta_layout.addLayout(ref_col, 1)
+
+        # AI fill — only shown for SALES / PURCHASE (toggled in _select_type).
+        ai_col = QVBoxLayout()
+        ai_col.setSpacing(3)
+        ai_col.addWidget(make_label(" "))
+        self._ai_fill_btn = QPushButton("🤖  AI fill from document…")
+        self._ai_fill_btn.setFixedHeight(34)
+        self._ai_fill_btn.setToolTip(
+            "Pick an invoice / bill — AI reads it and fills this voucher "
+            "for you to review before posting."
+        )
+        self._ai_fill_btn.clicked.connect(self._ai_fill_from_document)
+        ai_col.addWidget(self._ai_fill_btn)
+        meta_layout.addLayout(ai_col)
 
         root.addWidget(meta_frame)
 
@@ -544,6 +596,7 @@ class VoucherEntryPage(QWidget):
         self._stack.setCurrentIndex(1 if is_journal else 0)
         self._gst_combined_row.setVisible(has_gst)
         self._amount_label.setText("Base Amount (Rs.)" if has_gst else "Amount (Rs.)")
+        self._ai_fill_btn.setVisible(vtype in ("SALES", "PURCHASE"))
 
         # Remove old field widgets from their row layouts
         if self.field1_ledger is not None:
@@ -1202,3 +1255,106 @@ class VoucherEntryPage(QWidget):
         self.calculator.move(btn_pos.x() - 270, btn_pos.y() - 360)
         self.calculator.show()
         self.calculator.raise_()
+
+    # ── In-context AI fill (Sales / Purchase) ─────────────────────────────────
+
+    def _ai_fill_from_document(self):
+        """Pick an invoice/bill, let AI read it, and populate this voucher
+        for the user to review before posting. Sales/Purchase only."""
+        vtype = self._current_type
+        if vtype not in ("SALES", "PURCHASE"):
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Pick invoice / bill", "",
+            "All supported (*.pdf *.xlsx *.xls *.csv *.jpg *.jpeg *.png *.docx *.txt)",
+        )
+        if not path:
+            return
+
+        feature  = "sales_ai_fill" if vtype == "SALES" else "purchase_ai_fill"
+        doc_type = "sales_invoice" if vtype == "SALES" else "purchase_invoice"
+
+        try:
+            ledger_names = [l["name"] for l in self.tree.get_all_ledgers()]
+        except Exception:
+            ledger_names = []
+        try:
+            company = self.engine.get_company().get("name", "")
+        except Exception:
+            company = ""
+
+        self._ai_fill_btn.setEnabled(False)
+        self._ai_fill_btn.setText("🤖  Reading document…")
+
+        self._ai_thread = _AiFillThread(
+            path, doc_type, feature, ledger_names, company
+        )
+        self._ai_thread.done.connect(self._on_ai_fill_done)
+        self._ai_thread.error.connect(self._on_ai_fill_error)
+        self._ai_thread.start()
+
+    def _reset_ai_fill_btn(self):
+        self._ai_fill_btn.setEnabled(True)
+        self._ai_fill_btn.setText("🤖  AI fill from document…")
+
+    def _on_ai_fill_error(self, msg: str):
+        self._reset_ai_fill_btn()
+        QMessageBox.critical(self, "AI fill failed", msg)
+
+    def _on_ai_fill_done(self, vouchers: list):
+        self._reset_ai_fill_btn()
+        if not vouchers:
+            QMessageBox.information(
+                self, "Nothing found",
+                "AI couldn't find a transaction in that document. "
+                "Try a clearer scan, or fill the voucher manually.",
+            )
+            return
+
+        v     = vouchers[0]
+        vtype = self._current_type
+        dr    = (v.get("dr_ledger") or "").replace(" (NEW)", "").strip()
+        cr    = (v.get("cr_ledger") or "").replace(" (NEW)", "").strip()
+
+        # SALES:    field1 = income source (Cr), field2 = party billed (Dr)
+        # PURCHASE: field1 = expense account (Dr), field2 = party payable (Cr)
+        if vtype == "SALES":
+            f1_name, f2_name = cr, dr
+        else:
+            f1_name, f2_name = dr, cr
+
+        try:
+            if f1_name:
+                self.field1_ledger.set_ledger(f1_name)
+            if f2_name:
+                self.field2_ledger.set_ledger(f2_name)
+        except Exception:
+            pass
+
+        if v.get("date"):
+            self.date_edit.setDate(QDate.fromString(v["date"], "yyyy-MM-dd"))
+        if v.get("narration"):
+            self.narration_edit.setText(v["narration"])
+        if v.get("reference"):
+            self.reference_edit.setText(v["reference"])
+        try:
+            amt = abs(float(v.get("amount") or 0))
+            if amt > 0:
+                self.amount_edit.setValue(amt)
+        except Exception:
+            pass
+
+        self._update_balance_smart()
+
+        extra = ""
+        if len(vouchers) > 1:
+            extra = (
+                f"\n\n{len(vouchers)} transactions were found — filled the "
+                "first. For bulk documents, use the AI Document Reader."
+            )
+        QMessageBox.information(
+            self, "AI fill done",
+            "Voucher filled from the document. Review every field — "
+            "especially the ledger accounts and GST rate — then Post." + extra,
+        )

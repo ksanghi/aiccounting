@@ -1,42 +1,43 @@
 """
-AI routing — per-feature choice of pooled (AccGenie's Anthropic key, via our
-license server proxy) vs BYOK (customer's own Anthropic key).
+AI routing — decides which Anthropic key each AI call uses.
 
-Stored at:
-    Dev mode:  <repo>/config/ai_routing.json
-    Packaged:  <user_data_dir>/config/ai_routing.json
+There is NO runtime user choice and NO per-feature settings dialog. The
+decision is fully determined by two things:
 
-Schema:
-    {
-      "own_key":  "sk-ant-...",
-      "routing": {
-        "document_reader":     "own"   | "pooled",
-        "bank_reconciliation": "own"   | "pooled",
-        "verbal_entry":        "own"   | "pooled"
-      }
-    }
+  1. The feature's license class (`byok` | `ag_key`), from the versioned
+     table in `core/ai_features.py`.
+  2. Whether the customer has supplied their own Anthropic key.
 
-Defaults (when a feature has never been configured):
-    - bank_reconciliation → "pooled"  (low-value, high-volume)
-    - document_reader / verbal_entry → "own" if own_key is set, else "pooled"
+`resolve(feature)` returns one of:
 
-The defaults aren't written to disk until the user explicitly chooses via
-the AI Routing dialog — so we can tell "user picked pooled" apart from
-"never asked". `is_configured(feature)` returns True only after an
-explicit choice.
+  "customer" — use the customer's own Anthropic key (they pay Anthropic).
+  "wallet"   — use AccGenie's key via the /ai/proxy server, billed to the
+               customer's credit wallet.
+  "locked"   — a `byok` feature, but the customer has no key — the feature
+               is unavailable until they add one.
+
+Rules:
+  - Customer HAS a key  → "customer" for EVERY feature (a customer key
+    covers everything; the wallet is never touched).
+  - Customer has NO key → "wallet" for `ag_key` features, "locked" for
+    `byok` features.
+
+The only thing this module persists is the customer's own key, in
+`config/ai_routing.json` as `{"own_key": "sk-ant-..."}`. (The old
+per-feature `routing` map is gone.)
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
 
 from core.paths import config_dir
+from core.ai_features import feature_class
 
-
-FEATURES = ("document_reader", "bank_reconciliation", "verbal_entry")
-ROUTE_POOLED: Literal["pooled"] = "pooled"
-ROUTE_OWN:    Literal["own"]    = "own"
+# resolve() return values
+ROUTE_CUSTOMER = "customer"
+ROUTE_WALLET   = "wallet"
+ROUTE_LOCKED   = "locked"
 
 
 def routing_file_path() -> Path:
@@ -44,7 +45,8 @@ def routing_file_path() -> Path:
 
 
 class RoutingConfig:
-    """Persistent per-feature routing + own-key store. Cheap to instantiate."""
+    """Holds the customer's own Anthropic key (if any) and resolves the
+    route for a feature. Cheap to instantiate."""
 
     def __init__(self) -> None:
         self._cache: dict = self._load()
@@ -54,30 +56,32 @@ class RoutingConfig:
     def _load(self) -> dict:
         p = routing_file_path()
         if not p.exists():
-            return {"own_key": "", "routing": {}}
+            return {"own_key": ""}
         try:
             with open(p, encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, dict):
-                return {"own_key": "", "routing": {}}
-            data.setdefault("own_key", "")
-            data.setdefault("routing", {})
-            return data
+                return {"own_key": ""}
+            # Drop any legacy "routing" map silently — it's no longer used.
+            return {"own_key": data.get("own_key", "") or ""}
         except Exception:
-            return {"own_key": "", "routing": {}}
+            return {"own_key": ""}
 
     def _save(self) -> None:
         p = routing_file_path()
         p.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(p, "w", encoding="utf-8") as f:
-                json.dump(self._cache, f, indent=2, ensure_ascii=False)
+                json.dump({"own_key": self._cache.get("own_key", "")},
+                          f, indent=2, ensure_ascii=False)
         except Exception:
-            # Routing is a UX nicety — silently tolerate disk-full /
-            # permission errors rather than crashing the AI feature.
+            # A key that won't persist is a UX problem, not a crash.
             pass
 
-    # ── Own key ───────────────────────────────────────────────────────────────
+    def reload(self) -> None:
+        self._cache = self._load()
+
+    # ── Customer's own Anthropic key ──────────────────────────────────────────
 
     def get_own_key(self) -> str:
         return (self._cache.get("own_key") or "").strip()
@@ -93,36 +97,23 @@ class RoutingConfig:
         self._cache["own_key"] = ""
         self._save()
 
-    # ── Per-feature routing ───────────────────────────────────────────────────
+    # ── Routing ───────────────────────────────────────────────────────────────
 
-    def is_configured(self, feature: str) -> bool:
-        """True if the user has explicitly picked a route for this feature."""
-        return feature in (self._cache.get("routing") or {})
+    @staticmethod
+    def feature_class(feature: str) -> str:
+        """'byok' or 'ag_key' for a feature — from the versioned table."""
+        return feature_class(feature)
 
-    def route_for(self, feature: str) -> str:
-        """The active route. Returns 'own' or 'pooled' — never None.
-        If the user hasn't configured, returns the feature's default."""
-        configured = (self._cache.get("routing") or {}).get(feature)
-        if configured in (ROUTE_OWN, ROUTE_POOLED):
-            return configured
-        # Default: high-value features prefer own key when available;
-        # bulk features default to pooled.
-        if feature == "bank_reconciliation":
-            return ROUTE_POOLED
-        return ROUTE_OWN if self.has_own_key() else ROUTE_POOLED
-
-    def set_route(self, feature: str, route: str) -> None:
-        if route not in (ROUTE_OWN, ROUTE_POOLED):
-            raise ValueError(f"Invalid route: {route}")
-        self._cache.setdefault("routing", {})[feature] = route
-        self._save()
-
-    def clear_route(self, feature: str) -> None:
-        """Forget the user's choice — next route_for() returns the default
-        and is_configured() returns False so the modal re-prompts."""
-        if "routing" in self._cache and feature in self._cache["routing"]:
-            del self._cache["routing"][feature]
-            self._save()
+    def resolve(self, feature: str) -> str:
+        """Return ROUTE_CUSTOMER / ROUTE_WALLET / ROUTE_LOCKED for `feature`."""
+        if self.has_own_key():
+            # A customer key covers everything, heavy or light.
+            return ROUTE_CUSTOMER
+        # No customer key — light features fall back to the wallet,
+        # heavy (byok) features are locked.
+        if feature_class(feature) == "byok":
+            return ROUTE_LOCKED
+        return ROUTE_WALLET
 
 
 # Module-level singleton for ergonomic imports.

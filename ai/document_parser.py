@@ -91,30 +91,22 @@ class DocumentParser:
         ".docx": "word",
     }
 
-    def __init__(self, api_key: str = "", feature: str = "document_reader"):
-        # api_key is now legacy — callers should configure routing in
-        # Settings → AI Routing instead. We keep the param so existing call
-        # sites don't break; if passed, it's used as a one-shot BYOK
-        # override (handy for env-var test runs and the bank-reco fallback
-        # path which still surfaces an api-key field today).
+    def __init__(self, api_key: str = "", feature: str = "document_recognition"):
+        # api_key is legacy — kept only so a leftover caller passing one
+        # (or an ANTHROPIC_API_KEY env var in test runs) still works. In
+        # the app, routing is automatic via ai/ai_client.
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.feature = feature
 
     @property
     def ai_available(self) -> bool:
-        """True if any route (own-key or pooled) can be used right now."""
+        """True if this feature can make an AI call right now — i.e. its
+        route resolves to something other than 'locked'."""
         if self.api_key:
             return True
         try:
-            from core.ai_routing import routing
-            from core.license_manager import LicenseManager
-            if routing.has_own_key():
-                return True
-            # Pooled requires a paid license (DEMO/FREE-DEMO bounces out
-            # in ai_client.call_messages).
-            return LicenseManager().license_key not in (
-                "DEMO", "FREE-DEMO", "", None,
-            )
+            from core.ai_routing import routing, ROUTE_LOCKED
+            return routing.resolve(self.feature) != ROUTE_LOCKED
         except Exception:
             return False
 

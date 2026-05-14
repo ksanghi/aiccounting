@@ -1,0 +1,13 @@
+{
+  "_comment": "AI feature -> license class. Defined per AccGenie version, same for all customers, NOT end-user editable. byok = requires the customer's own Anthropic key (locked without one). ag_key = AccGenie key billed to the customer wallet, unless the customer has supplied their own key.",
+  "version": "1.0",
+  "features": {
+    "document_recognition": "byok",
+    "bank_statement_ai": "ag_key",
+    "ledger_statement_ai": "ag_key",
+    "sales_ai_fill": "ag_key",
+    "purchase_ai_fill": "ag_key",
+    "ledger_suggest": "ag_key",
+    "verbal_entry": "ag_key"
+  }
+}

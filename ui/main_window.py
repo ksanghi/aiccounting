@@ -665,55 +665,8 @@ class MainWindow(QMainWindow):
                      (30, "Every 30 days")],
         ))
 
-        # ── Card: AI Routing ──────────────────────────────────────────────────
-        ai_card = self._pref_card("AI Routing", layout)
-
-        ai_hint = QLabel(
-            "Pick how each AI feature reaches Anthropic — pooled credits "
-            "(billed from your AccGenie balance) or your own Anthropic key "
-            "(billed directly by Anthropic)."
-        )
-        ai_hint.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
-        ai_hint.setWordWrap(True)
-        ai_card.addWidget(ai_hint)
-
-        from core.ai_routing import routing as _routing, FEATURES
-        from ui.ai_routing_dialog import FEATURE_LABELS
-
-        for feat in FEATURES:
-            row = QHBoxLayout()
-            label = QLabel(FEATURE_LABELS.get(feat, feat))
-            label.setStyleSheet(f"color:{THEME['text_primary']}; font-size:12px;")
-            row.addWidget(label)
-            row.addStretch()
-            route_badge = QLabel(_routing.route_for(feat).upper())
-            badge_color = (THEME['accent']
-                           if _routing.route_for(feat) == "own"
-                           else THEME['success'])
-            route_badge.setStyleSheet(
-                f"color: {badge_color}; font-size: 11px; font-weight: bold;"
-                f" padding: 2px 8px; border: 1px solid {badge_color};"
-                f" border-radius: 4px;"
-            )
-            row.addWidget(route_badge)
-            edit_btn = QPushButton("Change…")
-            edit_btn.setFixedHeight(28)
-            edit_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent;
-                    color: {THEME['accent']};
-                    border: 1px solid {THEME['accent']};
-                    border-radius: 6px;
-                    padding: 2px 12px;
-                    font-size: 11px;
-                }}
-                QPushButton:hover {{ background: {THEME['accent']}; color: white; }}
-            """)
-            edit_btn.clicked.connect(
-                lambda _, f=feat: self._edit_ai_route(f)
-            )
-            row.addWidget(edit_btn)
-            ai_card.addLayout(row)
+        # ── Card: AI / Anthropic Key ──────────────────────────────────────────
+        self._build_ai_key_card(layout)
 
         # ── Card: Period locks shortcut ───────────────────────────────────────
         p_card = self._pref_card("Accounting period locks", layout)
@@ -837,31 +790,156 @@ class MainWindow(QMainWindow):
                 self._select_page(idx)
                 return
 
-    def _edit_ai_route(self, feature: str) -> None:
-        """Open the AI Routing dialog for a feature and refresh Settings."""
-        from ui.ai_routing_dialog import AIRoutingDialog
-        dlg = AIRoutingDialog(feature, parent=self)
-        dlg.exec()
-        # Rebuild the Settings page so the badges and key field reflect the
-        # new state. Cheap — it's just one QWidget tree.
-        settings_idx = next(
-            (i for i, (l, _, _, _) in enumerate(self._pages) if l == "Settings"),
-            None,
+    def navigate_to_settings(self) -> None:
+        """Public — jump to the Settings page (used by the AI Document
+        Reader's 'add your key' lock prompt)."""
+        for idx, (label, _, _, _) in enumerate(self._pages):
+            if label == "Settings":
+                self._select_page(idx)
+                return
+
+    def _build_ai_key_card(self, layout) -> None:
+        """Settings card: the customer's own Anthropic key. There is no
+        per-feature routing choice — `config/ai_features.json` decides
+        that. This card only manages the one key."""
+        import webbrowser
+        from PySide6.QtWidgets import QLineEdit
+        from core.ai_routing import routing
+
+        ai_card = self._pref_card("AI / Anthropic Key", layout)
+
+        explain = QLabel(
+            "Some AI features (like the AI Document Reader) need your own "
+            "Anthropic key — they run on your Anthropic account, not "
+            "AccGenie credits. Lighter AI features (bank-statement parsing, "
+            "AI-fill on vouchers) run on AccGenie credits if you have no "
+            "key. Add your key here to unlock everything."
         )
-        if settings_idx is not None:
-            old_widget = self._pages[settings_idx][2]
-            new_widget = self._build_settings_page()
-            self._stack.removeWidget(old_widget)
-            old_widget.deleteLater()
-            self._stack.insertWidget(settings_idx, new_widget)
-            self._pages[settings_idx] = (
-                self._pages[settings_idx][0],
-                self._pages[settings_idx][1],
-                new_widget,
-                self._pages[settings_idx][3],
+        explain.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+        explain.setWordWrap(True)
+        ai_card.addWidget(explain)
+
+        # Key field + Save
+        key_row = QHBoxLayout()
+        self._ai_key_edit = QLineEdit()
+        self._ai_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._ai_key_edit.setPlaceholderText("sk-ant-…")
+        self._ai_key_edit.setFixedHeight(32)
+        self._ai_key_edit.setText(routing.get_own_key())
+        key_row.addWidget(self._ai_key_edit, 1)
+
+        save_btn = QPushButton("Save")
+        save_btn.setFixedHeight(32)
+        save_btn.setObjectName("btn_primary")
+        save_btn.clicked.connect(self._save_ai_key)
+        key_row.addWidget(save_btn)
+        ai_card.addLayout(key_row)
+
+        # Action buttons row
+        btn_row = QHBoxLayout()
+        get_btn = QPushButton("Get a key →")
+        get_btn.setFixedHeight(28)
+        get_btn.setStyleSheet(self._link_btn_style())
+        get_btn.clicked.connect(
+            lambda: webbrowser.open("https://console.anthropic.com")
+        )
+        btn_row.addWidget(get_btn)
+
+        test_btn = QPushButton("Test key")
+        test_btn.setFixedHeight(28)
+        test_btn.setStyleSheet(self._link_btn_style())
+        test_btn.clicked.connect(self._test_ai_key)
+        btn_row.addWidget(test_btn)
+        btn_row.addStretch()
+        ai_card.addLayout(btn_row)
+
+        guide = QLabel(
+            "How to get a key:  1) sign up at console.anthropic.com   "
+            "2) add a billing method   3) create an API key   "
+            "4) paste it above and Save."
+        )
+        guide.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        guide.setWordWrap(True)
+        ai_card.addWidget(guide)
+
+        self._ai_key_status = QLabel("")
+        self._ai_key_status.setStyleSheet("font-size:11px;")
+        self._ai_key_status.setWordWrap(True)
+        ai_card.addWidget(self._ai_key_status)
+
+    @staticmethod
+    def _link_btn_style() -> str:
+        return f"""
+            QPushButton {{
+                background: transparent;
+                color: {THEME['accent']};
+                border: 1px solid {THEME['accent']};
+                border-radius: 6px;
+                padding: 2px 12px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{ background: {THEME['accent']}; color: white; }}
+        """
+
+    def _save_ai_key(self) -> None:
+        from core.ai_routing import routing
+        key = self._ai_key_edit.text().strip()
+        routing.set_own_key(key)
+        if key:
+            self._ai_key_status.setText("✓ Key saved. AI features now use your Anthropic account.")
+            self._ai_key_status.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
+        else:
+            self._ai_key_status.setText(
+                "Key cleared. Lighter AI features will use AccGenie credits; "
+                "the AI Document Reader is locked until you add a key."
             )
-            if self._current_idx == settings_idx:
-                self._stack.setCurrentWidget(new_widget)
+            self._ai_key_status.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+
+    def _test_ai_key(self) -> None:
+        """Save the typed key, then fire a tiny Anthropic call to verify it."""
+        import json as _json
+        import urllib.request as _ur
+        import urllib.error as _ue
+        from core.ai_routing import routing
+
+        key = self._ai_key_edit.text().strip()
+        if not key:
+            self._ai_key_status.setText("Paste a key first, then Test.")
+            self._ai_key_status.setStyleSheet(f"color:{THEME['warning']}; font-size:11px;")
+            return
+        routing.set_own_key(key)   # save what we're testing
+        self._ai_key_status.setText("Testing…")
+        self._ai_key_status.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+        QApplication.processEvents()
+        try:
+            payload = _json.dumps({
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 5,
+                "messages": [{"role": "user", "content": "Hi"}],
+            }).encode()
+            req = _ur.Request(
+                "https://api.anthropic.com/v1/messages", data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": key,
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            with _ur.urlopen(req, timeout=20) as r:
+                _json.loads(r.read())
+            self._ai_key_status.setText("✓ Key works. AI features are ready.")
+            self._ai_key_status.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
+        except _ue.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            self._ai_key_status.setText(f"✗ Key rejected (HTTP {e.code}). {body[:160]}")
+            self._ai_key_status.setStyleSheet(f"color:{THEME['danger']}; font-size:11px;")
+        except Exception as e:
+            self._ai_key_status.setText(f"✗ Could not reach Anthropic: {e}")
+            self._ai_key_status.setStyleSheet(f"color:{THEME['danger']}; font-size:11px;")
 
     def _apply_style(self, style: str):
         set_label_style(style)

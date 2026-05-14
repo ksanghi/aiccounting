@@ -265,28 +265,15 @@ class DocumentReaderPage(QWidget):
             self._doc_type.addItem(label, val)
         cfg.addWidget(self._doc_type)
 
-        # Legacy api_key field removed in Phase 2a — AI Routing dialog
-        # (Settings → AI Routing) is the single entry point. We keep a
-        # hidden QLineEdit so the existing _process() check on .text()
-        # keeps working without needing to hunt down every reference.
+        # No api-key field, no routing dialog. AI Document Reader is the
+        # `document_recognition` feature — class `byok` in
+        # config/ai_features.json — so it routes automatically: it uses the
+        # customer's own Anthropic key, and is locked (with a prompt to add
+        # a key in Settings) when no key is present. The hidden QLineEdit
+        # below is a vestigial stub kept only so any leftover `.text()`
+        # reference can't crash; nothing reads it meaningfully now.
         self._api_key_edit = QLineEdit()
         self._api_key_edit.setVisible(False)
-
-        routing_btn = QPushButton("⚙  AI Routing settings…")
-        routing_btn.setFixedHeight(28)
-        routing_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {THEME['accent']};
-                border: 1px solid {THEME['accent']};
-                border-radius: 6px;
-                padding: 2px 10px;
-                font-size: 11px;
-            }}
-            QPushButton:hover {{ background: {THEME['accent']}; color: white; }}
-        """)
-        routing_btn.clicked.connect(self._open_ai_routing)
-        cfg.addWidget(routing_btn)
 
         bal_row = QHBoxLayout()
         bal_lbl = QLabel("Credits:")
@@ -413,12 +400,6 @@ class DocumentReaderPage(QWidget):
         cfg["api_key"] = key
         _save_cfg(cfg)
 
-    def _open_ai_routing(self):
-        """Open the AI Routing dialog directly from this page."""
-        from ui.ai_routing_dialog import AIRoutingDialog
-        dlg = AIRoutingDialog("document_reader", parent=self)
-        dlg.exec()
-
     def _add_demo_credits(self):
         from ai.credit_manager import CreditManager
         CreditManager().add_demo_credits()
@@ -476,19 +457,39 @@ class DocumentReaderPage(QWidget):
 
     # ── Processing ────────────────────────────────────────────────────────────
 
+    def _show_locked_prompt(self):
+        """`document_recognition` is a byok feature — with no customer key
+        it's locked. Tell the user, and offer to jump to the Settings
+        AI-key card."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Anthropic key needed")
+        box.setText(
+            "The AI Document Reader needs your own Anthropic API key.\n\n"
+            "It processes whole documents, so it runs on your own Anthropic "
+            "account rather than AccGenie credits. Add your key in "
+            "Settings → AI / Anthropic Key, then come back here."
+        )
+        open_btn = box.addButton("Open Settings", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            win = self.window()
+            if hasattr(win, "navigate_to_settings"):
+                win.navigate_to_settings()
+
     def _process(self):
         if not self._current_file:
             return
 
-        # Phase 2: route via AI Routing (pooled vs BYOK). The legacy
-        # api_key field still works for power users — if it's non-empty,
-        # it overrides the routing config one-shot.
-        legacy_key = self._api_key_edit.text().strip()
-        if not legacy_key:
-            from ui.ai_routing_dialog import ensure_routed
-            route = ensure_routed("document_reader", parent=self)
-            if route is None:
-                return  # user cancelled the routing dialog
+        # AI Document Reader is the `document_recognition` feature — class
+        # `byok`. If the customer has no Anthropic key, resolve() is
+        # "locked": prompt them to add a key in Settings instead of
+        # starting a doomed extraction.
+        from core.ai_routing import routing, ROUTE_LOCKED
+        if routing.resolve("document_recognition") == ROUTE_LOCKED:
+            self._show_locked_prompt()
+            return
 
         try:
             ledger_names = [l["name"] for l in self._tree.get_all_ledgers()]
@@ -509,7 +510,7 @@ class DocumentReaderPage(QWidget):
         self._thread = ProcessThread(
             self._current_file,
             self._doc_type.currentData(),
-            legacy_key,                          # "" means use routing
+            "",                                  # api_key unused — routes via ai_client
             ledger_names,
             company,
         )

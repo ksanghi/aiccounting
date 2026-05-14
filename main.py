@@ -253,6 +253,14 @@ def main():
     except Exception:
         pass
 
+    # Seed config/ai_features.json (the AI feature -> license-class table)
+    # if it's missing. Ships with the app; this is a safety net.
+    try:
+        from core.ai_features import ensure_ai_features_file
+        ensure_ai_features_file()
+    except Exception:
+        pass
+
     # Silent license re-validation in the background — refreshes seat counts
     # without blocking the splash. The cached license still gates posting if
     # the server is offline (7-day grace).

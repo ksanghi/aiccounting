@@ -704,12 +704,11 @@ class BankReconciliationPage(QWidget):
                     "ensure your file is a CSV/Excel/text-PDF, or upgrade.",
                 )
                 return
-            # AI Routing dialog is the single entry point — pops on first
-            # use, then remembered. User cancelled = abort the import.
-            from ui.ai_routing_dialog import ensure_routed
-            route = ensure_routed("bank_reconciliation", parent=self)
-            if route is None:
-                return
+            # No routing prompt — `bank_statement_ai` is an ag_key feature
+            # (config/ai_features.json), so it routes automatically: the
+            # customer's own key if they have one, otherwise the AccGenie
+            # wallet via /ai/proxy. Any routing failure surfaces from the
+            # import thread's error signal.
 
         self._status_lbl.setText(
             "Sending to AI…" if allow_ai else "Parsing locally…"

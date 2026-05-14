@@ -1,19 +1,21 @@
 """
 Central HTTP helper for AI calls.
 
-Every AI feature in the app routes through `call_messages(feature, payload)`.
-The helper looks at `core/ai_routing` for that feature, then either:
+Every AI feature routes through `call_messages(feature, payload)`. The
+route is decided automatically by `core.ai_routing.RoutingConfig.resolve`
+— there is NO user prompt and NO per-feature setting:
 
-  - "own"    : POST to api.anthropic.com with the customer's BYOK key
-  - "pooled" : POST to our license-server proxy with the license key
-               (server forwards to Anthropic with our key and meters credits)
-
-Until the server-side `/ai/proxy` endpoint ships (Phase 2b), the pooled
-route raises `PooledNotAvailable` so the calling UI can fall back to
-asking for a BYOK.
+  "customer" — POST to api.anthropic.com with the customer's own key.
+  "wallet"   — POST to the license-server /ai/proxy with the licence key;
+               the server forwards to Anthropic on AccGenie's key and
+               meters the customer's credit wallet.
+  "locked"   — a `byok` feature, customer has no key → raise
+               `FeatureNeedsOwnKey` so the calling UI can prompt them to
+               add a key in Settings.
 
 This module owns the only place we know about the Anthropic URL or the
-proxy URL. Add a new AI feature → just call `call_messages(feature, ...)`.
+proxy URL. Add a new AI feature → just call `call_messages(feature, ...)`
+and add the feature to `core/ai_features.py`'s table.
 """
 from __future__ import annotations
 
@@ -21,52 +23,55 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Any
 
 ANTHROPIC_URL  = "https://api.anthropic.com/v1/messages"
 PROXY_URL_PATH = "/ai/proxy"   # joined with SERVER_URL at call time
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 class AIRouteError(Exception):
-    """Generic routing-or-HTTP failure that the calling UI should surface."""
+    """Generic routing-or-HTTP failure the calling UI should surface."""
 
 
-class PooledNotAvailable(AIRouteError):
-    """Pooled route was selected but our server proxy isn't live yet (Phase 2b)."""
+class FeatureNeedsOwnKey(AIRouteError):
+    """A `byok` feature was used but the customer has no Anthropic key.
+    The UI should prompt: 'Add your Anthropic key in Settings to use this.'"""
 
 
-class OwnKeyMissing(AIRouteError):
-    """Own-key route was selected but no Anthropic key is in routing config."""
+class AIServiceUnavailable(AIRouteError):
+    """The /ai/proxy path is not configured on the licence server."""
 
 
-def call_messages(
-    feature: str,
-    payload: dict,
-    timeout: float = 120.0,
-) -> dict:
+def call_messages(feature: str, payload: dict, timeout: float = 120.0) -> dict:
     """
-    Issue an Anthropic `messages` call for `feature`, routed per the user's
-    AI Routing config. Returns the parsed JSON response on success.
+    Issue an Anthropic `messages` call for `feature`, routed automatically.
+    Returns the parsed JSON response on success.
 
     Raises:
-        OwnKeyMissing       — route is 'own' but routing.json has no key.
-        PooledNotAvailable  — route is 'pooled' but the proxy isn't live.
-        AIRouteError        — HTTP / network failures with a friendly message.
+        FeatureNeedsOwnKey   — feature is `byok`, customer has no key.
+        AIServiceUnavailable — wallet route, but the server proxy isn't configured.
+        AIRouteError         — HTTP / network failures, out-of-credits, etc.
     """
-    from core.ai_routing import routing, ROUTE_POOLED, ROUTE_OWN
+    from core.ai_routing import (
+        routing, ROUTE_CUSTOMER, ROUTE_WALLET, ROUTE_LOCKED,
+    )
 
-    route = routing.route_for(feature)
+    route = routing.resolve(feature)
 
-    if route == ROUTE_OWN:
-        # Allow env-var fallback for headless / test contexts even when the
-        # routing config is empty. The env var matches what document_parser
-        # and voucher_ai used before this refactor.
+    if route == ROUTE_LOCKED:
+        raise FeatureNeedsOwnKey(
+            f"This feature needs your own Anthropic key. Open "
+            f"Settings → AI / Anthropic Key to add one."
+        )
+
+    if route == ROUTE_CUSTOMER:
         key = routing.get_own_key() or os.environ.get("ANTHROPIC_API_KEY", "")
         if not key:
-            raise OwnKeyMissing(
-                f"AI feature '{feature}' is set to use your own Anthropic key, "
-                f"but no key is configured. Open Settings → AI Routing to "
-                f"paste your key, or switch this feature to Pooled credits."
+            # resolve() said "customer", so has_own_key() was true — this
+            # only happens in a race; treat it as the locked case.
+            raise FeatureNeedsOwnKey(
+                "Your Anthropic key is missing. Re-add it in "
+                "Settings → AI / Anthropic Key."
             )
         return _post(
             ANTHROPIC_URL,
@@ -74,19 +79,19 @@ def call_messages(
             headers={
                 "Content-Type":      "application/json",
                 "x-api-key":         key,
-                "anthropic-version": "2023-06-01",
+                "anthropic-version": ANTHROPIC_VERSION,
             },
             timeout=timeout,
         )
 
-    # Pooled — proxy through our license server.
+    # ROUTE_WALLET — proxy through the licence server on AccGenie's key.
     from core.license_manager import LicenseManager, SERVER_URL
     mgr = LicenseManager()
     if mgr.license_key in ("DEMO", "FREE-DEMO", "", None):
-        raise PooledNotAvailable(
-            "Pooled AI credits require an activated paid license. "
-            "Open Settings → AI Routing to paste your own Anthropic key, "
-            "or activate a paid license on the License page."
+        raise AIRouteError(
+            "AI features on AccGenie credits need an activated paid "
+            "licence. Activate your licence on the License page, or add "
+            "your own Anthropic key in Settings → AI / Anthropic Key."
         )
 
     proxy_url = f"{SERVER_URL.rstrip('/')}{PROXY_URL_PATH}"
@@ -95,27 +100,23 @@ def call_messages(
         "x-license-key":     mgr.license_key,
         "x-machine-id":      mgr.get_machine_id(),
         "x-feature":         feature,
-        "anthropic-version": "2023-06-01",
+        "anthropic-version": ANTHROPIC_VERSION,
     }
     try:
         return _post(proxy_url, payload, headers=headers, timeout=timeout)
     except urllib.error.HTTPError as e:
         body = getattr(e, "body_text", "") or ""
-        # The server (post Phase-A fix) never relays Anthropic's raw status
-        # code. It uses distinct codes we can trust:
-        #   402 → customer wallet is out of credits
-        #   503 → /ai/proxy not configured on the server (no ANTHROPIC key)
+        # The server uses distinct, trustworthy status codes:
+        #   402 → wallet out of credits
+        #   503 → /ai/proxy not configured on the server
         #   502 → upstream Anthropic error (bad model, rate limit, …)
-        #   401 → license / machine binding not valid
-        # A genuine 404 now only means the route truly doesn't exist (very
-        # old server build) — still surface it as a real error, NOT as
-        # "go use your own key".
+        #   401 → licence / machine binding not valid
         if e.code == 402:
             raise AIRouteError(
                 "Out of AI credits — top up your AccGenie wallet to continue."
             ) from e
         if e.code == 503:
-            raise PooledNotAvailable(
+            raise AIServiceUnavailable(
                 "The AI service isn't configured on the licence server yet. "
                 "Contact support."
             ) from e
@@ -131,9 +132,9 @@ def _post(url: str, payload: dict, headers: dict, timeout: float) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
-            # If the response carries our proxy's metering headers, refresh
+            # If the response carries the proxy's metering headers, refresh
             # the local credit cache so the UI shows the right balance
-            # without an extra round-trip to /credits/balance.
+            # without a separate /credits/balance round-trip.
             new_balance = resp.headers.get("x-accgenie-balance-paise")
             if new_balance is not None:
                 try:
@@ -147,9 +148,9 @@ def _post(url: str, payload: dict, headers: dict, timeout: float) -> dict:
             err_body = e.read().decode("utf-8", errors="replace")
         except Exception:
             err_body = ""
-        # Bubble the original HTTPError so callers can inspect e.code
-        # (e.g. PooledNotAvailable detection above). Stash the body on it.
+        # Stash the body on the exception so the caller can include the
+        # server's message, then re-raise for the caller's HTTPError handler.
         e.body_text = err_body  # type: ignore[attr-defined]
         raise
     except urllib.error.URLError as e:
-        raise AIRouteError(f"Cannot reach AI service: {e.reason}") from e
+        raise AIRouteError(f"Cannot reach the AI service: {e.reason}") from e

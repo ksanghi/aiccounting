@@ -13,27 +13,22 @@ class VoucherAI:
 
     MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, api_key: str = "", feature: str = "document_reader"):
-        # api_key is legacy — keep the param so existing call sites don't
-        # break; the routing config in Settings → AI Routing is the new
-        # source of truth. If a caller passes api_key explicitly we use it
-        # directly (handy for env-var test runs and the bank-reco fallback
-        # path's still-surfaced api_key field).
+    def __init__(self, api_key: str = "", feature: str = "document_recognition"):
+        # api_key is legacy — kept only so a leftover caller passing one
+        # (or an ANTHROPIC_API_KEY env var in test runs) still works. In
+        # the app, routing is automatic via ai/ai_client.
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.feature = feature
 
     @property
     def ai_available(self) -> bool:
+        """True if this feature can make an AI call right now — i.e. its
+        route resolves to something other than 'locked'."""
         if self.api_key:
             return True
         try:
-            from core.ai_routing import routing
-            from core.license_manager import LicenseManager
-            if routing.has_own_key():
-                return True
-            return LicenseManager().license_key not in (
-                "DEMO", "FREE-DEMO", "", None,
-            )
+            from core.ai_routing import routing, ROUTE_LOCKED
+            return routing.resolve(self.feature) != ROUTE_LOCKED
         except Exception:
             return False
 
