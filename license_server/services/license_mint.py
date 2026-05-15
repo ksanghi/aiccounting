@@ -23,7 +23,9 @@ from sqlalchemy.orm import Session
 
 from license_server.keys import generate_key
 from license_server.models import License, Credit
-from license_server.plans import PLANS, PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_SEATS
+from license_server.plans import (
+    PLANS, PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_SEATS, VALID_PRODUCTS,
+)
 
 
 class MintError(Exception):
@@ -35,6 +37,7 @@ def mint_license(
     plan:          str,
     customer_email: str,
     expires_at:    date,
+    product:       str = "accgenie",
     company_name:  str = "",
     txn_limit:     Optional[int] = None,
     user_limit:    Optional[int] = None,
@@ -48,13 +51,21 @@ def mint_license(
 
     Raises MintError on bad inputs. Caller commits.
 
+    `product`: 'accgenie' (default for back-compat) or 'rwagenie'.
+    Validates against the server's VALID_PRODUCTS set. The product
+    decides which feature bundle the desktop client gets on validate
+    (see plans.features_for()).
+
     `initial_credits_paise`: optional starting wallet balance. If >0, a
     Credit row is created alongside the license (typical use: Razorpay
     pays "PRO + ₹500 AI credits" → license is PRO, balance is 50000 paise).
     """
     plan = (plan or "").upper()
+    product = (product or "accgenie").lower()
     if plan not in PLANS:
         raise MintError(f"Unknown plan: {plan}")
+    if product not in VALID_PRODUCTS:
+        raise MintError(f"Unknown product: {product}")
     if expires_at < date.today():
         raise MintError("Expiry is in the past")
     if not customer_email:
@@ -73,6 +84,7 @@ def mint_license(
 
     lic = License(
         license_key   = key,
+        product       = product,
         plan          = plan,
         customer_email= customer_email,
         company_name  = company_name or "",

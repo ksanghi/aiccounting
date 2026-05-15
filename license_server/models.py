@@ -13,6 +13,14 @@ class License(Base):
 
     id:             Mapped[int]      = mapped_column(primary_key=True)
     license_key:    Mapped[str]      = mapped_column(String(32), unique=True, index=True)
+    # Which product this licence is for: 'accgenie' (accounting only) or
+    # 'rwagenie' (RWA front + bundled accounting). New rows must set this
+    # explicitly; existing rows are backfilled to 'accgenie' via the
+    # additive migration in db.py.
+    product:        Mapped[str]      = mapped_column(String(16),
+                                                     default="accgenie",
+                                                     server_default="accgenie",
+                                                     index=True)
     plan:           Mapped[str]      = mapped_column(String(16))
     customer_email: Mapped[str]      = mapped_column(String(256), default="")
     company_name:   Mapped[str]      = mapped_column(String(256), default="")
@@ -57,6 +65,12 @@ class Install(Base):
     install_id:      Mapped[str]      = mapped_column(String(64), unique=True, index=True)
     machine_id:      Mapped[str]      = mapped_column(String(64), index=True)
     app_version:     Mapped[str]      = mapped_column(String(32), default="")
+    # 'accgenie' / 'rwagenie' — distinguishes installs of each product so
+    # the install_stats endpoint can break out per-product activity.
+    product:         Mapped[str]      = mapped_column(String(16),
+                                                      default="accgenie",
+                                                      server_default="accgenie",
+                                                      index=True)
     plan:            Mapped[str]      = mapped_column(String(16), default="FREE")
     license_key:     Mapped[str]      = mapped_column(String(32), default="")
     os_name:         Mapped[str]      = mapped_column(String(32), default="")
@@ -141,6 +155,12 @@ class Order(Base):
     razorpay_order_id:   Mapped[str]      = mapped_column(String(64), unique=True, index=True)
     razorpay_payment_id: Mapped[str]      = mapped_column(String(64), default="", index=True)
 
+    # Product the customer is buying: 'accgenie' or 'rwagenie'. The
+    # webhook handler mints a License row with the same product.
+    product:             Mapped[str]      = mapped_column(String(16),
+                                                          default="accgenie",
+                                                          server_default="accgenie",
+                                                          index=True)
     plan:                Mapped[str]      = mapped_column(String(16))
     amount_paise:        Mapped[int]      = mapped_column(Integer)
     currency:            Mapped[str]      = mapped_column(String(8), default="INR")

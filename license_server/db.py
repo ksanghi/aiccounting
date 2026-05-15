@@ -48,6 +48,11 @@ def init_db():
 
 _ADDITIVE_COLUMNS: list[tuple[str, str, str, str]] = [
     ("licenses", "seats_allowed", "INTEGER NOT NULL DEFAULT 3", "3"),
+    # Multi-product: existing rows pre-date RWAGenie, so they're all
+    # accgenie. New rows must set product explicitly via mint.
+    ("licenses", "product",       "TEXT NOT NULL DEFAULT 'accgenie'", "'accgenie'"),
+    ("installs",  "product",      "TEXT NOT NULL DEFAULT 'accgenie'", "'accgenie'"),
+    ("orders",    "product",      "TEXT NOT NULL DEFAULT 'accgenie'", "'accgenie'"),
 ]
 
 

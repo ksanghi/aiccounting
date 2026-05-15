@@ -40,6 +40,7 @@ from license_server.models import (
 )
 from license_server.plans import (
     PLANS, PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_FEATURES, PLAN_SEATS,
+    features_for, flats_limit_for, VALID_PRODUCTS,
 )
 from license_server.keys import is_valid_format
 from license_server.services import razorpay_client, email_service
@@ -75,13 +76,15 @@ class ValidateRequest(BaseModel):
 class ValidateResponse(BaseModel):
     valid:           bool
     plan:            Optional[str]  = None
-    features:        Optional[list] = None
+    product:         Optional[str]  = None   # 'accgenie' or 'rwagenie'
+    features:        Optional[list] = None   # merged AG + RWA when product=rwagenie
     txn_limit:       Optional[int]  = None
     txn_used:        Optional[int]  = None
     user_limit:      Optional[int]  = None
     seats_allowed:   Optional[int]  = None
     seats_used:      Optional[int]  = None
     seats_remaining: Optional[int]  = None
+    flats_limit:     Optional[int]  = None   # RWAGenie only; None = unlimited or not RWA
     expires_at:      Optional[str]  = None
     company_name:    Optional[str]  = None
     error:           Optional[str]  = None
@@ -89,6 +92,11 @@ class ValidateResponse(BaseModel):
 
 class MintRequest(BaseModel):
     plan:           str = Field(..., pattern="^(FREE|STANDARD|PRO|PREMIUM)$")
+    # Default for back-compat with any existing minting scripts that don't
+    # pass product. New AG mints can omit; RWAGenie mints must set
+    # product='rwagenie' explicitly.
+    product:        str = Field(default="accgenie",
+                                pattern="^(accgenie|rwagenie)$")
     customer_email: str = ""
     company_name:   str = ""
     expires_at:     date
@@ -100,6 +108,7 @@ class MintRequest(BaseModel):
 
 class KeyOut(BaseModel):
     license_key:    str
+    product:        str = "accgenie"
     plan:           str
     customer_email: str
     company_name:   str
@@ -172,6 +181,8 @@ class HeartbeatResponse(BaseModel):
 
 class CheckoutCreateRequest(BaseModel):
     plan:           str    = Field(..., min_length=2, max_length=16)
+    product:        str    = Field(default="accgenie",
+                                   pattern="^(accgenie|rwagenie)$")
     country_code:   str    = Field(default="IN", min_length=2, max_length=4)
     customer_email: str    = Field(..., min_length=3, max_length=256)
     customer_name:  str    = Field(default="", max_length=256)
@@ -188,6 +199,7 @@ class CheckoutCreateResponse(BaseModel):
     razorpay_key_id:  Optional[str] = None  # public; safe to expose to frontend
     plan:             Optional[str] = None
     plan_name:        Optional[str] = None
+    product:          Optional[str] = None  # 'accgenie' or 'rwagenie'
     error:            Optional[str] = None
 
 
@@ -398,16 +410,20 @@ def validate(
         .where(MachineBinding.license_id == lic.id)
     ) or 0
 
+    product = (lic.product or "accgenie").lower()
     return ValidateResponse(
         valid=True,
         plan=lic.plan,
-        features=PLAN_FEATURES.get(lic.plan, []),
+        product=product,
+        # Merged AG + RWA features when product=rwagenie, AG-only otherwise.
+        features=features_for(product, lic.plan),
         txn_limit=lic.txn_limit,
         txn_used=0,  # v1: not tracked server-side; client tracks locally
         user_limit=lic.user_limit,
         seats_allowed=seats_cap,
         seats_used=seats_used,
         seats_remaining=max(0, seats_cap - seats_used),
+        flats_limit=(flats_limit_for(lic.plan) if product == "rwagenie" else None),
         expires_at=lic.expires_at.isoformat(),
         company_name=lic.company_name,
     )
@@ -444,6 +460,48 @@ def deactivate(
         # Don't leak existence — succeed silently.
         return DeactivateResponse(ok=True)
 
+    # ── Abuse cooldown ──────────────────────────────────────────────────────
+    # Seat-release is a self-service endpoint with no payment loop. A
+    # bad-faith actor could release on machine A → activate on machine B,
+    # release on B → activate on C, treating one seat as N rotating seats.
+    # Reject a release if the same key released a DIFFERENT machine in
+    # the last 24 hours. Releasing the same machine_id again is treated
+    # as idempotent (no cooldown — the desktop UI may retry on a flaky
+    # network).
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    recent_other = db.scalar(
+        select(ValidationLog).where(
+            ValidationLog.license_id  == lic.id,
+            ValidationLog.error       == "seat_released",
+            ValidationLog.created_at  >= cutoff,
+            ValidationLog.machine_id  != machine_id,
+        ).order_by(ValidationLog.created_at.desc()).limit(1)
+    )
+    if recent_other is not None:
+        try:
+            elapsed = datetime.utcnow() - recent_other.created_at
+            remaining = max(timedelta(seconds=0), timedelta(hours=24) - elapsed)
+            hrs = int(remaining.total_seconds() // 3600)
+            mins = int((remaining.total_seconds() % 3600) // 60)
+            wait_msg = f"{hrs}h {mins}m"
+        except Exception:
+            wait_msg = "~24h"
+        _log_validation(
+            db, lic.id, key, machine_id, "", ip,
+            success=False, error="seat_release_blocked_cooldown",
+        )
+        db.commit()
+        return DeactivateResponse(
+            ok=False,
+            error=(
+                "Seat release is rate-limited to once every 24 hours per "
+                f"licence. Try again in {wait_msg}. If you've genuinely "
+                "lost a machine and need this released sooner, contact "
+                "info@ai-consultants.in."
+            ),
+        )
+
     binding = db.scalar(
         select(MachineBinding).where(
             MachineBinding.license_id == lic.id,
@@ -469,6 +527,7 @@ def _to_keyout(lic: License, db: Session) -> KeyOut:
     ) or 0
     return KeyOut(
         license_key=lic.license_key,
+        product=(lic.product or "accgenie"),
         plan=lic.plan,
         customer_email=lic.customer_email,
         company_name=lic.company_name,
@@ -501,6 +560,7 @@ def mint_key(body: MintRequest, db: Session = Depends(get_db)):
 
     lic = License(
         license_key=key,
+        product=body.product,
         plan=body.plan,
         customer_email=body.customer_email,
         company_name=body.company_name,
@@ -826,25 +886,54 @@ def checkout_create_order(
         raise HTTPException(503, "Payments are not configured on this server.")
 
     plan = (body.plan or "").upper()
+    product = (body.product or "accgenie").lower()
     country = (body.country_code or "IN").upper()
     email = (body.customer_email or "").strip()
     if not email or "@" not in email:
         return CheckoutCreateResponse(ok=False, error="Valid email required")
 
-    try:
-        price = resolve_price(plan, country)
-    except PricingError as e:
-        return CheckoutCreateResponse(ok=False, error=str(e))
+    if product not in VALID_PRODUCTS:
+        return CheckoutCreateResponse(ok=False, error=f"Unknown product: {product}")
+
+    # ── Pricing ──
+    # AG uses the baked pricing.xlsx via resolve_price().
+    # RWAGenie uses the inline PLAN_PRICES_RWA_INR table (no xlsx yet).
+    # Both produce the same {amount_paise, currency, plan_code, ...} dict
+    # so the rest of this handler stays product-agnostic.
+    from license_server.plans import price_for
+    if product == "rwagenie":
+        rwa_inr = price_for(product, plan, country)
+        if not rwa_inr:
+            return CheckoutCreateResponse(
+                ok=False,
+                error=(f"RWAGenie {plan} is not priced for sale "
+                       f"in {country} yet."),
+            )
+        price = {
+            "plan_code":      plan,
+            "plan_name":      plan.title(),
+            "currency":       "INR",
+            "amount_paise":   int(rwa_inr * 100),
+            "amount_display": f"Rs. {rwa_inr:,.2f}",
+            "country_code":   country,
+        }
+    else:
+        try:
+            price = resolve_price(plan, country)
+        except PricingError as e:
+            return CheckoutCreateResponse(ok=False, error=str(e))
 
     # Create the Razorpay order. The 'notes' field gets stored alongside
     # the order and echoed back in the webhook payload — useful for
     # cross-checking which Order row to update.
+    receipt_prefix = "rwag" if product == "rwagenie" else "accg"
     try:
         rp_order = razorpay_client.create_order(
             amount_paise=price["amount_paise"],
             currency=price["currency"],
-            receipt_id=f"accg-{plan[:4]}-{int(datetime.utcnow().timestamp())}",
+            receipt_id=f"{receipt_prefix}-{plan[:4]}-{int(datetime.utcnow().timestamp())}",
             notes={
+                "product":        product,
                 "plan":           price["plan_code"],
                 "country_code":   price["country_code"],
                 "customer_email": email,
@@ -858,6 +947,7 @@ def checkout_create_order(
     # Persist the order so the webhook can find it.
     order = Order(
         razorpay_order_id=rp_order["id"],
+        product=product,
         plan=price["plan_code"],
         amount_paise=price["amount_paise"],
         currency=price["currency"],
@@ -959,10 +1049,12 @@ async def razorpay_webhook(
         return {"ok": True, "status": "already_paid",
                 "license_id": order.license_id}
 
-    # Mint the license.
+    # Mint the license. Carry the product (accgenie/rwagenie) forward
+    # from the order so RWAGenie purchases produce RWAGenie licenses.
     try:
         lic = mint_license(
             db=db,
+            product=(order.product or "accgenie"),
             plan=order.plan,
             customer_email=order.customer_email,
             company_name=order.company_name,
