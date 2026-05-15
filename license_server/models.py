@@ -121,3 +121,49 @@ class AIUsageLog(Base):
     success:        Mapped[bool]     = mapped_column(Boolean, default=True)
     error:          Mapped[str]      = mapped_column(String(256), default="")
     created_at:     Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ── Payment orders (Razorpay) ────────────────────────────────────────────────
+
+class Order(Base):
+    """
+    One row per Razorpay order. Created when a customer initiates checkout
+    on the marketing site, transitions to 'paid' when Razorpay's webhook
+    confirms the payment.
+
+    On 'paid', the webhook handler mints a License row and links it via
+    license_id. Holding the order pre-mint (rather than minting on /create-
+    order) prevents key proliferation when customers abandon checkout.
+    """
+    __tablename__ = "orders"
+
+    id:                  Mapped[int]      = mapped_column(primary_key=True)
+    razorpay_order_id:   Mapped[str]      = mapped_column(String(64), unique=True, index=True)
+    razorpay_payment_id: Mapped[str]      = mapped_column(String(64), default="", index=True)
+
+    plan:                Mapped[str]      = mapped_column(String(16))
+    amount_paise:        Mapped[int]      = mapped_column(Integer)
+    currency:            Mapped[str]      = mapped_column(String(8), default="INR")
+    country_code:        Mapped[str]      = mapped_column(String(4), default="IN")
+
+    customer_email:      Mapped[str]      = mapped_column(String(256), index=True)
+    customer_name:       Mapped[str]      = mapped_column(String(256), default="")
+    customer_phone:      Mapped[str]      = mapped_column(String(32), default="")
+    company_name:        Mapped[str]      = mapped_column(String(256), default="")
+
+    # created | paid | failed | refunded
+    status:              Mapped[str]      = mapped_column(String(16), default="created", index=True)
+
+    # Set on 'paid' — the license that was minted for this order. Nullable
+    # because the order exists before the license does.
+    license_id:          Mapped[int | None] = mapped_column(
+        ForeignKey("licenses.id"), nullable=True, index=True
+    )
+
+    # Free-form audit trail. Webhook handler appends to it on each event.
+    notes:               Mapped[str]      = mapped_column(String(2048), default="")
+
+    created_at:          Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at:          Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

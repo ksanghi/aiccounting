@@ -35,5 +35,35 @@ class Settings(BaseSettings):
     # forwarding to Anthropic.
     ai_min_balance_paise: int = 100   # ₹1.00
 
+    # ── Razorpay (payment gateway) ───────────────────────────────────────────
+    # Leave blank to disable. /api/v1/checkout/create-order returns 503 when
+    # razorpay_key_id is unset; /webhooks/razorpay returns 503 when
+    # razorpay_webhook_secret is unset. Same pattern as anthropic_api_key.
+    #
+    # Get these from https://dashboard.razorpay.com/app/keys (use Test mode
+    # keys for dev; switch to Live mode for production). The webhook secret
+    # is set when you register the webhook in the dashboard (Settings →
+    # Webhooks).
+    razorpay_key_id:         str = ""
+    razorpay_key_secret:     str = ""
+    razorpay_webhook_secret: str = ""
+
+    # If true, the create-order endpoint trusts the price the client sends
+    # (only useful for early local testing). Production should ALWAYS leave
+    # this false — server looks up the price from the baked pricing.xlsx.
+    razorpay_trust_client_price: bool = False
+
+    # ── Email delivery (license key + receipt) ───────────────────────────────
+    # smtplib-based. Tested with Gmail App Passwords and SendGrid SMTP. Leave
+    # blank to disable — paid orders will still mint a key but won't notify
+    # the customer; you'd have to look it up in the orders table by email.
+    smtp_host:     str = ""              # smtp.gmail.com or smtp.sendgrid.net
+    smtp_port:     int = 587             # 587 (STARTTLS) or 465 (SSL)
+    smtp_user:     str = ""
+    smtp_password: str = ""
+    smtp_from:     str = "noreply@accgenie.in"
+    smtp_from_name: str = "AccGenie"
+    smtp_use_tls:  bool = True
+
 
 settings = Settings()

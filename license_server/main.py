@@ -36,12 +36,17 @@ from license_server.config import settings
 from license_server.db import init_db, get_db
 from license_server.models import (
     License, MachineBinding, ValidationLog, Install,
-    Credit, CreditTopup, AIUsageLog,
+    Credit, CreditTopup, AIUsageLog, Order,
 )
 from license_server.plans import (
     PLANS, PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_FEATURES, PLAN_SEATS,
 )
 from license_server.keys import is_valid_format
+from license_server.services import razorpay_client, email_service
+from license_server.services.license_mint import (
+    mint_license, default_expiry_for_plan, MintError,
+)
+from license_server.services.pricing_lookup import resolve_price, PricingError
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────
@@ -161,6 +166,29 @@ class HeartbeatRequest(BaseModel):
 
 class HeartbeatResponse(BaseModel):
     ok: bool
+
+
+# ── Checkout / Razorpay schemas ──────────────────────────────────────────────
+
+class CheckoutCreateRequest(BaseModel):
+    plan:           str    = Field(..., min_length=2, max_length=16)
+    country_code:   str    = Field(default="IN", min_length=2, max_length=4)
+    customer_email: str    = Field(..., min_length=3, max_length=256)
+    customer_name:  str    = Field(default="", max_length=256)
+    customer_phone: str    = Field(default="", max_length=32)
+    company_name:   str    = Field(default="", max_length=256)
+
+
+class CheckoutCreateResponse(BaseModel):
+    ok:               bool
+    order_id:         Optional[str] = None  # razorpay_order_id
+    amount_paise:     Optional[int] = None
+    amount_display:   Optional[str] = None  # "Rs. 4,999.00" for UI
+    currency:         Optional[str] = None
+    razorpay_key_id:  Optional[str] = None  # public; safe to expose to frontend
+    plan:             Optional[str] = None
+    plan_name:        Optional[str] = None
+    error:            Optional[str] = None
 
 
 class InstallStats(BaseModel):
@@ -770,3 +798,205 @@ async def ai_proxy(
             "x-accgenie-balance-paise": str(credit.balance_paise),
         },
     )
+
+
+# ── Checkout (Razorpay) ──────────────────────────────────────────────────────
+
+@app.post("/api/v1/checkout/create-order", response_model=CheckoutCreateResponse)
+def checkout_create_order(
+    body: CheckoutCreateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a Razorpay order for a plan purchase. The caller is the
+    marketing/checkout site (CORS-safe — no auth headers; price is
+    looked up server-side).
+
+    Flow:
+      1. Resolve price from baked pricing.xlsx for (plan, country_code).
+      2. Create a Razorpay order via the SDK.
+      3. Persist an Order row (status='created').
+      4. Return { order_id, amount, currency, razorpay_key_id } so the
+         frontend can hand them to Razorpay Checkout JS.
+
+    The actual fulfillment (mint license + email key) happens later in
+    /webhooks/razorpay when Razorpay confirms the payment.
+    """
+    if not razorpay_client.is_enabled():
+        raise HTTPException(503, "Payments are not configured on this server.")
+
+    plan = (body.plan or "").upper()
+    country = (body.country_code or "IN").upper()
+    email = (body.customer_email or "").strip()
+    if not email or "@" not in email:
+        return CheckoutCreateResponse(ok=False, error="Valid email required")
+
+    try:
+        price = resolve_price(plan, country)
+    except PricingError as e:
+        return CheckoutCreateResponse(ok=False, error=str(e))
+
+    # Create the Razorpay order. The 'notes' field gets stored alongside
+    # the order and echoed back in the webhook payload — useful for
+    # cross-checking which Order row to update.
+    try:
+        rp_order = razorpay_client.create_order(
+            amount_paise=price["amount_paise"],
+            currency=price["currency"],
+            receipt_id=f"accg-{plan[:4]}-{int(datetime.utcnow().timestamp())}",
+            notes={
+                "plan":           price["plan_code"],
+                "country_code":   price["country_code"],
+                "customer_email": email,
+                "customer_name":  body.customer_name or "",
+                "company_name":   body.company_name or "",
+            },
+        )
+    except razorpay_client.RazorpayError as e:
+        return CheckoutCreateResponse(ok=False, error=f"Razorpay: {e}")
+
+    # Persist the order so the webhook can find it.
+    order = Order(
+        razorpay_order_id=rp_order["id"],
+        plan=price["plan_code"],
+        amount_paise=price["amount_paise"],
+        currency=price["currency"],
+        country_code=price["country_code"],
+        customer_email=email,
+        customer_name=body.customer_name or "",
+        customer_phone=body.customer_phone or "",
+        company_name=body.company_name or "",
+        status="created",
+        notes=f"[create] receipt={rp_order.get('receipt','')}",
+    )
+    db.add(order)
+    db.commit()
+
+    return CheckoutCreateResponse(
+        ok=True,
+        order_id=rp_order["id"],
+        amount_paise=price["amount_paise"],
+        amount_display=price["amount_display"],
+        currency=price["currency"],
+        razorpay_key_id=settings.razorpay_key_id,
+        plan=price["plan_code"],
+        plan_name=price["plan_name"],
+    )
+
+
+@app.post("/webhooks/razorpay")
+async def razorpay_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Razorpay webhook receiver. Razorpay calls this after a payment is
+    captured (or failed). We verify the HMAC-SHA256 signature against
+    RAZORPAY_WEBHOOK_SECRET, then act on the event.
+
+    On `payment.captured`:
+      - Look up the Order row by razorpay_order_id.
+      - If status is already 'paid', return 200 (idempotent — Razorpay
+        retries delivery on 5xx).
+      - Mint a License row via license_mint.mint_license().
+      - Update the Order: status='paid', license_id=..., notes appended.
+      - Email the key to the customer (best-effort; failure does NOT
+        roll back the mint).
+
+    Returns 200 on success OR on duplicate delivery, so Razorpay stops
+    retrying. Returns 4xx only when the signature is bad or the body
+    is malformed.
+    """
+    if not razorpay_client.webhook_enabled():
+        raise HTTPException(503, "Webhook secret not configured.")
+
+    raw_body  = await request.body()
+    signature = request.headers.get("x-razorpay-signature", "")
+    if not razorpay_client.verify_webhook_signature(raw_body, signature):
+        raise HTTPException(401, "Bad signature")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception:
+        raise HTTPException(400, "Malformed JSON")
+
+    event = payload.get("event") or ""
+    if event not in ("payment.captured", "payment.failed", "order.paid"):
+        # Acknowledge but ignore — refunds/disputes/etc. will be handled
+        # via admin endpoints for now.
+        return {"ok": True, "ignored": event}
+
+    # Both "payment.captured" and "order.paid" reach us when a successful
+    # payment lands. Razorpay sends both; we treat them the same and rely
+    # on the order.status guard for idempotency.
+    payment   = (payload.get("payload") or {}).get("payment", {})
+    pay_entity= (payment.get("entity") or {})
+    rp_order_id   = pay_entity.get("order_id") or ""
+    rp_payment_id = pay_entity.get("id") or ""
+
+    if not rp_order_id:
+        # Could be order.paid event without payment.entity — fall back
+        # to the order payload.
+        order_entity = ((payload.get("payload") or {}).get("order") or {}).get("entity", {})
+        rp_order_id = rp_order_id or order_entity.get("id") or ""
+
+    if not rp_order_id:
+        raise HTTPException(400, "Event missing order_id")
+
+    order = db.scalar(select(Order).where(Order.razorpay_order_id == rp_order_id))
+    if order is None:
+        # Order we didn't create — log and 200 so Razorpay stops retrying.
+        return {"ok": True, "warning": f"Unknown order_id {rp_order_id}"}
+
+    if event == "payment.failed":
+        order.status = "failed"
+        order.notes  = (order.notes or "") + f"\n[failed] {rp_payment_id}"
+        db.commit()
+        return {"ok": True, "status": "failed"}
+
+    # Success path. Idempotency: if already paid, just acknowledge.
+    if order.status == "paid" and order.license_id:
+        return {"ok": True, "status": "already_paid",
+                "license_id": order.license_id}
+
+    # Mint the license.
+    try:
+        lic = mint_license(
+            db=db,
+            plan=order.plan,
+            customer_email=order.customer_email,
+            company_name=order.company_name,
+            expires_at=default_expiry_for_plan(order.plan),
+            notes=f"razorpay order {order.razorpay_order_id} "
+                  f"payment {rp_payment_id}",
+        )
+    except MintError as e:
+        # Mint failure is rare (DB or plan-name issue). Surface as 500
+        # so Razorpay retries — gives ops a chance to fix and replay.
+        raise HTTPException(500, f"Mint failed: {e}")
+
+    order.status              = "paid"
+    order.razorpay_payment_id = rp_payment_id
+    order.license_id          = lic.id
+    order.notes               = (order.notes or "") + (
+        f"\n[paid] license={lic.license_key} payment={rp_payment_id}"
+    )
+    db.commit()
+
+    # Email the key. Best-effort — never let SMTP failures roll back the
+    # mint. The order row records the email address; ops can resend
+    # manually if needed.
+    try:
+        email_service.send_license_email(
+            to_email=order.customer_email,
+            license_key=lic.license_key,
+            plan=lic.plan,
+            expires_at=lic.expires_at.isoformat(),
+            customer_name=order.customer_name,
+            amount_paid_str=f"{order.currency} {order.amount_paise/100:,.2f}",
+        )
+    except Exception:
+        # Already logged inside email_service; swallow here.
+        pass
+
+    return {"ok": True, "status": "paid", "license_id": lic.id}

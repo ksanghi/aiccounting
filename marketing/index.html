@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AccGenie — Accounting that posts itself</title>
+<meta name="description" content="The Indian accounting app built for owners who don't want to be accountants. AI reads your bills, your bank statements, and your handwritten notes. GST and TDS done for you.">
+<style>
+  :root {
+    --bg: #0B1220;
+    --bg-card: #111A2E;
+    --bg-soft: #F8FAFC;
+    --ink: #0F172A;
+    --ink-mute: #475569;
+    --line: #E2E8F0;
+    --accent: #635BFF;
+    --accent-2: #00D4AA;
+    --accent-warm: #F5A524;
+    --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  body { background: var(--white); line-height: 1.55; }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+
+  /* ── Nav ───────────────────────────────────────── */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 1120px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
+  .brand-dot { width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; color: var(--ink-mute); }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { background: var(--accent); color: white; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .nav-cta:hover { background: #4F46E5; }
+
+  /* ── Hero ──────────────────────────────────────── */
+  .hero {
+    background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%);
+    padding: 80px 24px 60px;
+    text-align: center;
+  }
+  .eyebrow {
+    display: inline-block;
+    background: rgba(99, 91, 255, 0.08);
+    color: var(--accent);
+    border: 1px solid rgba(99, 91, 255, 0.2);
+    padding: 6px 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: clamp(36px, 5vw, 64px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+    max-width: 880px;
+    margin: 0 auto 22px;
+  }
+  h1 .grad {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero p.lead {
+    font-size: clamp(17px, 1.4vw, 21px);
+    color: var(--ink-mute);
+    max-width: 680px;
+    margin: 0 auto 36px;
+  }
+  .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary, .btn-ghost {
+    display: inline-block; padding: 14px 26px;
+    border-radius: 10px; font-size: 15px; font-weight: 600;
+    transition: transform 0.06s ease, box-shadow 0.2s ease;
+  }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 8px 22px -8px rgba(99, 91, 255, 0.6); }
+  .btn-primary:hover { background: #4F46E5; transform: translateY(-1px); }
+  .btn-ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
+  .btn-ghost:hover { border-color: var(--ink); }
+  .hero-note { margin-top: 18px; color: var(--ink-mute); font-size: 13px; }
+
+  .hero-mock {
+    max-width: 1000px; margin: 60px auto 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+    box-shadow: 0 30px 60px -20px rgba(15,23,42,0.4), 0 12px 30px -10px rgba(99,91,255,0.25);
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .hero-mock-inner {
+    background: #0B1220; border-radius: 9px;
+    height: 360px;
+    display: grid; grid-template-columns: 200px 1fr;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .mock-side {
+    background: #0A0F1C;
+    padding: 18px 14px;
+    border-right: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+  }
+  .mock-side .mock-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 22px; }
+  .mock-side .mock-brand-dot { width: 18px; height: 18px; border-radius: 5px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .mock-side .section { color: #6B7A99; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin: 14px 0 8px; }
+  .mock-side .item { padding: 7px 8px; border-radius: 6px; color: rgba(255,255,255,0.7); cursor: default; }
+  .mock-side .item.active { background: rgba(99, 91, 255, 0.18); color: white; }
+  .mock-main { padding: 24px 28px; color: rgba(255,255,255,0.92); display: flex; flex-direction: column; }
+  .mock-h { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .mock-sub { font-size: 12px; color: #6B7A99; margin-bottom: 18px; }
+  .mock-row { display: grid; grid-template-columns: 90px 1fr 100px 100px; gap: 12px; padding: 9px 0;
+    border-top: 1px solid rgba(255,255,255,0.06); font-size: 12.5px; }
+  .mock-row.head { color: #6B7A99; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; border-top: none; }
+  .pill-dr { color: var(--accent-2); }
+  .pill-cr { color: var(--accent-warm); }
+  .mock-ai-toast {
+    margin-top: auto; padding: 10px 14px;
+    background: rgba(99, 91, 255, 0.12);
+    border: 1px solid rgba(99, 91, 255, 0.25);
+    border-radius: 8px; font-size: 12px;
+    color: rgba(255,255,255,0.92);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mock-ai-toast .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); }
+
+  /* ── Pillars (Easy / Intelligent / Quick) ───────── */
+  .pillars { padding: 90px 24px; background: white; }
+  .container { max-width: 1120px; margin: 0 auto; }
+  .section-eyebrow {
+    color: var(--accent); font-weight: 700; font-size: 13px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    text-align: center; margin-bottom: 12px;
+  }
+  h2 {
+    font-size: clamp(28px, 3.6vw, 42px);
+    letter-spacing: -0.025em; line-height: 1.15;
+    text-align: center; margin-bottom: 18px;
+    font-weight: 800;
+  }
+  .section-lead {
+    text-align: center; color: var(--ink-mute);
+    max-width: 620px; margin: 0 auto 56px;
+    font-size: 17px;
+  }
+  .pillar-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+  }
+  @media (max-width: 880px) { .pillar-grid { grid-template-columns: 1fr; } }
+  .pillar-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 30px 28px;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  }
+  .pillar-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 14px 30px -16px rgba(99,91,255,0.25); }
+  .pillar-icon {
+    width: 44px; height: 44px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: white;
+    margin-bottom: 18px;
+  }
+  .pi-1 { background: linear-gradient(135deg, #635BFF, #8B5CF6); }
+  .pi-2 { background: linear-gradient(135deg, #00D4AA, #06B6D4); }
+  .pi-3 { background: linear-gradient(135deg, #F5A524, #EF4444); }
+  .pillar-card h3 { font-size: 20px; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .pillar-card p { color: var(--ink-mute); font-size: 15px; line-height: 1.6; }
+
+  /* ── Feature deep-dives ─────────────────────────── */
+  .features { padding: 90px 24px; background: var(--bg-soft); }
+  .feature-row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 60px; align-items: center;
+    margin-bottom: 80px;
+  }
+  .feature-row:last-child { margin-bottom: 0; }
+  .feature-row.reverse { direction: rtl; }
+  .feature-row.reverse > * { direction: ltr; }
+  @media (max-width: 880px) {
+    .feature-row, .feature-row.reverse { grid-template-columns: 1fr; direction: ltr; }
+  }
+  .feature-text h3 {
+    font-size: clamp(22px, 2.4vw, 28px);
+    letter-spacing: -0.02em; line-height: 1.2;
+    margin-bottom: 14px;
+  }
+  .feature-text p { color: var(--ink-mute); font-size: 16px; line-height: 1.65; margin-bottom: 18px; }
+  .feature-text ul { list-style: none; padding: 0; }
+  .feature-text li {
+    padding: 7px 0 7px 26px; font-size: 15px; color: var(--ink);
+    position: relative;
+  }
+  .feature-text li::before {
+    content: "✓"; position: absolute; left: 0; top: 7px;
+    color: var(--accent-2); font-weight: 700;
+  }
+  .feature-vis {
+    background: white; border: 1px solid var(--line);
+    border-radius: 14px; padding: 22px;
+    box-shadow: 0 14px 30px -16px rgba(15,23,42,0.15);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  .vis-line { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .vis-line:last-child { border-bottom: none; }
+  .vis-key { color: var(--ink-mute); margin-right: 8px; }
+  .vis-val-ok { color: #059669; font-weight: 600; }
+  .vis-val-mute { color: var(--ink-mute); }
+  .vis-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+    background: rgba(99, 91, 255, 0.1); color: var(--accent);
+    margin-right: 6px;
+  }
+  .vis-input { font-size: 16px; padding: 8px 0; }
+  .vis-input b { color: var(--ink); }
+
+  /* ── Stats strip ────────────────────────────────── */
+  .stats {
+    background: var(--bg);
+    color: white;
+    padding: 60px 24px;
+  }
+  .stats-grid {
+    max-width: 1120px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 30px;
+    text-align: center;
+  }
+  @media (max-width: 700px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+  .stat-num {
+    font-size: clamp(32px, 4vw, 48px);
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+  }
+  .stat-label { font-size: 14px; color: #94A3B8; margin-top: 4px; }
+
+  /* ── Pricing ────────────────────────────────────── */
+  .pricing { padding: 90px 24px; background: white; }
+  .pricing-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 16px; max-width: 1120px; margin: 0 auto;
+  }
+  @media (max-width: 980px) { .pricing-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .pricing-grid { grid-template-columns: 1fr; } }
+  .price-card {
+    background: white; border: 1px solid var(--line);
+    border-radius: 14px; padding: 28px 22px;
+    display: flex; flex-direction: column;
+  }
+  .price-card.featured {
+    border: 2px solid var(--accent);
+    box-shadow: 0 20px 40px -20px rgba(99, 91, 255, 0.4);
+    position: relative;
+  }
+  .price-card.featured::before {
+    content: "Most popular";
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: white;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 5px 12px; border-radius: 999px;
+  }
+  .price-name { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-mute); }
+  .price-amt { font-size: 38px; font-weight: 800; margin-top: 10px; letter-spacing: -0.02em; line-height: 1; }
+  .price-amt .small { font-size: 14px; color: var(--ink-mute); font-weight: 500; margin-left: 6px; }
+  .price-tag { font-size: 13px; color: var(--ink-mute); margin-top: 6px; min-height: 36px; }
+  .price-feats { list-style: none; padding: 0; margin: 22px 0 22px; flex-grow: 1; }
+  .price-feats li { padding: 6px 0 6px 22px; font-size: 14px; position: relative; }
+  .price-feats li::before {
+    content: "✓"; position: absolute; left: 0;
+    color: var(--accent-2); font-weight: 700;
+  }
+  .price-btn {
+    display: inline-block; text-align: center;
+    padding: 12px 18px; border-radius: 8px;
+    font-size: 14px; font-weight: 600;
+    border: 1px solid var(--line); background: white; color: var(--ink);
+  }
+  .price-btn:hover { border-color: var(--ink); }
+  .price-card.featured .price-btn { background: var(--accent); color: white; border-color: var(--accent); }
+  .price-card.featured .price-btn:hover { background: #4F46E5; border-color: #4F46E5; }
+
+  /* ── Final CTA ─────────────────────────────────── */
+  .final {
+    padding: 90px 24px;
+    background: linear-gradient(135deg, var(--bg) 0%, #1E1A4D 100%);
+    color: white; text-align: center;
+  }
+  .final h2 { color: white; }
+  .final p { color: #CBD5E1; max-width: 560px; margin: 0 auto 30px; font-size: 17px; }
+
+  /* ── Footer ────────────────────────────────────── */
+  footer {
+    background: var(--bg);
+    color: #94A3B8; padding: 40px 24px;
+    text-align: center; font-size: 13px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  footer a { color: #CBD5E1; }
+  footer a:hover { color: white; }
+</style>
+</head>
+<body>
+
+<!-- ── Nav ─────────────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#">
+      <span class="brand-dot"></span>
+      <span>AccGenie</span>
+    </a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+    </div>
+    <a class="nav-cta" href="#pricing">Try free</a>
+  </div>
+</nav>
+
+<!-- ── Hero ────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="eyebrow">Made for Indian businesses · GST &amp; TDS built in</div>
+  <h1>The accounting app that <span class="grad">posts itself</span>.</h1>
+  <p class="lead">
+    Drop in a bill, a bank statement, or a one-line voice note —
+    AccGenie turns it into a balanced voucher. GST split, TDS applied,
+    ledgers picked. You review and approve.
+  </p>
+  <div class="cta-row">
+    <a class="btn-primary" href="#pricing">Start free — no card</a>
+    <a class="btn-ghost" href="#how">See it work</a>
+  </div>
+  <p class="hero-note">Demo plan unlocks every feature for your first 50 transactions.</p>
+
+  <div class="hero-mock" aria-hidden="true">
+    <div class="hero-mock-inner">
+      <div class="mock-side">
+        <div class="mock-brand"><span class="mock-brand-dot"></span><span>AccGenie</span></div>
+        <div class="section">Vouchers</div>
+        <div class="item active">Sales</div>
+        <div class="item">Purchase</div>
+        <div class="item">Payment</div>
+        <div class="item">Receipt</div>
+        <div class="section">Reports</div>
+        <div class="item">Trial Balance</div>
+        <div class="item">P &amp; L</div>
+        <div class="item">Balance Sheet</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-h">Sales · INV-0241</div>
+        <div class="mock-sub">15 May 2026 · Acme Traders Pvt Ltd</div>
+        <div class="mock-row head">
+          <div>Account</div><div>Particulars</div><div>Dr</div><div>Cr</div>
+        </div>
+        <div class="mock-row">
+          <div>Acme Traders</div><div>Bill receivable</div><div class="pill-dr">82,600</div><div></div>
+        </div>
+        <div class="mock-row">
+          <div>Sales — Goods</div><div>3 dozen mugs @ 250</div><div></div><div class="pill-cr">70,000</div>
+        </div>
+        <div class="mock-row">
+          <div>CGST 9%</div><div>Intra-state</div><div></div><div class="pill-cr">6,300</div>
+        </div>
+        <div class="mock-row">
+          <div>SGST 9%</div><div>Intra-state</div><div></div><div class="pill-cr">6,300</div>
+        </div>
+        <div class="mock-ai-toast">
+          <span class="dot"></span>
+          AI filled 4 lines from the invoice PDF · 0.4 sec
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Pillars ─────────────────────────────────────────────────────── -->
+<section class="pillars" id="how">
+  <div class="container">
+    <div class="section-eyebrow">Why AccGenie</div>
+    <h2>Easy. Intelligent. Quick.</h2>
+    <p class="section-lead">
+      Three things every Indian small business owner needs from accounting
+      software — and never got from Tally.
+    </p>
+    <div class="pillar-grid">
+      <div class="pillar-card">
+        <div class="pillar-icon pi-1">✨</div>
+        <h3>Easy</h3>
+        <p>
+          Type <b>"12 may"</b> and the date field reads it. Hit a Sales row
+          and the GST splits itself. Wrong side? Press F5 to flip. Built for
+          owners — not chartered accountants.
+        </p>
+      </div>
+      <div class="pillar-card">
+        <div class="pillar-icon pi-2">🧠</div>
+        <h3>Intelligent</h3>
+        <p>
+          Upload a PDF invoice. Paste a bank statement. Speak a one-line
+          entry. AccGenie picks the right ledgers, applies GST and TDS,
+          and gives you a balanced voucher to approve.
+        </p>
+      </div>
+      <div class="pillar-card">
+        <div class="pillar-icon pi-3">⚡</div>
+        <h3>Quick</h3>
+        <p>
+          Single keystrokes for everything: <b>T</b> for today, <b>Y</b>
+          for yesterday, <b>F4</b> for the calendar, <b>F2</b> to edit.
+          Most users post a voucher in under 12 seconds.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Stats ───────────────────────────────────────────────────────── -->
+<section class="stats">
+  <div class="stats-grid">
+    <div>
+      <div class="stat-num">12 sec</div>
+      <div class="stat-label">Average time to post a voucher</div>
+    </div>
+    <div>
+      <div class="stat-num">0.4 sec</div>
+      <div class="stat-label">AI fill time per invoice</div>
+    </div>
+    <div>
+      <div class="stat-num">8</div>
+      <div class="stat-label">Voucher types · GST · TDS</div>
+    </div>
+    <div>
+      <div class="stat-num">100%</div>
+      <div class="stat-label">Your data, on your machine</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Feature deep-dives ──────────────────────────────────────────── -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-eyebrow">Built for the real work</div>
+    <h2>Not just data entry. Decisions.</h2>
+    <p class="section-lead">
+      Every feature exists because somebody got tired of doing it by hand.
+    </p>
+
+    <!-- Row 1: AI Document Reader -->
+    <div class="feature-row">
+      <div class="feature-text">
+        <h3>Drop a bill in — get a voucher out</h3>
+        <p>
+          AccGenie reads any invoice, vendor bill, or expense receipt.
+          Vendor, line items, taxes, totals — all extracted, matched to
+          your ledgers, posted as a draft for you to approve.
+        </p>
+        <ul>
+          <li>PDF, JPG, PNG, scanned or digital</li>
+          <li>Vendor recognition across past bills</li>
+          <li>GST and TDS auto-detected from the bill</li>
+          <li>You approve before anything hits the ledger</li>
+        </ul>
+      </div>
+      <div class="feature-vis">
+        <div class="vis-line"><span class="vis-pill">PDF</span> ACME-INV-0241.pdf · 1 page</div>
+        <div class="vis-line"><span class="vis-key">Vendor →</span><b>Acme Traders Pvt Ltd</b></div>
+        <div class="vis-line"><span class="vis-key">Date →</span> 15 May 2026</div>
+        <div class="vis-line"><span class="vis-key">Total →</span> Rs. 82,600 <span class="vis-val-ok">balanced ✓</span></div>
+        <div class="vis-line"><span class="vis-key">GSTIN →</span> 06AAACA1234B1Z9</div>
+        <div class="vis-line"><span class="vis-key">Tax →</span> CGST 9% + SGST 9% <span class="vis-val-mute">(intra-state)</span></div>
+        <div class="vis-line vis-val-ok">→ Voucher draft ready · 0.4 sec</div>
+      </div>
+    </div>
+
+    <!-- Row 2: Bank Reconciliation -->
+    <div class="feature-row reverse">
+      <div class="feature-text">
+        <h3>Bank reconciliation that ends in 3 clicks</h3>
+        <p>
+          Drop in any Indian bank's statement — HDFC, ICICI, SBI, Axis,
+          Kotak — and AccGenie matches each line against your ledger.
+          Cleared cheques flagged, unmatched entries highlighted, opening
+          and closing balances verified.
+        </p>
+        <ul>
+          <li>Works on PDF and Excel (.xls and .xlsx)</li>
+          <li>AI-assisted matching for the awkward lines</li>
+          <li>Mark cleared, ignore, or post-on-the-fly</li>
+        </ul>
+      </div>
+      <div class="feature-vis">
+        <div class="vis-line"><span class="vis-pill">XLS</span> HDFC-statement-may-2026.xls</div>
+        <div class="vis-line">112 lines imported</div>
+        <div class="vis-line">98 auto-matched <span class="vis-val-ok">✓</span></div>
+        <div class="vis-line">11 cleared cheques flagged</div>
+        <div class="vis-line">3 unmatched <span class="vis-val-mute">(needs your attention)</span></div>
+        <div class="vis-line vis-val-ok">Opening Rs. 4,82,100 → Closing Rs. 6,93,450 · balanced ✓</div>
+      </div>
+    </div>
+
+    <!-- Row 3: GST and TDS -->
+    <div class="feature-row">
+      <div class="feature-text">
+        <h3>GST and TDS, done — not "supported"</h3>
+        <p>
+          State codes drive CGST+SGST vs. IGST automatically. TDS sections
+          apply themselves above the threshold. Returns ready for filing —
+          GSTR-1, GSTR-3B summaries, TDS deduction reports.
+        </p>
+        <ul>
+          <li>All standard GST rates (0%, 5%, 12%, 18%, 28%)</li>
+          <li>TDS sections 194A, 194C, 194I, 194J, 194Q built in</li>
+          <li>HSN/SAC capture per item</li>
+          <li>Audit-ready ledger export</li>
+        </ul>
+      </div>
+      <div class="feature-vis">
+        <div class="vis-line"><span class="vis-pill">Sales</span> to Acme Traders <span class="vis-val-mute">(state: 06 Haryana)</span></div>
+        <div class="vis-line vis-input">Total <b>Rs. 70,000</b> · GST 18%</div>
+        <div class="vis-line"><span class="vis-key">→</span> CGST 9% = Rs. 6,300 <span class="vis-val-ok">auto</span></div>
+        <div class="vis-line"><span class="vis-key">→</span> SGST 9% = Rs. 6,300 <span class="vis-val-ok">auto</span></div>
+        <div class="vis-line vis-val-mute">If buyer were in state 27 (Maharashtra) →</div>
+        <div class="vis-line"><span class="vis-key">→</span> IGST 18% = Rs. 12,600 <span class="vis-val-ok">auto</span></div>
+      </div>
+    </div>
+
+    <!-- Row 4: Voice -->
+    <div class="feature-row reverse">
+      <div class="feature-text">
+        <h3>Talk. We'll post.</h3>
+        <p>
+          "Got 5,000 cash from Suresh against last week's invoice." That's
+          a complete Receipt voucher. AccGenie picks the right ledger from
+          your party list, matches the bill reference, balances Dr/Cr.
+          You approve.
+        </p>
+        <ul>
+          <li>Conversational — no rigid templates</li>
+          <li>Recognises party names, bill numbers, dates</li>
+          <li>Always shows the draft before it posts</li>
+        </ul>
+      </div>
+      <div class="feature-vis">
+        <div class="vis-line"><span class="vis-pill">Voice</span> Recording · 4.2 sec</div>
+        <div class="vis-line vis-input">"5,000 cash from Suresh against last week's invoice"</div>
+        <div class="vis-line vis-val-ok">→ Receipt voucher · 15 May 2026</div>
+        <div class="vis-line"><span class="vis-key">Dr</span> Cash · Rs. 5,000</div>
+        <div class="vis-line"><span class="vis-key">Cr</span> Suresh Trading Co · Rs. 5,000</div>
+        <div class="vis-line"><span class="vis-key">Ref →</span> INV-0238 (12 May, balance Rs. 5,000)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Pricing ─────────────────────────────────────────────────────── -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <div class="section-eyebrow">Pricing</div>
+    <h2>Pay only when you grow.</h2>
+    <p class="section-lead">
+      Start free. Upgrade when you outgrow the limits. No card asked for
+      the demo. Prices in INR per year.
+    </p>
+    <div class="pricing-grid">
+
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amt">₹0</div>
+        <div class="price-tag">For one user, basic ledger.</div>
+        <ul class="price-feats">
+          <li>5,000 transactions / year</li>
+          <li>1 user</li>
+          <li>Day book + ledger balances</li>
+          <li>Backup &amp; restore</li>
+        </ul>
+        <a class="price-btn" href="#">Download free</a>
+      </div>
+
+      <div class="price-card featured">
+        <div class="price-name">Standard</div>
+        <div class="price-amt">₹1,999<span class="small">/ year</span></div>
+        <div class="price-tag">For shop owners &amp; small services.</div>
+        <ul class="price-feats">
+          <li>20,000 transactions / year</li>
+          <li>2 users</li>
+          <li>Full financial reports</li>
+          <li>Excel + PDF exports</li>
+          <li>Bank &amp; ledger reconciliation</li>
+          <li>Book migration from Tally</li>
+        </ul>
+        <a class="price-btn" href="#">Start 30-day trial</a>
+      </div>
+
+      <div class="price-card">
+        <div class="price-name">Pro</div>
+        <div class="price-amt">₹4,999<span class="small">/ year</span></div>
+        <div class="price-tag">For growing GST-registered businesses.</div>
+        <ul class="price-feats">
+          <li>50,000 transactions / year</li>
+          <li>5 users</li>
+          <li>Everything in Standard</li>
+          <li>GST returns + TDS reports</li>
+          <li>AI document reader</li>
+          <li>Voice voucher entry</li>
+        </ul>
+        <a class="price-btn" href="#">Start 30-day trial</a>
+      </div>
+
+      <div class="price-card">
+        <div class="price-name">Premium</div>
+        <div class="price-amt">₹9,999<span class="small">/ year</span></div>
+        <div class="price-tag">For multi-branch &amp; CA firms.</div>
+        <ul class="price-feats">
+          <li>100,000 transactions / year</li>
+          <li>10 users</li>
+          <li>Everything in Pro</li>
+          <li>WhatsApp delivery</li>
+          <li>Audit export</li>
+          <li>API access</li>
+        </ul>
+        <a class="price-btn" href="#">Talk to us</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Final CTA ───────────────────────────────────────────────────── -->
+<section class="final">
+  <h2>Stop typing journal entries.</h2>
+  <p>
+    Try AccGenie free for 50 vouchers. Every feature unlocked. Your data
+    stays on your machine — we never see it.
+  </p>
+  <div class="cta-row">
+    <a class="btn-primary" href="#">Download for Windows</a>
+    <a class="btn-ghost" href="#features" style="background: transparent; color: white; border-color: rgba(255,255,255,0.3);">See features</a>
+  </div>
+</section>
+
+<footer>
+  <p>© 2026 AccGenie · <a href="#">Privacy</a> · <a href="#">Support</a> · info@ai-consultants.in</p>
+</footer>
+
+</body>
+</html>

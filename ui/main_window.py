@@ -392,26 +392,45 @@ class MainWindow(QMainWindow):
         self.register_page("Ledger Balances", "⚖", self._balance_page,
                             section_above="REPORTS")
 
-        # ── Financial reports — STANDARD+ ──
-        if lmgr.has_feature("reports"):
+        # ── Financial reports — each report gated individually ──
+        report_specs = [
+            ("trial_balance",     "Trial Balance",  "📊", "TrialBalancePage"),
+            ("profit_loss",       "P & L",          "📈", "ProfitLossPage"),
+            ("balance_sheet",     "Balance Sheet",  "🏦", "BalanceSheetPage"),
+            ("cash_book",         "Cash Book",      "💵", "CashBookPage"),
+            ("bank_book",         "Bank Book",      "🏛", "BankBookPage"),
+            ("ledger_account",    "Ledger Account", "📒", "LedgerAccountPage"),
+            ("receipts_payments", "Rcpts & Pmts",   "↕",  "ReceiptsPaymentsPage"),
+        ]
+        any_report_unlocked = any(lmgr.has_feature(fid) for fid, *_ in report_specs)
+        if any_report_unlocked:
             from ui.reports_page import (
                 TrialBalancePage, ProfitLossPage, BalanceSheetPage,
                 CashBookPage, BankBookPage, ReceiptsPaymentsPage,
                 LedgerAccountPage,
             )
             rpt = ReportsEngine(self.db, self.company_id)
-            self.register_page("Trial Balance",  "📊", TrialBalancePage(rpt))
-            self.register_page("P & L",          "📈", ProfitLossPage(rpt))
-            self.register_page("Balance Sheet",  "🏦", BalanceSheetPage(rpt))
-            self.register_page("Cash Book",      "💵", CashBookPage(rpt))
-            self.register_page("Bank Book",      "🏛", BankBookPage(rpt))
-            self.register_page("Ledger Account", "📒",
-                LedgerAccountPage(rpt, self.tree, self.engine))
-            self.register_page("Rcpts & Pmts",   "↕",  ReceiptsPaymentsPage(rpt))
+            page_factories = {
+                "TrialBalancePage":     lambda: TrialBalancePage(rpt),
+                "ProfitLossPage":       lambda: ProfitLossPage(rpt),
+                "BalanceSheetPage":     lambda: BalanceSheetPage(rpt),
+                "CashBookPage":         lambda: CashBookPage(rpt),
+                "BankBookPage":         lambda: BankBookPage(rpt),
+                "LedgerAccountPage":    lambda: LedgerAccountPage(rpt, self.tree, self.engine),
+                "ReceiptsPaymentsPage": lambda: ReceiptsPaymentsPage(rpt),
+            }
+            for fid, label, icon, page_cls in report_specs:
+                if lmgr.has_feature(fid):
+                    self.register_page(label, icon, page_factories[page_cls]())
+                else:
+                    self.register_page(
+                        label, icon,
+                        self._locked_page(fid, "STANDARD", label),
+                    )
         else:
             self.register_page(
                 "Reports", "📊",
-                self._locked_page("reports", "STANDARD", "Financial Reports"),
+                self._locked_page("trial_balance", "STANDARD", "Financial Reports"),
             )
 
         # ── Bank Reconciliation — STANDARD+ ──

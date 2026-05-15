@@ -26,137 +26,18 @@ SERVER_URL   = os.environ.get(
 
 DEV_KEY = "ACCG-DEV-FULL"
 
-PLANS = ["DEMO", "FREE", "STANDARD", "PRO", "PREMIUM"]
+# Per-version operator config — baked from config/pricing.xlsx at build time.
+# Edit the xlsx and re-run build/bake_config.py to change these.
+from core._baked_config import (
+    PLANS,
+    PLAN_LIMITS,
+    OVERAGE_RATES,
+    PLAN_FEATURES,
+    FEATURE_UPGRADE_MAP,
+    PLAN_PRICES,
+)
 
-DEMO_TXN_LIMIT = 10  # full-feature trial cap
-
-PLAN_LIMITS = {
-    "DEMO":     DEMO_TXN_LIMIT,
-    "FREE":     5_000,
-    "STANDARD": 20_000,
-    "PRO":      50_000,
-    "PREMIUM":  100_000,
-}
-
-OVERAGE_RATES = {
-    "DEMO":     0.0,
-    "FREE":     0.0,
-    "STANDARD": 0.30,
-    "PRO":      0.30,
-    "PREMIUM":  0.20,
-}
-
-PLAN_FEATURES = {
-    # DEMO mirrors PREMIUM (everything unlocked) but is capped at
-    # DEMO_TXN_LIMIT vouchers — see can_post_voucher().
-    "DEMO": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_unlimited",
-        "gst",
-        "tds",
-        "ai_document_reader",
-        "verbal_entry",
-        "auto_billing",
-        "whatsapp",
-        "audit_export",
-        "api_access",
-        "verticals",
-    ],
-    "FREE": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "backup",
-    ],
-    "STANDARD": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_2",
-    ],
-    "PRO": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_5",
-        "gst",
-        "tds",
-        "ai_document_reader",
-        "verbal_entry",
-        "auto_billing",
-    ],
-    "PREMIUM": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_unlimited",
-        "gst",
-        "tds",
-        "ai_document_reader",
-        "verbal_entry",
-        "auto_billing",
-        "whatsapp",
-        "audit_export",
-        "api_access",
-        "verticals",
-    ],
-}
-
-FEATURE_UPGRADE_MAP = {
-    "reports":             "STANDARD",
-    "export_excel":        "STANDARD",
-    "export_pdf":          "STANDARD",
-    "bank_reconciliation":   "STANDARD",
-    "ledger_reconciliation": "STANDARD",
-    "book_migration":        "STANDARD",
-    "gst":                 "PRO",
-    "tds":                 "PRO",
-    "ai_document_reader":  "PRO",
-    "verbal_entry":        "PRO",
-    "auto_billing":        "PRO",
-    "whatsapp":            "PREMIUM",
-    "audit_export":        "PREMIUM",
-    "api_access":          "PREMIUM",
-    "verticals":           "PREMIUM",
-}
-
-PLAN_PRICES = {
-    "DEMO":     0,
-    "FREE":     0,
-    "STANDARD": 1999,
-    "PRO":      4999,
-    "PREMIUM":  9999,
-}
+DEMO_TXN_LIMIT = PLAN_LIMITS["DEMO"]
 
 
 class FeatureNotAvailable(Exception):
@@ -335,11 +216,21 @@ class LicenseManager:
         if self.is_expired:
             read_features = [
                 "daybook", "ledger_balances",
-                "reports", "export_excel", "export_pdf",
+                "trial_balance", "profit_loss", "balance_sheet",
+                "cash_book", "bank_book", "ledger_account", "receipts_payments",
+                "export_excel", "export_pdf",
             ]
             return feature in read_features
-        features = self._data.get("features", PLAN_FEATURES.get(self.plan, []))
-        return feature in features
+        # The baked PLAN_FEATURES list for this plan is the source of truth —
+        # the cached `features` array in license.json may have been written
+        # by a prior version that used different feature ids (e.g. the old
+        # "reports" umbrella before per-report gating in 1.0.5). Trust the
+        # binary's plan map; fall back to whatever the server cached, in
+        # case future versions of the server expose features the binary
+        # doesn't know about yet.
+        baked = set(PLAN_FEATURES.get(self.plan, []))
+        cached = set(self._data.get("features") or [])
+        return feature in (baked | cached)
 
     def require_feature(self, feature: str):
         if not self.has_feature(feature):
@@ -461,7 +352,7 @@ class LicenseManager:
             payload = json.dumps({
                 "license_key": license_key,
                 "machine_id":  self.get_machine_id(),
-                "app_version": "1.0.4",
+                "app_version": "1.0.6",
             }).encode()
 
             req = urllib.request.Request(
@@ -529,7 +420,7 @@ class LicenseManager:
             payload = json.dumps({
                 "license_key": self.license_key,
                 "machine_id":  self.get_machine_id(),
-                "app_version": "1.0.4",
+                "app_version": "1.0.6",
             }).encode()
             req = urllib.request.Request(
                 f"{SERVER_URL}/license/validate",

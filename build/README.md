@@ -22,6 +22,42 @@ the target machine.
    `--assume-yes-for-downloads`. If you already have Visual Studio
    Build Tools, Nuitka will pick those up.
 
+## Operator config (Excel → baked Python)
+
+Per-version operator parameters — AI feature routing, plan tiers,
+features-per-plan, country pricing — live in two Excel files:
+
+```
+config\ai_features.xlsx    Which AI features are byok vs ag_key
+config\pricing.xlsx        Tiers, plan-feature matrix, country pricing
+```
+
+Edit these by hand in Excel. After editing, run the baker to compile
+the values into Python modules that ship inside the binary:
+
+```
+python build\bake_config.py
+```
+
+The baker writes:
+
+- `core\_baked_config.py` — consumed by the desktop app
+  (`core\ai_features.py`, `core\pricing.py`, `core\license_manager.py`).
+- `license_server\_baked_config.py` — consumed by the license-server
+  (`license_server\plans.py`).
+
+Both generated files are committed to git so a diff at review time shows
+exactly what changed in the operator config between releases. The
+running app never reads the .xlsx at runtime; values are frozen at bake
+time.
+
+If you ever need to reset the .xlsx templates back to seed defaults
+(careful — overwrites your edits), run:
+
+```
+python build\make_config_xlsx.py
+```
+
 ## Build
 
 From the repository root:
@@ -29,6 +65,12 @@ From the repository root:
 ```
 build\build.bat
 ```
+
+> **Note:** `build.bat` does not currently auto-run the baker. After
+> editing the .xlsx files, run `python build\bake_config.py` yourself
+> before kicking off `build.bat`. The baker writes generated .py files
+> that the Nuitka step then picks up.
+
 
 What it does (5–15 minutes total):
 

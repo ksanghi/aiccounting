@@ -17,7 +17,14 @@ from core.license_manager import (
     PLAN_FEATURES
 )
 
-UPGRADE_URL = "https://accgenie.in/pricing"
+# Upgrade flow is e-mail-based until accgenie.in is live. mailto: works on
+# every Windows desktop without depending on a parked domain.
+UPGRADE_URL = (
+    "mailto:info@ai-consultants.in"
+    "?subject=AccGenie%20upgrade%20request"
+    "&body=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20AccGenie%20plan."
+    "%20My%20current%20plan%20is%3A%20"
+)
 
 
 class ValidateThread(QThread):
@@ -542,8 +549,11 @@ class LicensePage(QWidget):
                     }}
                 """)
                 target = plan_key
+                # mailto: URL — use & to append plan (the base already has
+                # ?subject=...&body=...). Some clients tolerate ? twice but
+                # & is the spec-correct way.
                 up_btn.clicked.connect(
-                    lambda _, p=target: webbrowser.open(f"{UPGRADE_URL}?plan={p}")
+                    lambda _, p=target: webbrowser.open(f"{UPGRADE_URL}&plan={p}")
                 )
                 rl.addWidget(up_btn)
 

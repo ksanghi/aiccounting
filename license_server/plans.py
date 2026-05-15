@@ -1,96 +1,35 @@
 """
 Server-side source of truth for plan features and limits.
 
-Mirrors core/license_manager.py on the desktop client. The desktop has its own
-copy as a fallback for when the server is unreachable; this is what gets
-returned from /license/validate and is what should be authoritative.
+Baked from `config/pricing.xlsx` at build time — operator edits the .xlsx,
+runs `build/bake_config.py`, which writes both `core/_baked_config.py`
+(for the desktop app) and `license_server/_baked_config.py` (for this
+server). This module is just a thin re-export so existing imports
+(`from license_server.plans import PLANS, ...`) keep working.
+
+The license_server side intentionally does NOT include the DEMO tier —
+DEMO is a desktop-only "no key yet" trial. Server-issued keys are FREE
+through PREMIUM.
 """
+from license_server._baked_config import (
+    PLANS as _ALL_PLANS,
+    PLAN_LIMITS as _ALL_PLAN_LIMITS,
+    PLAN_USER_LIMITS as _ALL_PLAN_USER_LIMITS,
+    PLAN_SEATS as _ALL_PLAN_SEATS,
+    PLAN_FEATURES as _ALL_PLAN_FEATURES,
+)
 
-PLANS = ["FREE", "STANDARD", "PRO", "PREMIUM"]
 
-PLAN_LIMITS = {
-    "FREE":     5_000,
-    "STANDARD": 20_000,
-    "PRO":      50_000,
-    "PREMIUM":  100_000,
-}
+def _strip_demo(d):
+    if isinstance(d, dict):
+        return {k: v for k, v in d.items() if k != "DEMO"}
+    if isinstance(d, list):
+        return [x for x in d if x != "DEMO"]
+    return d
 
-PLAN_USER_LIMITS = {
-    "FREE":     1,
-    "STANDARD": 2,
-    "PRO":      5,
-    "PREMIUM":  999,
-}
 
-# Per-tier machine seat caps. Replaces the old global
-# settings.max_machines_per_key. Mirrors what the desktop's pricing.json
-# 'tiers' section will eventually express; once the operator fills that file
-# in we can lift these from there instead of hard-coding.
-PLAN_SEATS = {
-    "FREE":     1,
-    "STANDARD": 2,
-    "PRO":      5,
-    "PREMIUM":  10,
-}
-
-PLAN_FEATURES = {
-    "FREE": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "backup",
-    ],
-    "STANDARD": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_2",
-    ],
-    "PRO": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_5",
-        "gst",
-        "tds",
-        "ai_document_reader",
-        "verbal_entry",
-        "auto_billing",
-    ],
-    "PREMIUM": [
-        "vouchers",
-        "daybook",
-        "ledger_balances",
-        "reports",
-        "export_excel",
-        "export_pdf",
-        "bank_reconciliation",
-        "ledger_reconciliation",
-        "book_migration",
-        "backup",
-        "multi_user_unlimited",
-        "gst",
-        "tds",
-        "ai_document_reader",
-        "verbal_entry",
-        "auto_billing",
-        "whatsapp",
-        "audit_export",
-        "api_access",
-        "verticals",
-    ],
-}
+PLANS = _strip_demo(_ALL_PLANS)
+PLAN_LIMITS = _strip_demo(_ALL_PLAN_LIMITS)
+PLAN_USER_LIMITS = _strip_demo(_ALL_PLAN_USER_LIMITS)
+PLAN_SEATS = _strip_demo(_ALL_PLAN_SEATS)
+PLAN_FEATURES = _strip_demo(_ALL_PLAN_FEATURES)
