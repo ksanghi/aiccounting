@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=AccGenie
-set VERSION=1.0.7
+set VERSION=1.0.10
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
@@ -82,10 +82,15 @@ if not exist %DIST_DIR% mkdir %DIST_DIR%
 
 if errorlevel 1 (
     echo *** Inno Setup build failed. ***
+    python tools\wa_notify.py "AccGenie %VERSION%: build FAILED at Inno Setup step." 2>nul
     exit /b 1
 )
 
 echo.
 echo === Done. Installer at:  %DIST_DIR%\%APP_NAME%-Setup-%VERSION%.exe ===
 echo.
+
+REM Best-effort WhatsApp ping — silent no-op if CallMeBot env vars unset.
+python tools\wa_notify.py "AccGenie %VERSION% built. %DIST_DIR%\%APP_NAME%-Setup-%VERSION%.exe is ready." 2>nul
+
 endlocal

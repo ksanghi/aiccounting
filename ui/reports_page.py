@@ -631,6 +631,14 @@ class _LedgerBookPage(_ReportBase):
         if self.SHOW_CLEARED:
             headers.append("Cleared")
         t = _make_table(headers, stretch_cols=[3])
+        # Dense rows + tight cell padding override (global stylesheet pads
+        # 8/12 which would push each row to ~34px).
+        t.verticalHeader().setDefaultSectionSize(26)
+        t.setStyleSheet(
+            "QTableWidget::item { padding: 2px 8px; }"
+            "QHeaderView::section { padding: 4px 8px; }"
+        )
+
         for tx in book["transactions"]:
             r = t.rowCount()
             t.insertRow(r)
@@ -651,6 +659,25 @@ class _LedgerBookPage(_ReportBase):
                     "✓" if cleared else "",
                     colour=THEME["success"] if cleared else None,
                 ))
+
+        # KEY FIX: size the inner table to fit ALL its rows. Without this
+        # Qt sizes the table to its default minimum (~80 px ≈ 2-3 rows)
+        # and the rest of the bank's transactions are hidden inside an
+        # inner vertical scrollbar — the user sees only "the banks listed"
+        # with nothing tangible. The outer QScrollArea handles overflow.
+        row_count = t.rowCount()
+        if row_count == 0:
+            t.setFixedHeight(t.horizontalHeader().height() + 36)
+            empty = QLabel("(no transactions in this period)")
+            empty.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
+        else:
+            header_h = t.horizontalHeader().height()
+            rows_h   = sum(t.rowHeight(r) for r in range(row_count))
+            # Frame border (2) + a couple of px for the horizontal scrollbar
+            # area if columns overflow horizontally.
+            t.setFixedHeight(header_h + rows_h + 6)
+            t.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            t.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         lay.addWidget(t)
 
         closing = QLabel(f"Closing Balance:  {_fmt(book['closing'])}")

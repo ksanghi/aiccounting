@@ -669,16 +669,293 @@ class BankReconciler:
         return [dict(r) for r in rows]
 
     def unmatched_statement_lines(self, statement_id: int) -> list[dict]:
+        # Excludes IGNORED — those move to a dedicated Ignored tab so they
+        # stop cluttering the active reconciliation view. FLAGGED stays
+        # here because the user is still planning to act on it.
         rows = self.db.execute(
             "SELECT id, txn_date, amount, sign, narration, reference, "
             "       match_status, notes "
             "  FROM bank_statement_lines "
             " WHERE statement_id=? "
-            "   AND match_status IN ('UNMATCHED','FLAGGED','IGNORED') "
+            "   AND match_status IN ('UNMATCHED','FLAGGED') "
             " ORDER BY txn_date, line_index",
             (statement_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def find_active_statement(self, bank_ledger_id: int) -> dict | None:
+        """
+        Return the most-recent NOT-YET-FINALISED bank_statement for this
+        ledger, with line-status counts. Used by the UI to offer
+        "Resume your in-progress reconciliation" instead of silently
+        starting a new one and orphaning the user's prior work.
+
+        A statement is "finalised" when bank_reconciliations has a row
+        pointing at it (BankReconciler.finalise()). Until that happens,
+        the user is still working on it — even if AccGenie was closed
+        mid-flow.
+
+        Returns dict with keys {id, file_name, period_from, period_to,
+        total, matched, unmatched, ignored} or None if no active
+        statement exists.
+        """
+        row = self.db.execute(
+            """SELECT bs.id, bs.file_name, bs.period_from, bs.period_to,
+                      COUNT(bsl.id) AS total,
+                      SUM(CASE WHEN bsl.match_status IN
+                          ('AUTO_MATCHED','MANUAL_MATCHED','VOUCHER_CREATED')
+                          THEN 1 ELSE 0 END) AS matched,
+                      SUM(CASE WHEN bsl.match_status IN ('UNMATCHED','FLAGGED')
+                          THEN 1 ELSE 0 END) AS unmatched,
+                      SUM(CASE WHEN bsl.match_status='IGNORED'
+                          THEN 1 ELSE 0 END) AS ignored
+                 FROM bank_statements bs
+            LEFT JOIN bank_statement_lines bsl ON bsl.statement_id = bs.id
+                WHERE bs.bank_ledger_id = ?
+                  AND bs.company_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bank_reconciliations br
+                      WHERE br.statement_id = bs.id
+                  )
+             GROUP BY bs.id
+             ORDER BY bs.id DESC
+                LIMIT 1""",
+            (bank_ledger_id, self.company_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_statement(self, statement_id: int) -> dict | None:
+        """Look up a stored statement (any state) for the resume flow."""
+        row = self.db.execute(
+            "SELECT * FROM bank_statements WHERE id=? AND company_id=?",
+            (statement_id, self.company_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def ignored_statement_lines(self, statement_id: int) -> list[dict]:
+        """Lines the user explicitly marked Ignore. Shown in their own tab
+        so they can be reviewed (and un-ignored via unmatch() if needed)
+        without crowding the active reconciliation view."""
+        rows = self.db.execute(
+            "SELECT id, txn_date, amount, sign, narration, reference, "
+            "       match_status, notes "
+            "  FROM bank_statement_lines "
+            " WHERE statement_id=? "
+            "   AND match_status = 'IGNORED' "
+            " ORDER BY txn_date, line_index",
+            (statement_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Suggestion: which contra ledger to use for an unmatched line ──────────
+
+    def suggest_contra_ledger(
+        self,
+        bank_ledger_id: int,
+        narration: str,
+        reference: str = "",
+    ) -> dict | None:
+        """
+        Look at past statement lines for this bank ledger that have been
+        manually-matched or had a voucher created, and find the contra
+        ledger that's been used most often for lines whose narration
+        contains the same distinctive keyword. Returns a dict with keys
+        {ledger_id, ledger_name, hits, sample_narration} or None.
+
+        Heuristic — purely SQL, no AI, no token store:
+          1. Extract uppercase alphabetic tokens of length >= 3 from the
+             narration + reference, excluding common bank-statement
+             noise words ('NEFT', 'IMPS', 'UPI', 'REF', 'TO', 'FROM',
+             'PAYMENT', 'TRANSFER', 'SAL', 'BIL', etc.).
+          2. For each token (longest first), query past resolved lines
+             whose narration LIKE %TOKEN%. Aggregate by contra ledger.
+          3. Return the top hit if it has >= 1 prior occurrence.
+
+        The "longest token first" rule means 'AMAZON PAY' suggests
+        based on 'AMAZON' rather than 'PAY'.
+        """
+        text = ((narration or "") + " " + (reference or "")).upper()
+        import re
+        tokens = re.findall(r"[A-Z]{3,}", text)
+        STOP = {
+            "NEFT", "IMPS", "UPI", "RTGS", "REF", "TXN", "PAY", "PAID",
+            "TO", "FROM", "FOR", "VIA", "BANK", "BANKING", "ACCOUNT", "ACC",
+            "TRANSFER", "TRF", "PAYMENT", "RECEIPT", "CREDIT", "DEBIT",
+            "DR", "CR", "INR", "RS", "RUPEE", "RUPEES", "INTL", "INST",
+            "PVT", "LTD", "LIMITED", "INDIA", "COM", "WWW", "BY", "OF",
+            "AND", "THE", "BIL", "BILL", "CHQ", "CHEQUE", "AUTO", "ATM",
+            "POS", "CARD", "RECVD", "RECEIVED", "SENT", "ONLINE",
+        }
+        tokens = [t for t in tokens if t not in STOP]
+        tokens.sort(key=len, reverse=True)
+
+        for tok in tokens[:5]:           # cap the work for very noisy lines
+            row = self.db.execute(
+                """SELECT vl.ledger_id AS lid,
+                          l.name        AS lname,
+                          COUNT(*)      AS hits,
+                          MAX(bsl.narration) AS sample
+                     FROM bank_statement_lines bsl
+                     JOIN voucher_lines vl
+                       ON vl.id = bsl.matched_voucher_line_id
+                     JOIN ledgers l ON l.id = vl.ledger_id
+                     JOIN bank_statements bs ON bs.id = bsl.statement_id
+                    WHERE bs.bank_ledger_id = ?
+                      AND bs.company_id     = ?
+                      AND bsl.match_status IN ('MANUAL_MATCHED','VOUCHER_CREATED')
+                      AND vl.ledger_id != ?
+                      AND UPPER(bsl.narration) LIKE ?
+                 GROUP BY vl.ledger_id, l.name
+                 ORDER BY hits DESC, MAX(bsl.resolved_at) DESC
+                    LIMIT 1""",
+                (bank_ledger_id, self.company_id, bank_ledger_id, f"%{tok}%"),
+            ).fetchone()
+            if row and (row["hits"] or 0) >= 1:
+                return {
+                    "ledger_id":   row["lid"],
+                    "ledger_name": row["lname"],
+                    "hits":        row["hits"],
+                    "matched_on":  tok,
+                    "sample_narration": row["sample"] or "",
+                }
+        return None
+
+    # ── Bulk actions on selected statement lines ──────────────────────────────
+
+    def bulk_ignore(
+        self,
+        statement_line_ids: list[int],
+        note: str = "",
+        user_id: int | None = None,
+    ) -> int:
+        """Mark every given line as IGNORED in one transaction. Returns
+        the number of rows actually updated (rows already in IGNORED
+        status are still touched — caller treats them as no-op)."""
+        if not statement_line_ids:
+            return 0
+        with self.db:
+            n = 0
+            for sl_id in statement_line_ids:
+                self.db.execute(
+                    "UPDATE bank_statement_lines "
+                    "   SET match_status='IGNORED', "
+                    "       resolved_at=datetime('now'), "
+                    "       resolved_by_user_id=?, "
+                    "       notes=? "
+                    " WHERE id=?",
+                    (user_id, note or None, sl_id),
+                )
+                n += 1
+        return n
+
+    def bulk_create_simple_vouchers(
+        self,
+        statement_line_ids: list[int],
+        bank_ledger_id: int,
+        contra_ledger_id: int,
+        narration_prefix: str = "",
+        user_id: int | None = None,
+    ) -> dict:
+        """
+        Post one PAYMENT-style two-line voucher per selected statement
+        line. Bank ledger goes on the side that matches the line's sign
+        (Cr line = money INTO bank → Dr bank, Cr contra; Dr line =
+        money OUT of bank → Dr contra, Cr bank). The narration combines
+        the user's prefix with the stmt narration.
+
+        Used by the "Create voucher for N selected" bulk action — e.g.
+        select all JIO lines, pick Telephone Expenses, fire once.
+        Returns {'posted': int, 'errors': [str]}.
+        """
+        from core.voucher_engine import VoucherEngine, VoucherDraft, VoucherLine
+
+        if not statement_line_ids:
+            return {"posted": 0, "errors": []}
+
+        engine = VoucherEngine(self.db, self.company_id, user_id=user_id)
+        posted = 0
+        errors: list[str] = []
+
+        for sl_id in statement_line_ids:
+            sl = self.db.execute(
+                "SELECT * FROM bank_statement_lines WHERE id=?",
+                (sl_id,),
+            ).fetchone()
+            if sl is None:
+                errors.append(f"Line {sl_id}: not found.")
+                continue
+            if sl["match_status"] not in ("UNMATCHED", "FLAGGED"):
+                errors.append(f"Line {sl_id} ({sl['txn_date']}): already resolved.")
+                continue
+
+            amount = float(sl["amount"] or 0.0)
+            sign   = (sl["sign"] or "").upper()
+            # sign 'CR' = money INTO bank (bank gets debited in our books;
+            # contra is the source = credit). 'DR' = money OUT = bank gets
+            # credited; contra is the destination = debit.
+            if sign == "CR":
+                bank_side, contra_side = "Dr", "Cr"
+            elif sign == "DR":
+                bank_side, contra_side = "Cr", "Dr"
+            else:
+                errors.append(f"Line {sl_id} ({sl['txn_date']}): unknown sign {sign!r}.")
+                continue
+
+            narration = (sl["narration"] or "").strip()
+            if narration_prefix:
+                narration = f"{narration_prefix.strip()} — {narration}".strip(" —")
+
+            draft = VoucherDraft(
+                voucher_type   = "RECEIPT" if sign == "CR" else "PAYMENT",
+                voucher_date   = sl["txn_date"],
+                narration      = narration,
+                reference      = sl["reference"] or "",
+                lines = [
+                    VoucherLine(ledger_id=bank_ledger_id,
+                                dr_amount=amount if bank_side == "Dr" else 0.0,
+                                cr_amount=amount if bank_side == "Cr" else 0.0),
+                    VoucherLine(ledger_id=contra_ledger_id,
+                                dr_amount=amount if contra_side == "Dr" else 0.0,
+                                cr_amount=amount if contra_side == "Cr" else 0.0),
+                ],
+            )
+            try:
+                pv = engine.post(draft)
+            except Exception as e:
+                errors.append(f"Line {sl_id} ({sl['txn_date']}): {e}")
+                continue
+
+            # Link the bank voucher_line back to the statement line so
+            # the reconciliation view marks it cleared.
+            vl_row = self.db.execute(
+                "SELECT id FROM voucher_lines "
+                " WHERE voucher_id=? AND ledger_id=? "
+                " ORDER BY id LIMIT 1",
+                (pv.voucher_id, bank_ledger_id),
+            ).fetchone()
+            vl_id = vl_row["id"] if vl_row else None
+            with self.db:
+                self.db.execute(
+                    "UPDATE bank_statement_lines "
+                    "   SET match_status='VOUCHER_CREATED', "
+                    "       matched_voucher_line_id=?, "
+                    "       resolved_at=datetime('now'), "
+                    "       resolved_by_user_id=? "
+                    " WHERE id=?",
+                    (vl_id, user_id, sl_id),
+                )
+                if vl_id:
+                    self.db.execute(
+                        "UPDATE voucher_lines "
+                        "   SET cleared_date=?, "
+                        "       bank_statement_line_id=?, "
+                        "       cleared_by_user_id=? "
+                        " WHERE id=?",
+                        (sl["txn_date"], sl_id, user_id, vl_id),
+                    )
+            posted += 1
+
+        return {"posted": posted, "errors": errors}
 
     def unmatched_book_lines(
         self, bank_ledger_id: int, period_from: str, period_to: str,

@@ -20,37 +20,45 @@ class ReportsEngine:
     # ── 1. Trial Balance ──────────────────────────────────────────────────────
 
     def trial_balance(self, as_of: str) -> list[dict]:
-        ledgers = self.db.execute(
-            """SELECT l.id, l.name as ledger, g.name as grp, g.nature,
-                      l.opening_balance, l.opening_type
-               FROM ledgers l
-               JOIN account_groups g ON l.group_id=g.id
-               WHERE l.company_id=? AND l.active=1
-               ORDER BY g.nature, g.name, l.name""",
-            (self.company_id,)
+        # Single aggregation query — was N+1 (one query per ledger). On a
+        # 115-ledger book this turned every Trial Balance refresh into
+        # 116 SQLite round-trips, blocking the UI.
+        ledger_rows = self.db.execute(
+            """SELECT l.id, l.name AS ledger, g.name AS grp, g.nature,
+                      l.opening_balance, l.opening_type,
+                      COALESCE(SUM(
+                        CASE WHEN v.is_cancelled = 0
+                              AND v.voucher_date <= ?
+                              AND v.company_id = ?
+                             THEN vl.dr_amount ELSE 0 END
+                      ), 0) AS txn_dr,
+                      COALESCE(SUM(
+                        CASE WHEN v.is_cancelled = 0
+                              AND v.voucher_date <= ?
+                              AND v.company_id = ?
+                             THEN vl.cr_amount ELSE 0 END
+                      ), 0) AS txn_cr
+                 FROM ledgers l
+                 JOIN account_groups g ON l.group_id = g.id
+            LEFT JOIN voucher_lines  vl ON vl.ledger_id  = l.id
+            LEFT JOIN vouchers       v  ON vl.voucher_id = v.id
+                WHERE l.company_id = ? AND l.active = 1
+             GROUP BY l.id
+             ORDER BY g.nature, g.name, l.name""",
+            (as_of, self.company_id, as_of, self.company_id, self.company_id),
         ).fetchall()
 
-        rows = []
-        for l in ledgers:
-            txn = self.db.execute(
-                """SELECT COALESCE(SUM(vl.dr_amount),0) as dr,
-                          COALESCE(SUM(vl.cr_amount),0) as cr
-                   FROM voucher_lines vl
-                   JOIN vouchers v ON vl.voucher_id=v.id
-                   WHERE vl.ledger_id=? AND v.is_cancelled=0
-                     AND v.company_id=? AND v.voucher_date<=?""",
-                (l["id"], self.company_id, as_of)
-            ).fetchone()
-
-            ob = l["opening_balance"]
+        rows: list[dict] = []
+        for l in ledger_rows:
+            ob = l["opening_balance"] or 0.0
             ot = l["opening_type"]
-            ob_dr = ob if ot == "Dr" else 0.0
-            ob_cr = ob if ot == "Cr" else 0.0
-            txn_dr = txn["dr"] or 0.0
-            txn_cr = txn["cr"] or 0.0
-            net = (ob_dr + txn_dr) - (ob_cr + txn_cr)
-            cl_dr = round(net, 2) if net >= 0 else 0.0
-            cl_cr = round(-net, 2) if net < 0 else 0.0
+            ob_dr  = ob if ot == "Dr" else 0.0
+            ob_cr  = ob if ot == "Cr" else 0.0
+            txn_dr = l["txn_dr"] or 0.0
+            txn_cr = l["txn_cr"] or 0.0
+            net    = (ob_dr + txn_dr) - (ob_cr + txn_cr)
+            cl_dr  = round(net, 2)  if net >= 0 else 0.0
+            cl_cr  = round(-net, 2) if net  < 0 else 0.0
 
             if ob_dr or ob_cr or txn_dr or txn_cr:
                 rows.append({
@@ -112,33 +120,43 @@ class ReportsEngine:
     # ── 3. Balance Sheet ──────────────────────────────────────────────────────
 
     def balance_sheet(self, as_of: str) -> dict:
+        # Single aggregation per nature — was N+1 (one query per ledger
+        # × four natures). On a 115-ledger book that was 115+ round-trips
+        # per BS refresh.
         def get_balances(nature: str) -> list[dict]:
             rows = self.db.execute(
-                """SELECT l.id, l.name as ledger, g.name as grp,
-                          l.opening_balance, l.opening_type
-                   FROM ledgers l
-                   JOIN account_groups g ON l.group_id=g.id
-                   WHERE l.company_id=? AND g.nature=? AND l.active=1
-                   ORDER BY g.name, l.name""",
-                (self.company_id, nature)
+                """SELECT l.id, l.name AS ledger, g.name AS grp,
+                          l.opening_balance, l.opening_type,
+                          COALESCE(SUM(
+                            CASE WHEN v.is_cancelled = 0
+                                  AND v.voucher_date <= ?
+                                  AND v.company_id = ?
+                                 THEN vl.dr_amount ELSE 0 END
+                          ), 0) AS txn_dr,
+                          COALESCE(SUM(
+                            CASE WHEN v.is_cancelled = 0
+                                  AND v.voucher_date <= ?
+                                  AND v.company_id = ?
+                                 THEN vl.cr_amount ELSE 0 END
+                          ), 0) AS txn_cr
+                     FROM ledgers l
+                     JOIN account_groups g ON l.group_id = g.id
+                LEFT JOIN voucher_lines  vl ON vl.ledger_id  = l.id
+                LEFT JOIN vouchers       v  ON vl.voucher_id = v.id
+                    WHERE l.company_id = ? AND g.nature = ? AND l.active = 1
+                 GROUP BY l.id
+                 ORDER BY g.name, l.name""",
+                (as_of, self.company_id, as_of, self.company_id,
+                 self.company_id, nature),
             ).fetchall()
             result = []
             for l in rows:
-                txn = self.db.execute(
-                    """SELECT COALESCE(SUM(vl.dr_amount),0) as dr,
-                              COALESCE(SUM(vl.cr_amount),0) as cr
-                       FROM voucher_lines vl
-                       JOIN vouchers v ON vl.voucher_id=v.id
-                       WHERE vl.ledger_id=? AND v.is_cancelled=0
-                         AND v.company_id=? AND v.voucher_date<=?""",
-                    (l["id"], self.company_id, as_of)
-                ).fetchone()
-                ob = l["opening_balance"]
+                ob = l["opening_balance"] or 0.0
                 ot = l["opening_type"]
                 ob_dr = ob if ot == "Dr" else 0.0
                 ob_cr = ob if ot == "Cr" else 0.0
-                txn_dr = txn["dr"] or 0.0
-                txn_cr = txn["cr"] or 0.0
+                txn_dr = l["txn_dr"] or 0.0
+                txn_cr = l["txn_cr"] or 0.0
                 net = (ob_dr + txn_dr) - (ob_cr + txn_cr)
                 balance = abs(net)
                 if balance > 0.001:

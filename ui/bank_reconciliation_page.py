@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QInputDialog, QMenu, QPlainTextEdit,
 )
 from PySide6.QtCore import Qt, QDate, Signal, QThread
+from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME
 from ui.widgets import FilteredLedgerSearchEdit, AmountEdit, SmartDateEdit
@@ -172,6 +173,31 @@ class _CreateVoucherDialog(QDialog):
         )
         form.addRow(counter_label, self._counter)
 
+        # Suggest a contra ledger from past matched/created vouchers on
+        # this bank ledger. Saves the user looking up the same expense
+        # category repeatedly (e.g. every JIO debit → Telephone Expenses).
+        try:
+            suggestion = reconciler.suggest_contra_ledger(
+                bank_ledger_id=bank_ledger_id,
+                narration=stmt_line.get("narration", ""),
+                reference=stmt_line.get("reference", ""),
+            )
+        except Exception:
+            suggestion = None
+        if suggestion:
+            self._counter.search.setText(suggestion["ledger_name"])
+            self._counter._selected_id = suggestion["ledger_id"]
+            hits = suggestion["hits"]
+            hint_text = (
+                f"💡 Suggested from history: matched '{suggestion['matched_on']}' "
+                f"in {hits} prior voucher{'s' if hits > 1 else ''}. "
+                f"Change if not correct."
+            )
+            hint = QLabel(hint_text)
+            hint.setStyleSheet(f"color:{THEME['success']}; font-size:10px;")
+            hint.setWordWrap(True)
+            form.addRow("", hint)
+
         bank_lbl = QLabel(bank_ledger_name)
         bank_lbl.setStyleSheet(
             f"color:{THEME['text_dim']}; font-size:11px; padding:6px 0;"
@@ -319,6 +345,141 @@ class _FindCandidateDialog(QDialog):
         self.accept()
 
 
+# ── Bulk voucher creation ───────────────────────────────────────────────────
+
+class _BulkCreateVoucherDialog(QDialog):
+    """
+    Pick ONE contra ledger; post one PAYMENT/RECEIPT voucher per selected
+    statement line, all going to that ledger. Each voucher uses the
+    line's own date / amount / narration. The line's sign (DR vs CR)
+    decides which side the bank lands on per voucher.
+
+    Suggestion: looks at the first selected line's narration via
+    BankReconciler.suggest_contra_ledger() — if matches a past pattern,
+    pre-fills the picker.
+    """
+    def __init__(self, reconciler, tree,
+                 bank_ledger_id: int, bank_ledger_name: str,
+                 stmt_line_ids: list[int], parent=None):
+        super().__init__(parent)
+        self.reconciler     = reconciler
+        self.tree           = tree
+        self.bank_ledger_id = bank_ledger_id
+        self.stmt_line_ids  = stmt_line_ids
+
+        self.setWindowTitle(f"Create {len(stmt_line_ids)} vouchers")
+        self.setMinimumWidth(560)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        head = QLabel(
+            f"Posting <b>{len(stmt_line_ids)}</b> vouchers from the selected "
+            f"bank statement lines. All will land on the same contra ledger."
+        )
+        head.setWordWrap(True)
+        head.setStyleSheet(f"color:{THEME['accent']}; font-size:13px;")
+        layout.addWidget(head)
+
+        bank_lbl = QLabel(
+            f"Bank ledger: <b>{bank_ledger_name}</b>"
+        )
+        bank_lbl.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
+        layout.addWidget(bank_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        # Counter-ledger picker — pre-filled from history if available.
+        all_ledgers = [
+            l for l in self.tree.get_all_ledgers()
+            if l["id"] != bank_ledger_id
+        ]
+        self._counter = FilteredLedgerSearchEdit(
+            tree, calculator=None,
+            ledger_list=all_ledgers,
+            placeholder="Expense / income / vendor / customer account...",
+        )
+        form.addRow("Counter ledger", self._counter)
+
+        # Look up the first line's narration to compute a suggestion.
+        first_narr, first_ref = "", ""
+        if stmt_line_ids:
+            row = self.reconciler.db.execute(
+                "SELECT narration, reference FROM bank_statement_lines WHERE id=?",
+                (stmt_line_ids[0],),
+            ).fetchone()
+            if row:
+                first_narr = row["narration"] or ""
+                first_ref  = row["reference"] or ""
+
+        try:
+            suggestion = self.reconciler.suggest_contra_ledger(
+                bank_ledger_id=bank_ledger_id,
+                narration=first_narr, reference=first_ref,
+            )
+        except Exception:
+            suggestion = None
+        if suggestion:
+            self._counter.search.setText(suggestion["ledger_name"])
+            self._counter._selected_id = suggestion["ledger_id"]
+            hits = suggestion["hits"]
+            hint = QLabel(
+                f"💡 Suggested from history: matched "
+                f"'{suggestion['matched_on']}' in {hits} prior voucher"
+                f"{'s' if hits > 1 else ''}. Change if not correct."
+            )
+            hint.setStyleSheet(f"color:{THEME['success']}; font-size:10px;")
+            hint.setWordWrap(True)
+            form.addRow("", hint)
+
+        self._narration = QLineEdit()
+        self._narration.setFixedHeight(34)
+        self._narration.setPlaceholderText(
+            "Optional — prefixed to each voucher's narration"
+        )
+        form.addRow("Narration prefix", self._narration)
+
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        post_btn = QPushButton(f"Post {len(stmt_line_ids)} vouchers")
+        post_btn.setObjectName("btn_primary")
+        post_btn.clicked.connect(self._post)
+        btn_row.addWidget(cancel)
+        btn_row.addWidget(post_btn)
+        layout.addLayout(btn_row)
+
+    def _post(self):
+        contra_id = self._counter.selected_id
+        if not contra_id:
+            QMessageBox.warning(self, "Missing", "Please pick a counter ledger.")
+            return
+        try:
+            result = self.reconciler.bulk_create_simple_vouchers(
+                statement_line_ids=self.stmt_line_ids,
+                bank_ledger_id=self.bank_ledger_id,
+                contra_ledger_id=contra_id,
+                narration_prefix=self._narration.text().strip(),
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Bulk post failed", str(e))
+            return
+        posted = result.get("posted", 0)
+        errors = result.get("errors", [])
+        msg = f"Posted {posted} voucher(s)."
+        if errors:
+            msg += f"\n\n{len(errors)} line(s) failed:\n  • " + "\n  • ".join(errors[:8])
+            if len(errors) > 8:
+                msg += f"\n  … and {len(errors) - 8} more"
+        QMessageBox.information(self, "Bulk post", msg)
+        self.accept()
+
+
 # ── Main page ────────────────────────────────────────────────────────────────
 
 class BankReconciliationPage(QWidget):
@@ -342,6 +503,9 @@ class BankReconciliationPage(QWidget):
         self._period_from: str = ""
         self._period_to: str = ""
         self._pending_file_path: str = ""
+        # Avoid re-prompting "Resume reconciliation?" every time the user
+        # touches the ledger picker — fire once per bank-ledger selection.
+        self._last_resume_prompt_for: int | None = None
 
         self._import_thread: _ImportThread | None = None
 
@@ -563,10 +727,44 @@ class BankReconciliationPage(QWidget):
         return page
 
     def _on_bank_picked(self, ledger_id, name, _row):
+        # Reset the auto-prompt guard so changing ledger re-checks for an
+        # in-progress reconciliation on the newly-picked one.
+        if self._bank_ledger_id != ledger_id:
+            self._last_resume_prompt_for = None
         self._bank_ledger_id = ledger_id
         self._bank_ledger_name = name
         self._refresh_history()
         self._auto_fill_period()
+
+    def _on_resume_statement(self, statement_id: int, summary: dict | None = None):
+        """
+        Load a previously-imported (but not yet finalised) statement and
+        jump straight to the Review step. The user can pick up exactly
+        where they left off — every line's match_status / matched_voucher
+        / ignored note was persisted as they worked, so the 100-rows-done
+        state is already there in the DB.
+        """
+        stmt = self.reconciler.get_statement(statement_id)
+        if not stmt:
+            QMessageBox.warning(self, "Cannot resume",
+                                "That statement is no longer in the database.")
+            return
+        self._statement_id = statement_id
+        # Restore period bounds from the stored statement so the
+        # Unmatched-Book query covers the right range.
+        self._period_from = stmt.get("period_from") or ""
+        self._period_to   = stmt.get("period_to")   or ""
+        try:
+            qfrom = QDate.fromString(self._period_from, "yyyy-MM-dd")
+            qto   = QDate.fromString(self._period_to,   "yyyy-MM-dd")
+            if qfrom.isValid():
+                self._period_from_edit.setDate(qfrom)
+            if qto.isValid():
+                self._period_to_edit.setDate(qto)
+        except Exception:
+            pass
+        self._populate_review()
+        self._stack.setCurrentWidget(self._review_page)
 
     def _auto_fill_period(self):
         """
@@ -601,6 +799,7 @@ class BankReconciliationPage(QWidget):
         # Imported statements
         imports = self.reconciler.recent_imports(self._bank_ledger_id)
         self._imports_table.setRowCount(len(imports))
+        active_to_resume: dict | None = None  # for the auto-prompt below
         for r, row in enumerate(imports):
             self._imports_table.setItem(r, 0, QTableWidgetItem(row["file_name"]))
             self._imports_table.setItem(r, 1, QTableWidgetItem(
@@ -610,18 +809,73 @@ class BankReconciliationPage(QWidget):
             self._imports_table.setItem(r, 3, QTableWidgetItem(
                 f"{row['matched']} / {row['unmatched']} / {row['resolved_other']}"
             ))
-            status = "Finalised" if row["finalised"] else "In progress"
-            self._imports_table.setItem(r, 4, QTableWidgetItem(status))
+            in_progress = not row["finalised"]
+            status_text = "In progress" if in_progress else "Finalised"
+            status_item = QTableWidgetItem(status_text)
+            if in_progress:
+                status_item.setForeground(QColor(THEME["warning"]))
+            self._imports_table.setItem(r, 4, status_item)
+
+            cell = QWidget()
+            ch = QHBoxLayout(cell)
+            ch.setContentsMargins(6, 0, 6, 0)
+            ch.setSpacing(4)
+
+            if in_progress:
+                resume_btn = self._compact_btn("Resume ▸")
+                resume_btn.setStyleSheet(
+                    f"QPushButton {{ background:{THEME['accent']}; "
+                    f"color:white; border:none; border-radius:5px; "
+                    f"padding:0px 10px; font-size:11px; font-weight:bold; "
+                    f"min-height:0; }}"
+                    f"QPushButton:hover {{ background:{THEME['accent_hover']}; }}"
+                )
+                resume_btn.clicked.connect(
+                    lambda _, sid=row["id"], summary=row:
+                        self._on_resume_statement(sid, summary)
+                )
+                ch.addWidget(resume_btn)
+                # Remember the most recent (= first row, sorted DESC) so we
+                # can auto-prompt below.
+                if active_to_resume is None:
+                    active_to_resume = dict(row)
+
             del_btn = self._compact_btn("Delete")
             del_btn.clicked.connect(
                 lambda _, sid=row["id"], summary=row: self._on_delete_statement(sid, summary)
             )
-            cell = QWidget()
-            ch = QHBoxLayout(cell)
-            ch.setContentsMargins(6, 0, 6, 0)
             ch.addWidget(del_btn)
             ch.addStretch()
             self._imports_table.setCellWidget(r, 5, cell)
+
+        # Auto-prompt: if there's any in-progress import for this bank
+        # ledger, ask the user whether to resume. This is what the user
+        # asked for — they shouldn't have to know about the Imports
+        # table to recover an interrupted reconciliation. Only fires once
+        # per bank-picker selection, not on every refresh.
+        if (active_to_resume is not None
+                and self._bank_ledger_id != self._last_resume_prompt_for):
+            self._last_resume_prompt_for = self._bank_ledger_id
+            done = (active_to_resume.get("matched") or 0) + (active_to_resume.get("resolved_other") or 0)
+            total = active_to_resume.get("total_lines") or 0
+            box = QMessageBox(self)
+            box.setWindowTitle("Resume reconciliation?")
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setText(
+                f"You have an in-progress reconciliation for "
+                f"<b>{self._bank_ledger_name}</b>."
+            )
+            box.setInformativeText(
+                f"File: <i>{active_to_resume.get('file_name','')}</i><br>"
+                f"Period: {active_to_resume.get('period_from','')} → "
+                f"{active_to_resume.get('period_to','')}<br>"
+                f"<b>{done}</b> of <b>{total}</b> lines already done."
+            )
+            resume_b = box.addButton("Resume ▸", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Start fresh", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is resume_b:
+                self._on_resume_statement(active_to_resume["id"], active_to_resume)
 
         # Past reconciliations
         rows = self.reconciler.history_for_ledger(self._bank_ledger_id)
@@ -841,11 +1095,15 @@ class BankReconciliationPage(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(6)
 
-        # Top bar with back + step indicator
+        # Compact top bar — 26px tall so the tables get the rest of the
+        # window. On a 750-line statement every pixel of vertical space
+        # spent on chrome is one less row visible.
         bar = QHBoxLayout()
-        back_btn = QPushButton("← Back to Setup")
+        bar.setSpacing(8)
+        back_btn = QPushButton("← Setup")
+        back_btn.setFixedHeight(26)
         back_btn.clicked.connect(
             lambda: self._stack.setCurrentWidget(self._setup_page)
         )
@@ -859,6 +1117,7 @@ class BankReconciliationPage(QWidget):
 
         next_btn = QPushButton("Continue to Summary →")
         next_btn.setObjectName("btn_primary")
+        next_btn.setFixedHeight(26)
         next_btn.clicked.connect(self._go_to_summary)
         bar.addWidget(next_btn)
         layout.addLayout(bar)
@@ -872,16 +1131,141 @@ class BankReconciliationPage(QWidget):
             ["Date", "Sign", "Amount", "Narration", "Reference", "Status", ""],
             [110, 60, 120, 0, 130, 110, 320],
         )
+        # Multi-row select so the user can ctrl/shift-click a batch of
+        # lines (e.g. every JIO debit) and act on them in one go.
+        self._unmatched_stmt_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self._unmatched_book_table = self._make_table(
             ["Date", "Voucher #", "Type", "Amount", "Narration", ""],
             [110, 130, 90, 130, 0, 140],
         )
+        self._ignored_table = self._make_table(
+            ["Date", "Sign", "Amount", "Narration", "Reference", "Note", ""],
+            [110, 60, 120, 0, 130, 0, 130],
+        )
+
+        # Single thin toolbar above the Unmatched Statement table: filter
+        # input on the left, selection summary + bulk-action buttons on
+        # the right (buttons hidden until something is selected). All
+        # ~28px tall to maximise the room left for actual data rows on a
+        # 700-row statement.
+        unmatched_wrap = QWidget()
+        uw_layout = QVBoxLayout(unmatched_wrap)
+        uw_layout.setContentsMargins(0, 0, 0, 0)
+        uw_layout.setSpacing(4)
+
+        bar = QHBoxLayout()
+        bar.setContentsMargins(2, 2, 2, 2)
+        bar.setSpacing(6)
+
+        self._stmt_filter = QLineEdit()
+        self._stmt_filter.setPlaceholderText(
+            "🔍 Filter narration / reference — e.g. JIO, AMAZON…"
+        )
+        self._stmt_filter.setFixedHeight(28)
+        self._stmt_filter.setClearButtonEnabled(True)
+        self._stmt_filter.textChanged.connect(self._apply_stmt_filter)
+        bar.addWidget(self._stmt_filter, 3)
+
+        # "Select all visible" — typing JIO then clicking this is the
+        # 3-click workflow for the user's 750-row batch.
+        self._select_all_visible_btn = QPushButton("Select all visible")
+        self._select_all_visible_btn.setFixedHeight(28)
+        self._select_all_visible_btn.clicked.connect(self._select_all_visible_stmt_rows)
+        bar.addWidget(self._select_all_visible_btn)
+
+        self._bulk_label = QLabel("")
+        self._bulk_label.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px;"
+        )
+        bar.addWidget(self._bulk_label)
+
+        self._bulk_voucher_btn = QPushButton("Create vouchers for selected →")
+        self._bulk_voucher_btn.setFixedHeight(28)
+        self._bulk_voucher_btn.setVisible(False)
+        self._bulk_voucher_btn.clicked.connect(self._on_bulk_create_voucher)
+        bar.addWidget(self._bulk_voucher_btn)
+        self._bulk_ignore_btn = QPushButton("Ignore selected")
+        self._bulk_ignore_btn.setFixedHeight(28)
+        self._bulk_ignore_btn.setVisible(False)
+        self._bulk_ignore_btn.clicked.connect(self._on_bulk_ignore)
+        bar.addWidget(self._bulk_ignore_btn)
+
+        uw_layout.addLayout(bar)
+        uw_layout.addWidget(self._unmatched_stmt_table)
+
+        # Toggle the bulk buttons whenever the selection changes.
+        self._unmatched_stmt_table.itemSelectionChanged.connect(
+            self._refresh_bulk_buttons
+        )
+
         self._tabs.addTab(self._matched_table, "Matched")
-        self._tabs.addTab(self._unmatched_stmt_table, "Unmatched Statement")
+        self._tabs.addTab(unmatched_wrap, "Unmatched Statement")
         self._tabs.addTab(self._unmatched_book_table, "Unmatched Book")
+        self._tabs.addTab(self._ignored_table, "Ignored")
         layout.addWidget(self._tabs, 1)
 
         return page
+
+    def _refresh_bulk_buttons(self):
+        n = len(self._selected_stmt_line_ids())
+        # Hide buttons entirely when no selection — gives back ~120px of
+        # horizontal room and signals "select first" by their absence.
+        self._bulk_voucher_btn.setVisible(n > 0)
+        self._bulk_ignore_btn.setVisible(n > 0)
+        if n == 0:
+            self._bulk_label.setText("")
+        else:
+            self._bulk_label.setText(f"<b>{n}</b> selected")
+
+    def _apply_stmt_filter(self, text: str):
+        """Hide rows whose narration / reference don't contain the search
+        text (case-insensitive substring). Empty filter shows all rows."""
+        needle = (text or "").strip().lower()
+        t = self._unmatched_stmt_table
+        for r in range(t.rowCount()):
+            if not needle:
+                t.setRowHidden(r, False)
+                continue
+            narr = (t.item(r, 3).text() if t.item(r, 3) else "").lower()
+            ref  = (t.item(r, 4).text() if t.item(r, 4) else "").lower()
+            t.setRowHidden(r, needle not in narr and needle not in ref)
+
+    def _select_all_visible_stmt_rows(self):
+        """Select every NON-HIDDEN row on the Unmatched Statement table.
+        Pairs with the filter input — type 'JIO' → click → bulk-act."""
+        t = self._unmatched_stmt_table
+        t.clearSelection()
+        sel = t.selectionModel()
+        from PySide6.QtCore import QItemSelection, QItemSelectionModel
+        selection = QItemSelection()
+        for r in range(t.rowCount()):
+            if t.isRowHidden(r):
+                continue
+            top    = t.model().index(r, 0)
+            bottom = t.model().index(r, t.columnCount() - 1)
+            selection.select(top, bottom)
+        sel.select(
+            selection,
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows,
+        )
+
+    def _selected_stmt_line_ids(self) -> list[int]:
+        """Return the bank_statement_lines.id values for the rows the
+        user has selected on the Unmatched Statement table. Row → id is
+        carried on column-0's QTableWidgetItem via Qt.UserRole."""
+        ids: list[int] = []
+        for r in sorted({i.row() for i in
+                          self._unmatched_stmt_table.selectedItems()}):
+            item = self._unmatched_stmt_table.item(r, 0)
+            if item is None:
+                continue
+            lid = item.data(Qt.ItemDataRole.UserRole)
+            if lid:
+                ids.append(int(lid))
+        return ids
 
     @staticmethod
     def _compact_btn(text: str) -> QPushButton:
@@ -911,12 +1295,20 @@ class BankReconciliationPage(QWidget):
         t.setHorizontalHeaderLabels(headers)
         t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        t.setAlternatingRowColors(True)
         t.verticalHeader().setVisible(False)
-        # Global QSS gives QTableWidget::item padding: 8px 12px and the
-        # global QPushButton has min-height 34 + padding 8/18, so cells with
-        # action buttons need a generous row height to avoid text clipping in
-        # neighbouring text-only cells.
-        t.verticalHeader().setDefaultSectionSize(52)
+        # 32px rows: enough for the 28px _compact_btn action buttons but
+        # ~60% denser than the old 52px. On a 750-line statement this is
+        # the difference between 5 visible rows and ~14.
+        t.verticalHeader().setDefaultSectionSize(32)
+        # Override the global QTableWidget::item padding (8 12) which
+        # would force the visual row height up regardless of the section
+        # size. The bank-reco tables are dense-by-design; the rest of the
+        # app keeps the airier global padding.
+        t.setStyleSheet(
+            "QTableWidget::item { padding: 2px 8px; }"
+            "QHeaderView::section { padding: 4px 8px; }"
+        )
         hdr = t.horizontalHeader()
         for i, w in enumerate(widths):
             if w == 0:
@@ -957,7 +1349,11 @@ class BankReconciliationPage(QWidget):
         u_stmt = self.reconciler.unmatched_statement_lines(self._statement_id)
         self._unmatched_stmt_table.setRowCount(len(u_stmt))
         for r, s in enumerate(u_stmt):
-            self._unmatched_stmt_table.setItem(r, 0, QTableWidgetItem(s["txn_date"]))
+            date_item = QTableWidgetItem(s["txn_date"])
+            # Carry the statement_line.id on column 0 so multi-select
+            # bulk actions can map row → id.
+            date_item.setData(Qt.ItemDataRole.UserRole, s["id"])
+            self._unmatched_stmt_table.setItem(r, 0, date_item)
             self._unmatched_stmt_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
             self._unmatched_stmt_table.setItem(r, 2, QTableWidgetItem(
                 f"₹ {s['amount']:,.2f}"
@@ -1010,11 +1406,96 @@ class BankReconciliationPage(QWidget):
             ch.addStretch()
             self._unmatched_book_table.setCellWidget(r, 5, cell)
 
+        # Ignored — separate tab so resolved-as-ignored lines don't crowd
+        # the Unmatched view but stay reviewable.
+        ignored = self.reconciler.ignored_statement_lines(self._statement_id)
+        self._ignored_table.setRowCount(len(ignored))
+        for r, s in enumerate(ignored):
+            self._ignored_table.setItem(r, 0, QTableWidgetItem(s["txn_date"]))
+            self._ignored_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
+            self._ignored_table.setItem(r, 2, QTableWidgetItem(
+                f"₹ {s['amount']:,.2f}"
+            ))
+            self._ignored_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
+            self._ignored_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
+            self._ignored_table.setItem(r, 5, QTableWidgetItem(s.get("notes") or ""))
+            unignore = self._compact_btn("Un-ignore")
+            unignore.clicked.connect(
+                lambda _, sl_id=s["id"]: self._on_unignore(sl_id)
+            )
+            cell = QWidget()
+            ch = QHBoxLayout(cell)
+            ch.setContentsMargins(6, 0, 6, 0)
+            ch.addWidget(unignore)
+            ch.addStretch()
+            self._ignored_table.setCellWidget(r, 6, cell)
+
+        # Update tab labels with counts so the user sees at-a-glance what
+        # needs attention vs what's already resolved.
+        self._tabs.setTabText(0, f"Matched ({len(matched)})")
+        self._tabs.setTabText(1, f"Unmatched Statement ({len(u_stmt)})")
+        self._tabs.setTabText(2, f"Unmatched Book ({len(u_book)})")
+        self._tabs.setTabText(3, f"Ignored ({len(ignored)})")
+
+        self._refresh_bulk_buttons()
+        # Re-apply the user's filter after repopulating — important when
+        # they batch-act on JIO lines and the remaining unmatched should
+        # still be filtered to JIO so they can verify.
+        try:
+            self._apply_stmt_filter(self._stmt_filter.text())
+        except Exception:
+            pass
         self._review_summary.setText(
             f"  ✓ {len(matched)} matched   |   "
             f"⚠ {len(u_stmt)} stmt unmatched   |   "
-            f"⚠ {len(u_book)} book unmatched"
+            f"⚠ {len(u_book)} book unmatched   |   "
+            f"⊘ {len(ignored)} ignored"
         )
+
+    def _on_unignore(self, statement_line_id: int):
+        """Move an ignored line back to UNMATCHED so the user can act on it."""
+        try:
+            self.reconciler.unmatch(statement_line_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Un-ignore failed", str(e))
+            return
+        self._populate_review()
+
+    # ── Bulk actions ──────────────────────────────────────────────────────────
+
+    def _on_bulk_ignore(self):
+        ids = self._selected_stmt_line_ids()
+        if not ids:
+            return
+        note, ok = QInputDialog.getText(
+            self, f"Ignore {len(ids)} line(s)",
+            "Optional note applied to all selected lines "
+            "(e.g. 'reversed', 'duplicate', 'personal expense'):",
+        )
+        if not ok:
+            return
+        try:
+            n = self.reconciler.bulk_ignore(ids, note=note)
+        except Exception as e:
+            QMessageBox.critical(self, "Bulk ignore failed", str(e))
+            return
+        QMessageBox.information(
+            self, "Done", f"{n} line(s) moved to the Ignored tab."
+        )
+        self._populate_review()
+
+    def _on_bulk_create_voucher(self):
+        ids = self._selected_stmt_line_ids()
+        if not ids:
+            return
+        dlg = _BulkCreateVoucherDialog(
+            self.reconciler, self.tree,
+            self._bank_ledger_id, self._bank_ledger_name,
+            stmt_line_ids=ids,
+            parent=self,
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._populate_review()
 
     def _on_unmatch(self, statement_line_id: int):
         try:
