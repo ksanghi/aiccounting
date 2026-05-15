@@ -29,39 +29,47 @@ def _parse_date(s: str) -> date:
 
 
 def cmd_mint(args):
+    from license_server.plans import VALID_PRODUCTS
+    from license_server.services.license_mint import (
+        mint_license as _mint, MintError,
+    )
+
     if args.plan not in PLANS:
         sys.exit(f"Unknown plan: {args.plan}")
+    if args.product not in VALID_PRODUCTS:
+        sys.exit(f"Unknown product: {args.product} "
+                 f"(must be one of {VALID_PRODUCTS})")
 
     expires = _parse_date(args.expires)
     if expires < date.today():
         sys.exit("Expiry is in the past")
 
-    with SessionLocal() as db:
-        for _ in range(10):
-            key = generate_key()
-            if not db.scalar(select(License).where(License.license_key == key)):
-                break
-        else:
-            sys.exit("Could not generate unique key")
+    if not args.email:
+        sys.exit("--email is required so the customer can be contacted")
 
-        lic = License(
-            license_key=key,
-            plan=args.plan,
-            customer_email=args.email or "",
-            company_name=args.company or "",
-            expires_at=expires,
-            txn_limit=args.txn_limit or PLAN_LIMITS[args.plan],
-            user_limit=args.user_limit or PLAN_USER_LIMITS[args.plan],
-            notes=args.notes or "",
-        )
-        db.add(lic)
+    with SessionLocal() as db:
+        try:
+            lic = _mint(
+                db,
+                product       = args.product,
+                plan          = args.plan,
+                customer_email= args.email,
+                company_name  = args.company or "",
+                expires_at    = expires,
+                txn_limit     = args.txn_limit,
+                user_limit    = args.user_limit,
+                notes         = args.notes or "",
+            )
+        except MintError as e:
+            sys.exit(str(e))
         db.commit()
 
-        print(f"\n  License key:  {key}")
-        print(f"  Plan:         {args.plan}")
-        print(f"  Email:        {args.email or '-'}")
-        print(f"  Company:      {args.company or '-'}")
-        print(f"  Expires:      {expires.isoformat()}")
+        print(f"\n  License key:  {lic.license_key}")
+        print(f"  Product:      {lic.product}")
+        print(f"  Plan:         {lic.plan}")
+        print(f"  Email:        {lic.customer_email or '-'}")
+        print(f"  Company:      {lic.company_name or '-'}")
+        print(f"  Expires:      {lic.expires_at.isoformat()}")
         print(f"  Txn limit:    {lic.txn_limit:,}")
         print(f"  User limit:   {lic.user_limit}")
         print()
@@ -182,8 +190,13 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_mint = sub.add_parser("mint", help="Mint a new license key")
+    p_mint.add_argument("--product", default="accgenie",
+                         choices=["accgenie", "rwagenie"],
+                         help="Which product is the licence for "
+                              "(default: accgenie).")
     p_mint.add_argument("--plan", required=True, choices=PLANS)
-    p_mint.add_argument("--email", default="")
+    p_mint.add_argument("--email", default="",
+                         help="Customer email — required for mint.")
     p_mint.add_argument("--company", default="")
     p_mint.add_argument("--expires", required=True, help="YYYY-MM-DD")
     p_mint.add_argument("--notes", default="")

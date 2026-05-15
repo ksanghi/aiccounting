@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout — AccGenie / RWAGenie</title>
+<meta name="description" content="Pick a plan, pay via UPI / card / NetBanking, get your licence key in your inbox.">
+
+<!-- Razorpay Checkout JS — loads their hosted payment modal -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<style>
+:root {
+  --bg:#FFFFFF; --bg-soft:#F8FAFC; --bg-card:#FFFFFF;
+  --ink:#0F172A; --ink-mute:#475569; --ink-dim:#94A3B8;
+  --line:#E2E8F0; --accent:#635BFF; --accent-2:#00D4AA;
+  --danger:#EF4444; --success:#059669;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:var(--ink); }
+body { background:var(--bg-soft); min-height:100vh; }
+
+.wrap { max-width:780px; margin:0 auto; padding:48px 24px; }
+
+.brand { text-align:center; margin-bottom:32px; }
+.brand-name { font-size:24px; font-weight:800; letter-spacing:-0.02em; }
+.brand-name .grad {
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.brand-sub { color:var(--ink-mute); font-size:13px; margin-top:6px; }
+
+.card {
+  background:var(--bg-card); border:1px solid var(--line); border-radius:14px;
+  padding:30px; margin-bottom:18px;
+}
+
+h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px; }
+.subtitle { color:var(--ink-mute); font-size:14px; margin-bottom:24px; }
+
+/* Plan selector */
+.plans { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+@media (max-width:520px) { .plans { grid-template-columns:1fr; } }
+
+.plan-card {
+  border:1.5px solid var(--line); border-radius:10px; padding:16px 18px;
+  cursor:pointer; transition:border-color .15s, background .15s;
+  position:relative;
+}
+.plan-card:hover { border-color:var(--accent); }
+.plan-card.selected {
+  border-color:var(--accent); background:rgba(99,91,255,0.06);
+}
+.plan-card.selected::after {
+  content:"✓"; position:absolute; top:10px; right:14px;
+  color:var(--accent); font-weight:bold; font-size:18px;
+}
+.plan-name { font-weight:700; font-size:15px; margin-bottom:4px; }
+.plan-price { font-size:22px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px; }
+.plan-price .per { font-size:12px; color:var(--ink-mute); font-weight:500; }
+.plan-desc { font-size:11px; color:var(--ink-mute); line-height:1.5; }
+
+/* Product toggle */
+.product-toggle {
+  display:flex; gap:0; background:var(--bg-soft); border:1px solid var(--line);
+  border-radius:8px; padding:3px; margin-bottom:24px;
+}
+.product-toggle button {
+  flex:1; padding:8px 14px; border:none; background:transparent;
+  font-size:13px; font-weight:600; color:var(--ink-mute); cursor:pointer;
+  border-radius:6px; transition:background .15s, color .15s;
+}
+.product-toggle button.active {
+  background:var(--bg-card); color:var(--ink);
+  box-shadow:0 1px 3px rgba(0,0,0,0.06);
+}
+
+/* Form */
+.field { margin-bottom:14px; }
+.field label { display:block; font-size:12px; font-weight:600; color:var(--ink-mute); margin-bottom:4px; }
+.field input {
+  width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  font-size:14px; font-family:inherit; color:var(--ink); background:white;
+  transition:border-color .15s;
+}
+.field input:focus {
+  outline:none; border-color:var(--accent);
+}
+
+.btn-pay {
+  width:100%; padding:14px 20px; background:var(--accent); color:white;
+  border:none; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer;
+  margin-top:8px; transition:background .15s, transform .06s;
+}
+.btn-pay:hover { background:#4F46E5; }
+.btn-pay:active { transform:translateY(1px); }
+.btn-pay:disabled { background:var(--ink-dim); cursor:not-allowed; }
+
+.note {
+  font-size:11px; color:var(--ink-mute); margin-top:14px; text-align:center;
+  line-height:1.5;
+}
+
+.alert {
+  padding:10px 14px; border-radius:8px; font-size:13px; margin-top:14px;
+  display:none;
+}
+.alert.error   { background:#FEE2E2; color:#991B1B; display:block; }
+.alert.success { background:#D1FAE5; color:#065F46; display:block; }
+
+.success-screen { text-align:center; padding:40px 20px; display:none; }
+.success-icon {
+  width:64px; height:64px; border-radius:50%; background:var(--success);
+  color:white; display:inline-flex; align-items:center; justify-content:center;
+  font-size:32px; margin-bottom:18px;
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="brand">
+    <div class="brand-name"><span class="grad">AccGenie</span> &nbsp;<span style="color:#94A3B8;">/</span>&nbsp; <span class="grad">RWAGenie</span></div>
+    <div class="brand-sub">Secure checkout · UPI · Cards · NetBanking</div>
+  </div>
+
+  <!-- Checkout form -->
+  <div class="card" id="checkout-form">
+    <h1>Choose a plan</h1>
+    <div class="subtitle">Prices in INR, billed annually. Get your licence key by email within seconds of payment.</div>
+
+    <!-- Product toggle -->
+    <div class="product-toggle" role="tablist">
+      <button id="prod-acc" class="active" onclick="selectProduct('accgenie')">AccGenie · Accounting</button>
+      <button id="prod-rwa"             onclick="selectProduct('rwagenie')">RWAGenie · For Societies</button>
+    </div>
+
+    <!-- Plans grid (populated by JS based on selected product) -->
+    <div class="plans" id="plans"></div>
+
+    <div style="height:24px;"></div>
+
+    <div class="field">
+      <label for="email">Email (your licence key is sent here) *</label>
+      <input id="email" type="email" placeholder="you@example.com" required>
+    </div>
+    <div class="field">
+      <label for="name">Your name *</label>
+      <input id="name" type="text" placeholder="Krishan Sanghi" required>
+    </div>
+    <div class="field">
+      <label for="phone">Mobile (Razorpay needs this)</label>
+      <input id="phone" type="tel" placeholder="98XXX12345">
+    </div>
+    <div class="field">
+      <label for="company">Society / Company name (optional)</label>
+      <input id="company" type="text" placeholder="Sunshine Apartments CHS">
+    </div>
+
+    <div id="alert" class="alert"></div>
+
+    <button id="pay-btn" class="btn-pay" onclick="startCheckout()">
+      Pay with Razorpay →
+    </button>
+
+    <div class="note">
+      Payments processed by Razorpay. Your card / UPI details never touch our servers.<br>
+      Need help? Email <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a>.
+    </div>
+  </div>
+
+  <!-- Success screen -->
+  <div class="card success-screen" id="success-screen">
+    <div class="success-icon">✓</div>
+    <h1 style="color:var(--success);">Payment received</h1>
+    <div class="subtitle">
+      Your licence key is on its way to <strong id="success-email"></strong>.
+      Check your inbox (and spam) within a minute.
+    </div>
+    <div style="background:var(--bg-soft); padding:16px; border-radius:10px; margin-top:24px; text-align:left; font-size:13px; line-height:1.6;">
+      <strong>How to activate</strong>
+      <ol style="margin:10px 0 0 22px;">
+        <li>Open the desktop app (download from <a href="/download">accgenie.in/download</a> if you haven't already).</li>
+        <li>Click <strong>License</strong> in the sidebar.</li>
+        <li>Paste the key from your email and click <strong>Activate</strong>.</li>
+      </ol>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+// Point this at wherever the AccGenie license server is reachable.
+// In production: https://license.accgenie.in
+// For local dev:  http://localhost:8000
+const API_BASE = "https://license.accgenie.in";
+
+// Mirrors license_server/_baked_config.py (AG) and plans.py (RWA).
+// Keep in sync — when AG pricing.xlsx changes, update these too.
+// (Or refactor to fetch from a /api/v1/pricing endpoint — TBD.)
+const CATALOG = {
+  accgenie: [
+    { code: "STANDARD", inr: 1999, name: "Standard",
+      desc: "20,000 transactions, 2 users, reports, exports" },
+    { code: "PRO",      inr: 4999, name: "Pro",
+      desc: "50,000 transactions, 5 users, GST + TDS, AI document reader" },
+    { code: "PREMIUM",  inr: 9999, name: "Premium",
+      desc: "100,000 transactions, 10 users, WhatsApp, audit export, API" },
+  ],
+  rwagenie: [
+    { code: "STANDARD", inr: 2999, name: "Standard",
+      desc: "Up to 1,000 flats, auto-billing, late fees, facilities booking" },
+    { code: "PRO",      inr: 5999, name: "Pro",
+      desc: "Up to 2,500 flats + WhatsApp reminders, vendor mgmt, document storage" },
+    { code: "PREMIUM",  inr: 14999, name: "Premium",
+      desc: "Unlimited flats, all premium features" },
+  ],
+};
+
+let state = {
+  product: "accgenie",
+  plan:    "PRO",    // sensible default
+};
+
+// ── URL → preselection ──────────────────────────────────────────────────────
+// Marketing site links can pre-select:  checkout.html?product=rwagenie&plan=PRO
+(function applyQueryString() {
+  const q = new URLSearchParams(window.location.search);
+  const p = (q.get("product") || "").toLowerCase();
+  if (p === "accgenie" || p === "rwagenie") state.product = p;
+  const pl = (q.get("plan") || "").toUpperCase();
+  if (["STANDARD", "PRO", "PREMIUM"].includes(pl)) state.plan = pl;
+})();
+
+// ── Rendering ───────────────────────────────────────────────────────────────
+function selectProduct(prod) {
+  state.product = prod;
+  // Don't reset plan — it's the same code across both catalogs.
+  document.getElementById("prod-acc").classList.toggle("active", prod === "accgenie");
+  document.getElementById("prod-rwa").classList.toggle("active", prod === "rwagenie");
+  renderPlans();
+}
+
+function selectPlan(code) {
+  state.plan = code;
+  renderPlans();
+}
+
+function renderPlans() {
+  const container = document.getElementById("plans");
+  const catalog = CATALOG[state.product];
+  container.innerHTML = catalog.map(p => `
+    <div class="plan-card ${state.plan === p.code ? "selected" : ""}"
+         onclick="selectPlan('${p.code}')">
+      <div class="plan-name">${p.name}</div>
+      <div class="plan-price">₹${p.inr.toLocaleString("en-IN")} <span class="per">/ year</span></div>
+      <div class="plan-desc">${p.desc}</div>
+    </div>
+  `).join("");
+}
+
+// ── Submit → /api/v1/checkout/create-order → Razorpay Checkout JS ──────────
+function showAlert(kind, msg) {
+  const el = document.getElementById("alert");
+  el.className = "alert " + kind;
+  el.textContent = msg;
+}
+function hideAlert() {
+  document.getElementById("alert").className = "alert";
+}
+
+async function startCheckout() {
+  hideAlert();
+  const email   = document.getElementById("email").value.trim();
+  const name    = document.getElementById("name").value.trim();
+  const phone   = document.getElementById("phone").value.trim();
+  const company = document.getElementById("company").value.trim();
+
+  if (!email || email.indexOf("@") < 1) {
+    showAlert("error", "Please enter a valid email — the licence key gets sent there.");
+    return;
+  }
+  if (!name) {
+    showAlert("error", "Please enter your name.");
+    return;
+  }
+
+  const btn = document.getElementById("pay-btn");
+  btn.disabled = true; btn.textContent = "Creating order…";
+
+  let resp, body;
+  try {
+    resp = await fetch(`${API_BASE}/api/v1/checkout/create-order`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        product:        state.product,
+        plan:           state.plan,
+        country_code:   "IN",
+        customer_email: email,
+        customer_name:  name,
+        customer_phone: phone,
+        company_name:   company,
+      }),
+    });
+    body = await resp.json();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "Pay with Razorpay →";
+    showAlert("error", "Couldn't reach the server. Check your connection and try again.");
+    return;
+  }
+
+  if (!body.ok) {
+    btn.disabled = false; btn.textContent = "Pay with Razorpay →";
+    showAlert("error", body.error || "Couldn't create the order. Please try again.");
+    return;
+  }
+
+  // Hand off to Razorpay Checkout JS modal.
+  const rzp = new Razorpay({
+    key:       body.razorpay_key_id,
+    order_id:  body.order_id,
+    amount:    body.amount_paise,
+    currency:  body.currency,
+    name:      state.product === "rwagenie" ? "RWAGenie" : "AccGenie",
+    description: `${body.plan_name || state.plan} licence · 1 year`,
+    prefill:   {
+      name:    name,
+      email:   email,
+      contact: phone,
+    },
+    notes: {
+      product: state.product,
+      plan:    state.plan,
+    },
+    theme: { color: "#635BFF" },
+    handler: function (resp) {
+      // Payment-success client callback. The license key gets minted
+      // server-side via the /webhooks/razorpay endpoint — we just show
+      // the success screen here.
+      document.getElementById("checkout-form").style.display = "none";
+      document.getElementById("success-screen").style.display = "block";
+      document.getElementById("success-email").textContent = email;
+    },
+    modal: {
+      ondismiss: function () {
+        btn.disabled = false; btn.textContent = "Pay with Razorpay →";
+      }
+    }
+  });
+  rzp.on("payment.failed", function (resp) {
+    btn.disabled = false; btn.textContent = "Pay with Razorpay →";
+    showAlert("error", `Payment failed: ${resp.error.description || "unknown error"}`);
+  });
+  rzp.open();
+}
+
+// Initial render
+renderPlans();
+</script>
+</body>
+</html>

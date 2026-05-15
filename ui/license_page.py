@@ -17,9 +17,23 @@ from core.license_manager import (
     PLAN_FEATURES
 )
 
-# Upgrade flow is e-mail-based until accgenie.in is live. mailto: works on
-# every Windows desktop without depending on a parked domain.
-UPGRADE_URL = (
+# Upgrade flow points at the real checkout once accgenie.in is live.
+# Override locally with the ACCGENIE_UPGRADE_URL env var if needed
+# (e.g. pointing at a staging marketing site).
+#
+# The button-click handlers below append "?product=<x>&plan=<y>" to this
+# base — the marketing page reads those query params and pre-selects
+# the right tile in the checkout form.
+import os as _os
+UPGRADE_URL = _os.environ.get(
+    "ACCGENIE_UPGRADE_URL",
+    "https://accgenie.in/checkout.html",
+)
+
+# Email fallback for when the marketing site isn't reachable. Click
+# handlers fall back to this if UPGRADE_URL is unset (rarely needed
+# now that we ship a default).
+UPGRADE_FALLBACK_EMAIL = (
     "mailto:info@ai-consultants.in"
     "?subject=AccGenie%20upgrade%20request"
     "&body=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20AccGenie%20plan."
@@ -71,6 +85,27 @@ class LicensePage(QWidget):
         self._mgr = license_mgr
         self._build_ui()
         self.refresh()
+
+    def _upgrade_url(self, plan: str | None = None) -> str:
+        """Build the upgrade-checkout URL for the current product +
+        target plan. Reads the product from the cached licence so
+        RWAGenie installs (product=rwagenie) land on the right
+        pricing cards, and falls back to the mailto if the marketing
+        site is unreachable (env var override)."""
+        # mailto: still works as a graceful fallback if UPGRADE_URL is
+        # explicitly set to one (e.g. user disabled the marketing site).
+        if UPGRADE_URL.startswith("mailto:"):
+            return f"{UPGRADE_URL}{self._mgr.plan}" + (
+                f" (looking at {plan})" if plan else ""
+            )
+        product = getattr(self._mgr, "product", None) or \
+                  self._mgr._data.get("product") or "accgenie"
+        params = [f"product={product}"]
+        if plan:
+            params.append(f"plan={plan}")
+        # Use first '?' if URL has none; otherwise &.
+        sep = "?" if "?" not in UPGRADE_URL else "&"
+        return f"{UPGRADE_URL}{sep}{'&'.join(params)}"
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
@@ -263,7 +298,7 @@ class LicensePage(QWidget):
         nudge_btn.setObjectName("btn_primary")
         nudge_btn.setFixedHeight(34)
         nudge_btn.setFixedWidth(130)
-        nudge_btn.clicked.connect(lambda: webbrowser.open(UPGRADE_URL))
+        nudge_btn.clicked.connect(lambda: webbrowser.open(self._upgrade_url()))
 
         nf.addWidget(self._nudge_lbl, 1)
         nf.addWidget(nudge_btn)
@@ -549,11 +584,9 @@ class LicensePage(QWidget):
                     }}
                 """)
                 target = plan_key
-                # mailto: URL — use & to append plan (the base already has
-                # ?subject=...&body=...). Some clients tolerate ? twice but
-                # & is the spec-correct way.
                 up_btn.clicked.connect(
-                    lambda _, p=target: webbrowser.open(f"{UPGRADE_URL}&plan={p}")
+                    lambda _, p=target:
+                        webbrowser.open(self._upgrade_url(plan=p))
                 )
                 rl.addWidget(up_btn)
 
