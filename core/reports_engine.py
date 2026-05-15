@@ -152,6 +152,8 @@ class ReportsEngine:
 
         assets      = get_balances("ASSET")
         liabilities = get_balances("LIABILITY")
+        incomes     = get_balances("INCOME")
+        expenses    = get_balances("EXPENSE")
 
         # A ledger whose balance lands on the side opposite its group's
         # natural side (e.g. a bank overdraft → Asset nature with Cr balance,
@@ -164,11 +166,32 @@ class ReportsEngine:
                 for r in rows
             )
 
+        # Net P&L for the period = Income (Cr natural) − Expense (Dr natural).
+        # Positive → profit (increases capital); negative → loss (reduces
+        # capital). Push it onto the liabilities side as a synthetic
+        # "Profit/Loss for the period" row so the BS actually balances —
+        # without this, any company with transactions or mid-period opening
+        # balances shows an unexplained gap (the user's "Balance Sheet
+        # doesn't sum up" complaint).
+        total_income  = signed_total(incomes,  "Cr")
+        total_expense = signed_total(expenses, "Dr")
+        period_pnl    = round(total_income - total_expense, 2)
+        if abs(period_pnl) > 0.001:
+            liabilities.append({
+                "ledger":  "Profit/Loss for the period",
+                "group":   "Reserves & Surplus",
+                "balance": abs(period_pnl),
+                "side":    "Cr" if period_pnl >= 0 else "Dr",
+            })
+
         return {
             "assets":            assets,
             "liabilities":       liabilities,
             "total_assets":      round(signed_total(assets,      "Dr"), 2),
             "total_liabilities": round(signed_total(liabilities, "Cr"), 2),
+            "period_pnl":        period_pnl,
+            "total_income":      round(total_income,  2),
+            "total_expense":     round(total_expense, 2),
             "as_of":             as_of,
         }
 

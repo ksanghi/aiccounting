@@ -253,10 +253,13 @@ class LedgerBalancePage(QWidget):
         for g in groups:
             self.group_filter.addItem(g, g)
 
-        # Compute balances
+        # Compute balances in ONE query (was N+1 in earlier versions —
+        # caused "Not Responding" on 100+ ledger books, especially after
+        # Tally migration imports).
+        balances = self.tree.get_all_ledger_balances()
         self._all_data = []
         for l in ledgers:
-            b = self.tree.get_ledger_balance(l["id"])
+            b = balances.get(l["id"], {"balance": 0.0, "type": "Dr"})
             self._all_data.append({
                 "id":       l["id"],
                 "name":     l["name"],

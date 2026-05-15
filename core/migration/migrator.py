@@ -82,38 +82,88 @@ class Migrator:
     # ── Validation (no DB writes) ──────────────────────────────────────────────
 
     def validate(self, payload: MigrationPayload) -> ValidationResult:
+        """
+        Validation is intentionally LIBERAL. Anything we can recover from at
+        apply-time becomes a warning rather than an error, so one weird row
+        in a 100-row export doesn't block the whole import. Genuinely fatal
+        cases (empty payload, completely garbled file) still produce errors.
+
+        Recoverable cases → warning + skip-on-apply:
+          - Ledger has no name (the row is empty)
+          - Ledger has no group (Tally has reserved system ledgers like this)
+          - Ledger has bad opening_type (defaults to Dr on apply)
+          - Duplicate ledger name (first wins)
+          - Duplicate group name (first wins)
+        """
         errors: list[str] = []
         warnings: list[str] = []
 
         if not payload.ledgers and not payload.groups:
             errors.append("Payload is empty — no groups or ledgers to import.")
 
-        # Required fields per ledger
+        # Per-ledger checks — all warning-level. Apply step does the skipping.
         seen: set[str] = set()
+        nameless_count = 0
+        no_group_names: list[str] = []
+        dup_ledger_names: list[str] = []
+        bad_optype_names: list[str] = []
         for ld in payload.ledgers:
             if not ld.name:
-                errors.append("Found a ledger with no name.")
+                nameless_count += 1
                 continue
             if ld.name in seen:
-                errors.append(f"Duplicate ledger name in payload: {ld.name}")
+                dup_ledger_names.append(ld.name)
             seen.add(ld.name)
             if not ld.group_name:
-                errors.append(f"Ledger '{ld.name}' has no group.")
+                no_group_names.append(ld.name)
             if ld.opening_type and ld.opening_type not in ("Dr", "Cr"):
-                errors.append(
-                    f"Ledger '{ld.name}': opening_type must be Dr or Cr "
-                    f"(got '{ld.opening_type}')."
-                )
+                bad_optype_names.append(f"{ld.name} ({ld.opening_type!r})")
 
-        # Group name uniqueness
+        if nameless_count:
+            warnings.append(
+                f"{nameless_count} ledger row(s) had no name — those rows "
+                f"will be skipped."
+            )
+        if no_group_names:
+            warnings.append(
+                f"{len(no_group_names)} ledger(s) have no parent group and "
+                f"will be skipped on apply: "
+                f"{', '.join(no_group_names[:6])}"
+                + (f", … and {len(no_group_names)-6} more"
+                   if len(no_group_names) > 6 else "")
+            )
+        if dup_ledger_names:
+            warnings.append(
+                f"{len(dup_ledger_names)} duplicate ledger name(s) — first "
+                f"occurrence wins: {', '.join(dup_ledger_names[:6])}"
+            )
+        if bad_optype_names:
+            warnings.append(
+                f"{len(bad_optype_names)} ledger(s) had a non-Dr/Cr opening "
+                f"type — defaulting to Dr: {', '.join(bad_optype_names[:6])}"
+            )
+
+        # Group name uniqueness — also warning-level (first wins).
         gseen: set[str] = set()
+        nameless_groups = 0
+        dup_groups: list[str] = []
         for g in payload.groups:
             if not g.name:
-                errors.append("Found a group with no name.")
+                nameless_groups += 1
                 continue
             if g.name in gseen:
-                errors.append(f"Duplicate group name in payload: {g.name}")
+                dup_groups.append(g.name)
             gseen.add(g.name)
+        if nameless_groups:
+            warnings.append(
+                f"{nameless_groups} group(s) had no name — those entries "
+                f"will be skipped."
+            )
+        if dup_groups:
+            warnings.append(
+                f"{len(dup_groups)} duplicate group name(s) — first wins: "
+                f"{', '.join(dup_groups[:6])}"
+            )
 
         # All ledger group_names must exist in payload.groups OR in the
         # already-seeded company groups.
@@ -190,8 +240,16 @@ class Migrator:
                         (self.company_id,),
                     ).fetchall()
                 }
-                # Topologically sort: parents before children
+                # Topologically sort: parents before children. Skip
+                # nameless rows (validator already warned).
+                seen_payload_groups: set[str] = set()
                 for g in self._sorted_groups(payload.groups):
+                    if not g.name:
+                        continue
+                    if g.name in seen_payload_groups:
+                        # Duplicate within the payload — first wins.
+                        continue
+                    seen_payload_groups.add(g.name)
                     if g.name in existing_groups:
                         continue
                     parent_id = None
@@ -222,7 +280,19 @@ class Migrator:
                     groups_added += 1
 
                 # 2. Ledger master
+                seen_ledger_names: set[str] = set()
                 for ld in payload.ledgers:
+                    if not ld.name:
+                        # Validator already warned about nameless rows.
+                        continue
+                    if ld.name in seen_ledger_names:
+                        # Duplicate within the payload — first wins.
+                        skipped.append(f"{ld.name} (duplicate name)")
+                        continue
+                    seen_ledger_names.add(ld.name)
+                    if not ld.group_name:
+                        skipped.append(f"{ld.name} (no parent group in source)")
+                        continue
                     if ld.group_name not in existing_groups:
                         skipped.append(
                             f"{ld.name} (unknown group {ld.group_name})"

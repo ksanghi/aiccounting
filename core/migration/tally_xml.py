@@ -197,13 +197,30 @@ def parse_tally_xml(file_path: str) -> MigrationPayload:
         ))
 
     # ── Ledger master ──
+    skipped_reserved: list[str] = []
     for lel in data.iter("LEDGER"):
         name = (lel.attrib.get("NAME") or _txt(lel, "NAME")).strip()
         if not name:
             continue
+        if is_tally_reserved(name):
+            # Tally's reserved fixtures (e.g. "Profit & Loss A/c") have no
+            # parent and are managed by the system, not the user. Skip them
+            # — AccGenie's seeded chart already has equivalent ledgers
+            # under Reserves & Surplus.
+            skipped_reserved.append(name)
+            continue
         group_name = _txt(lel, "PARENT")
         ob = _parse_float(_txt(lel, "OPENINGBALANCE"))
-        opening_type = "Dr" if ob >= 0 else "Cr"
+        # Tally's OPENINGBALANCE sign convention is OPPOSITE to accounting
+        # Dr/Cr. Tally stores positive = Cr (income/liability natural side)
+        # and negative = Dr (asset/expense natural side). Verified on real
+        # Tally 9.1 exports:
+        #   Cash (asset)           : OPENINGBALANCE = -10,000  → Dr 10,000
+        #   HDFC Bank (asset)      : OPENINGBALANCE = -1,50,176→ Dr 1,50,176
+        #   Sundry Creditor (liab) : OPENINGBALANCE = +27,12,500 → Cr 27,12,500
+        # An older version of this parser inverted the rule and produced
+        # mirror-image books on every Tally import.
+        opening_type = "Cr" if ob >= 0 else "Dr"
         opening_balance = abs(ob)
 
         # Bank details
@@ -250,8 +267,34 @@ def parse_tally_xml(file_path: str) -> MigrationPayload:
             "Alt+E → Export → Format: XML)."
         )
 
+    if skipped_reserved:
+        payload.notes.append(
+            f"Skipped {len(skipped_reserved)} Tally reserved ledger(s) "
+            f"({', '.join(skipped_reserved)}) — these are system fixtures, "
+            f"not user ledgers. AccGenie's seeded chart already has the "
+            f"equivalent under Reserves & Surplus."
+        )
+
     return payload
 
 
 def _truthy(s: str) -> bool:
     return str(s or "").strip().lower() in ("yes", "true", "1")
+
+
+# Tally has a handful of "reserved" master names that exist in every
+# company file but don't represent user-editable ledgers — they're
+# system fixtures (the P&L summary line, the stock summary line, etc.)
+# and Tally exports them with PARENT empty. Skipping these at parse
+# time prevents the validator from rejecting an otherwise-valid 116-
+# ledger import because of one fixture line.
+_TALLY_RESERVED_NAMES = {
+    "profit & loss a/c",
+    "profit and loss a/c",
+    "stock-in-hand",
+    "stock in hand",
+}
+
+
+def is_tally_reserved(name: str) -> bool:
+    return (name or "").strip().lower() in _TALLY_RESERVED_NAMES

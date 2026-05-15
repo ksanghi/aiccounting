@@ -139,6 +139,60 @@ class AccountTree:
         rows = self.db.execute(q, (self.company_id,)).fetchall()
         return [dict(r) for r in rows]
 
+    def get_all_ledger_balances(self,
+                                 as_of: str | None = None) -> dict[int, dict]:
+        """
+        Compute running balances for EVERY ledger in this company, in one
+        SQL round-trip. Returns {ledger_id: {'balance': float, 'type': 'Dr'|'Cr'}}.
+
+        Existed to fix a freeze on LedgerBalancePage.refresh() — the old
+        implementation called get_ledger_balance() in a Python loop, which
+        executed 2 SQL queries per ledger (230+ round-trips for a typical
+        100-ledger company). One CTE + GROUP BY does the same job in a
+        single trip.
+        """
+        params: list = [self.company_id]
+        date_filter = ""
+        if as_of:
+            date_filter = " AND (v.voucher_date IS NULL OR v.voucher_date <= ?)"
+            params.append(as_of)
+        q = f"""
+            SELECT l.id,
+                   l.opening_balance,
+                   l.opening_type,
+                   COALESCE(SUM(
+                     CASE WHEN v.is_cancelled = 0
+                          THEN vl.dr_amount ELSE 0 END
+                   ), 0) AS total_dr,
+                   COALESCE(SUM(
+                     CASE WHEN v.is_cancelled = 0
+                          THEN vl.cr_amount ELSE 0 END
+                   ), 0) AS total_cr
+              FROM ledgers l
+              LEFT JOIN voucher_lines vl ON vl.ledger_id = l.id
+              LEFT JOIN vouchers      v  ON vl.voucher_id = v.id
+                                       {date_filter}
+             WHERE l.company_id = ?
+             GROUP BY l.id
+        """
+        # Note the param order: date filter (if present) joins BEFORE the
+        # WHERE company_id filter in placeholder order. Re-order params here.
+        if as_of:
+            params = [as_of, self.company_id]
+        rows = self.db.execute(q, params).fetchall()
+
+        out: dict[int, dict] = {}
+        for r in rows:
+            ob       = r["opening_balance"] or 0.0
+            ob_type  = r["opening_type"] or "Dr"
+            net_ob   = ob if ob_type == "Dr" else -ob
+            net      = net_ob + (r["total_dr"] or 0.0) - (r["total_cr"] or 0.0)
+            out[r["id"]] = {
+                "balance": abs(net),
+                "type":    "Dr" if net >= 0 else "Cr",
+            }
+        return out
+
     def get_ledger_balance(self, ledger_id: int,
                            as_of: str | None = None) -> dict:
         """

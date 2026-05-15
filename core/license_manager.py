@@ -352,7 +352,7 @@ class LicenseManager:
             payload = json.dumps({
                 "license_key": license_key,
                 "machine_id":  self.get_machine_id(),
-                "app_version": "1.0.6",
+                "app_version": "1.0.7",
             }).encode()
 
             req = urllib.request.Request(
@@ -420,7 +420,7 @@ class LicenseManager:
             payload = json.dumps({
                 "license_key": self.license_key,
                 "machine_id":  self.get_machine_id(),
-                "app_version": "1.0.6",
+                "app_version": "1.0.7",
             }).encode()
             req = urllib.request.Request(
                 f"{SERVER_URL}/license/validate",

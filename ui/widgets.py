@@ -538,6 +538,23 @@ class QuickAddLedgerDialog(QDialog):
         self.tds_rate.setEnabled(idx > 0)
 
     def _save(self):
+        # Force every numeric/text field to commit its in-progress edit
+        # BEFORE we read the values. Otherwise QDoubleSpinBox.value() and
+        # QLineEdit.text() return stale data until focus leaves, which
+        # made the user need to click Save twice — first click moved
+        # focus & committed the edit, second click actually saved.
+        for w in (self.ob_edit, self.tds_rate):
+            try:
+                w.interpretText()
+            except Exception:
+                pass
+        for w in (self.name_edit, self.gstin_edit, self.pan_edit,
+                  self.acct_edit, self.ifsc_edit, self.bank_name_edit):
+            try:
+                w.clearFocus()
+            except Exception:
+                pass
+
         name  = self.name_edit.text().strip()
         group = self.group_combo.currentText()
         if not name:
