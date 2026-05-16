@@ -135,17 +135,22 @@ def read_pricing(path: Path) -> dict:
             (isinstance(active_raw, str) and active_raw.strip().upper() in ("Y", "YES", "TRUE", "1"))
             or active_raw is True
         )
+        # NB: pricing.xlsx Countries sheet has legacy ai_text_page_cost /
+        # ai_scanned_page_cost / ai_per_transaction_cost columns. They
+        # were never wired to a real charge calculation — the live AI
+        # proxy meters by Anthropic tokens (see
+        # license_server.config.ai_input_paise_per_1k /
+        # ai_output_paise_per_1k and the metering in /ai/proxy). The
+        # baker intentionally drops those columns now so they don't show
+        # up in code as if we billed on pages.
         countries.append({
-            "country_code":            cc.upper(),
-            "country_name":            (row.get("country_name") or cc).strip(),
-            "currency_code":           (row.get("currency_code") or "").strip(),
-            "currency_symbol":         (row.get("currency_symbol") or "").strip(),
-            "tier_prices":             tier_prices,
-            "ai_text_page_cost":       _as_float_or_none(row.get("ai_text_page_cost")),
-            "ai_scanned_page_cost":    _as_float_or_none(row.get("ai_scanned_page_cost")),
-            "ai_per_transaction_cost": _as_float_or_none(row.get("ai_per_transaction_cost")),
-            "active":                  is_active,
-            "notes":                   (row.get("notes") or "").strip(),
+            "country_code":    cc.upper(),
+            "country_name":    (row.get("country_name") or cc).strip(),
+            "currency_code":   (row.get("currency_code") or "").strip(),
+            "currency_symbol": (row.get("currency_symbol") or "").strip(),
+            "tier_prices":     tier_prices,
+            "active":          is_active,
+            "notes":           (row.get("notes") or "").strip(),
         })
 
     return {
