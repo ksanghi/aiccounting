@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox,
     QDateEdit, QFrame, QHeaderView, QAbstractItemView, QSizePolicy,
-    QMessageBox,
+    QMessageBox, QInputDialog,
 )
 from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui  import QColor, QFont, QKeySequence, QShortcut
@@ -15,7 +15,14 @@ from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, make_separator, SmartDateEdit
 
 
+_VOUCHER_ID_ROLE = Qt.ItemDataRole.UserRole + 1
+
+
 class DayBookPage(QWidget):
+    # Emitted when the user picks Edit (or double-clicks) a row.
+    # MainWindow wires this to open the Post Voucher page in edit-mode.
+    voucher_edit_requested = Signal(int)
+
     def __init__(self, engine, parent=None):
         super().__init__(parent)
         self.engine = engine
@@ -71,6 +78,20 @@ class DayBookPage(QWidget):
         refresh_btn.setFixedHeight(30)
         refresh_btn.clicked.connect(self.refresh)
         frow.addWidget(refresh_btn)
+
+        self.edit_btn = QPushButton("✎ Edit")
+        self.edit_btn.setFixedHeight(30)
+        self.edit_btn.setToolTip("Edit the selected voucher (or double-click a row)")
+        self.edit_btn.clicked.connect(self._edit_selected)
+        self.edit_btn.setEnabled(False)
+        frow.addWidget(self.edit_btn)
+
+        self.delete_btn = QPushButton("🗑 Delete")
+        self.delete_btn.setFixedHeight(30)
+        self.delete_btn.setToolTip("Cancel the selected voucher (soft-delete, audit-logged)")
+        self.delete_btn.clicked.connect(self._delete_selected)
+        self.delete_btn.setEnabled(False)
+        frow.addWidget(self.delete_btn)
         layout.addWidget(fbar)
 
         # Table
@@ -100,6 +121,11 @@ class DayBookPage(QWidget):
         self.to_date.dateChanged.connect(self.refresh)
         self.type_filter.currentIndexChanged.connect(self.refresh)
         self.search_box.textChanged.connect(self._filter_table)
+        self.table.itemSelectionChanged.connect(self._update_action_buttons)
+        self.table.doubleClicked.connect(self._edit_selected)
+
+        QShortcut(QKeySequence("F2"), self).activated.connect(self._edit_selected)
+        QShortcut(QKeySequence.StandardKey.Delete, self).activated.connect(self._delete_selected)
 
     def refresh(self):
         from_d = self.from_date.date().toString("yyyy-MM-dd")
@@ -132,6 +158,11 @@ class DayBookPage(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter |
                                       (Qt.AlignmentFlag.AlignRight if j == 3 else Qt.AlignmentFlag.AlignLeft))
+                if j == 0:
+                    # Stash voucher id + cancelled flag on the first column.
+                    item.setData(_VOUCHER_ID_ROLE, int(v["id"]))
+                    item.setData(Qt.ItemDataRole.UserRole + 2,
+                                 bool(v.get("is_cancelled")))
                 if j == 2:   # type column — coloured
                     item.setForeground(QColor(colour))
                 if v.get("is_cancelled"):
@@ -143,6 +174,7 @@ class DayBookPage(QWidget):
         self.total_label.setText(
             f"{len(vouchers)} vouchers  |  Total ₹{total:,.2f}"
         )
+        self._update_action_buttons()
 
     def _filter_table(self, text: str):
         text = text.lower()
@@ -153,6 +185,88 @@ class DayBookPage(QWidget):
             or text in (v.get("reference") or "").lower()
         ]
         self._populate_table(filtered)
+
+    # ── Edit / Delete ─────────────────────────────────────────────────────
+
+    def _selected_row_info(self) -> tuple[int | None, bool]:
+        """Return (voucher_id, is_cancelled) for the selected row, or (None, False)."""
+        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        if not rows:
+            return None, False
+        r = rows[0].row()
+        first_item = self.table.item(r, 0)
+        if first_item is None:
+            return None, False
+        vid = first_item.data(_VOUCHER_ID_ROLE)
+        cancelled = bool(first_item.data(Qt.ItemDataRole.UserRole + 2))
+        return (int(vid) if vid is not None else None), cancelled
+
+    def _update_action_buttons(self) -> None:
+        vid, cancelled = self._selected_row_info()
+        enabled = vid is not None and not cancelled
+        self.edit_btn.setEnabled(enabled)
+        self.delete_btn.setEnabled(enabled)
+
+    def _edit_selected(self, *_):
+        vid, cancelled = self._selected_row_info()
+        if vid is None:
+            QMessageBox.information(
+                self, "Pick a voucher",
+                "Select a voucher in the table, then press Edit (or F2).",
+            )
+            return
+        if cancelled:
+            QMessageBox.information(
+                self, "Cannot edit",
+                "This voucher is cancelled and cannot be edited.",
+            )
+            return
+        self.voucher_edit_requested.emit(vid)
+
+    def _delete_selected(self):
+        vid, cancelled = self._selected_row_info()
+        if vid is None:
+            QMessageBox.information(
+                self, "Pick a voucher",
+                "Select a voucher in the table, then press Delete.",
+            )
+            return
+        if cancelled:
+            QMessageBox.information(
+                self, "Already cancelled",
+                "This voucher is already cancelled.",
+            )
+            return
+
+        # Read the row's voucher number for the confirm prompt.
+        vno_item = self.table.item(self.table.currentRow(), 1)
+        vno = vno_item.text() if vno_item else f"#{vid}"
+
+        confirm = QMessageBox.question(
+            self, "Cancel voucher?",
+            f"Cancel voucher {vno}?\n\n"
+            "This soft-deletes the voucher (preserves audit trail) and "
+            "reverses its effect on every ledger it touched.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        reason, ok = QInputDialog.getText(
+            self, "Reason",
+            "Reason for cancellation (optional, kept in audit log):",
+        )
+        if not ok:
+            return
+
+        try:
+            self.engine.cancel_voucher(vid, reason=reason.strip())
+        except Exception as e:
+            QMessageBox.critical(self, "Cancel failed", str(e))
+            return
+
+        self.refresh()
 
 
 class LedgerBalancePage(QWidget):

@@ -372,6 +372,23 @@ class MainWindow(QMainWindow):
         # so the ledger view picks up the updated voucher.
         self._select_page(idx)
 
+    def open_voucher_for_edit(self, voucher_id: int) -> None:
+        """
+        Switch to Post Voucher with the form loaded in edit-mode for the
+        given voucher. Used by Day Book's Edit button / double-click.
+        After Update or Cancel-edit, the form calls return_from_voucher_edit()
+        which brings the user back to Day Book.
+        """
+        if not hasattr(self, "_voucher_page"):
+            return
+        if not self._voucher_page.load_voucher_for_edit(voucher_id):
+            return  # form already showed a 'cannot edit' message
+        self._voucher_origin_idx = self._current_idx
+        for idx, (label, _, _, _) in enumerate(self._pages):
+            if label == "Post Voucher":
+                self._select_page(idx)
+                return
+
     def _build_pages_inner(self):
         from ui.voucher_form     import VoucherEntryPage
         from ui.daybook          import DayBookPage, LedgerBalancePage
@@ -385,6 +402,7 @@ class MainWindow(QMainWindow):
         self._voucher_page = voucher_page
 
         self._daybook_page = DayBookPage(self.engine)
+        self._daybook_page.voucher_edit_requested.connect(self.open_voucher_for_edit)
         self.register_page("Day Book", "📋", self._daybook_page)
 
         # ── Ledger Balances — FREE ──
