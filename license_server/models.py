@@ -137,6 +137,51 @@ class AIUsageLog(Base):
     created_at:     Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+# ── SMS Wallet (per-license pre-paid balance for OTP + broadcast SMS) ───────
+
+class SMSWallet(Base):
+    """
+    Per-license pre-paid SMS balance in paise.
+
+    Pricing model (decided 2026-05-17): cloud + web + mobile are free; the
+    society monetises by paying ₹0.50 per SMS (OTP for resident login, or
+    broadcast message). Society admins top up the wallet via Razorpay
+    using the existing checkout flow. Desktop + rwagenie-web both call
+    /api/v1/wallet/debit before sending an SMS — atomic deduct-and-record.
+
+    One row per License (the natural account identifier — the desktop
+    install carries its license_key, rwagenie-web stores license_key on
+    its Society row).
+    """
+    __tablename__ = "sms_wallets"
+
+    id:            Mapped[int]      = mapped_column(primary_key=True)
+    license_id:    Mapped[int]      = mapped_column(ForeignKey("licenses.id"),
+                                                    unique=True, index=True)
+    balance_paise: Mapped[int]      = mapped_column(Integer, default=0)
+    updated_at:    Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SMSWalletTxn(Base):
+    """Audit row for every wallet movement — top-up, debit, refund, admin grant.
+
+    `amount_paise` is signed: positive = credit (top-up / refund / grant),
+    negative = debit (an SMS was sent).  `balance_after_paise` is the
+    post-transaction snapshot so audits don't need to re-sum the ledger."""
+    __tablename__ = "sms_wallet_txns"
+
+    id:                  Mapped[int]      = mapped_column(primary_key=True)
+    license_id:          Mapped[int]      = mapped_column(ForeignKey("licenses.id"), index=True)
+    amount_paise:        Mapped[int]      = mapped_column(Integer)
+    # 'topup' | 'sms_otp' | 'sms_broadcast' | 'refund' | 'admin_grant'
+    kind:                Mapped[str]      = mapped_column(String(32), default="sms_broadcast")
+    ref:                 Mapped[str]      = mapped_column(String(128), default="")  # rzp_pay_id, admin user, broadcast_id, etc.
+    recipient_phone:     Mapped[str]      = mapped_column(String(32), default="")   # denormalised for SMS debits
+    balance_after_paise: Mapped[int]      = mapped_column(Integer, default=0)
+    machine_id:          Mapped[str]      = mapped_column(String(64), default="")   # caller fingerprint
+    created_at:          Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 # ── Payment orders (Razorpay) ────────────────────────────────────────────────
 
 class Order(Base):
@@ -154,6 +199,21 @@ class Order(Base):
     id:                  Mapped[int]      = mapped_column(primary_key=True)
     razorpay_order_id:   Mapped[str]      = mapped_column(String(64), unique=True, index=True)
     razorpay_payment_id: Mapped[str]      = mapped_column(String(64), default="", index=True)
+
+    # What this order is for: 'tier_purchase' = new license / renewal
+    # (the original use-case, mints a License row on 'paid'), or
+    # 'wallet_topup' = adds SMS-wallet balance to an existing license
+    # (no mint; just credit + audit). The webhook handler branches on
+    # this column. Defaults to 'tier_purchase' on legacy rows.
+    kind:                Mapped[str]      = mapped_column(String(32),
+                                                          default="tier_purchase",
+                                                          server_default="tier_purchase",
+                                                          index=True)
+    # For wallet top-ups, links to the existing License that gets credited.
+    # NULL for tier purchases (the License is minted post-payment).
+    wallet_license_id:   Mapped[int | None] = mapped_column(
+        ForeignKey("licenses.id"), nullable=True, index=True,
+    )
 
     # Product the customer is buying: 'accgenie' or 'rwagenie'. The
     # webhook handler mints a License row with the same product.

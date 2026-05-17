@@ -37,6 +37,7 @@ from license_server.db import init_db, get_db
 from license_server.models import (
     License, MachineBinding, ValidationLog, Install,
     Credit, CreditTopup, AIUsageLog, Order,
+    SMSWallet, SMSWalletTxn,
 )
 from license_server.plans import (
     PLANS, PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_FEATURES, PLAN_SEATS,
@@ -209,6 +210,48 @@ class InstallStats(BaseModel):
     new_last_7d:    int
     new_last_30d:   int
     active_last_7d: int
+
+
+# ── SMS Wallet schemas ──────────────────────────────────────────────────────
+
+class WalletBalanceResponse(BaseModel):
+    ok:            bool
+    balance_paise: Optional[int] = None
+    license_key:   Optional[str] = None
+    error:         Optional[str] = None
+
+
+class WalletDebitRequest(BaseModel):
+    license_key:     str    = Field(..., min_length=8, max_length=32)
+    machine_id:      str    = Field(default="", max_length=64)
+    amount_paise:    int    = Field(..., ge=1, le=10_000_000)
+    kind:            str    = Field(default="sms_broadcast",
+                                    pattern="^(sms_otp|sms_broadcast)$")
+    recipient_phone: str    = Field(default="", max_length=32)
+    ref:             str    = Field(default="", max_length=128)
+
+
+class WalletDebitResponse(BaseModel):
+    ok:                  bool
+    balance_after_paise: Optional[int] = None
+    txn_id:              Optional[int] = None
+    error:               Optional[str] = None     # 'insufficient_balance', 'invalid_key', etc.
+
+
+class WalletTopupCreateRequest(BaseModel):
+    license_key:    str = Field(..., min_length=8, max_length=32)
+    amount_paise:   int = Field(..., ge=100, le=10_000_000)  # ₹1 to ₹1L per top-up
+    customer_email: str = Field(default="", max_length=256)
+    customer_name:  str = Field(default="", max_length=256)
+
+
+class WalletTopupCreateResponse(BaseModel):
+    ok:               bool
+    order_id:         Optional[str] = None
+    amount_paise:     Optional[int] = None
+    currency:         Optional[str] = "INR"
+    razorpay_key_id:  Optional[str] = None
+    error:            Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -860,6 +903,173 @@ async def ai_proxy(
     )
 
 
+# ── SMS Wallet (per-license pre-paid balance) ───────────────────────────────
+
+def _get_or_create_wallet(db: Session, license_id: int) -> SMSWallet:
+    """Lazy-create. New licenses start at 0 paise."""
+    row = db.scalar(select(SMSWallet).where(SMSWallet.license_id == license_id))
+    if row is None:
+        row = SMSWallet(license_id=license_id, balance_paise=0)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _resolve_active_license(db: Session, license_key: str) -> tuple[Optional[License], str]:
+    """Returns (license, err). err is empty on success.
+
+    Same shape as the credits helpers — caller can early-return a
+    ResponseModel with `ok=False, error=err`."""
+    key = (license_key or "").strip().upper()
+    if not is_valid_format(key):
+        return None, "Invalid license key format."
+    lic = db.scalar(select(License).where(License.license_key == key))
+    if lic is None:
+        return None, "License key not found."
+    if lic.revoked:
+        return None, "License is revoked."
+    if lic.expires_at < date.today():
+        return None, "License has expired."
+    return lic, ""
+
+
+@app.get("/api/v1/wallet/balance", response_model=WalletBalanceResponse)
+def wallet_balance(
+    license_key: str,
+    db: Session = Depends(get_db),
+):
+    """Read-only wallet balance. Public — clients poll this to show the
+    current balance in the desktop "Wallet" page and the web-app footer.
+
+    Returns balance in paise (₹0.50 SMS = 50 paise)."""
+    lic, err = _resolve_active_license(db, license_key)
+    if lic is None:
+        return WalletBalanceResponse(ok=False, error=err)
+    w = _get_or_create_wallet(db, lic.id)
+    db.commit()
+    return WalletBalanceResponse(
+        ok=True,
+        balance_paise=w.balance_paise,
+        license_key=lic.license_key,
+    )
+
+
+@app.post("/api/v1/wallet/debit", response_model=WalletDebitResponse)
+def wallet_debit(
+    body: WalletDebitRequest,
+    db: Session = Depends(get_db),
+):
+    """Atomically deduct one SMS-send's cost from the wallet and record
+    the transaction. Called by desktop (`broadcast_send.py`) and by
+    rwagenie-web (`sms.py`) BEFORE the actual Fast2SMS call. If the
+    balance is insufficient, returns `ok=False, error='insufficient_balance'`
+    and the caller must NOT send the SMS.
+
+    Atomicity: the SELECT + UPDATE happen in a single DB session with
+    commit at the end — SQLite serialises writes so concurrent debits
+    can't both succeed against a balance that only covers one. (For
+    Postgres later: switch the SELECT to `FOR UPDATE` to be explicit.)
+    """
+    lic, err = _resolve_active_license(db, body.license_key)
+    if lic is None:
+        return WalletDebitResponse(ok=False, error=err)
+
+    w = _get_or_create_wallet(db, lic.id)
+    if w.balance_paise < body.amount_paise:
+        return WalletDebitResponse(
+            ok=False,
+            balance_after_paise=w.balance_paise,
+            error="insufficient_balance",
+        )
+
+    w.balance_paise -= body.amount_paise
+    w.updated_at = datetime.utcnow()
+    txn = SMSWalletTxn(
+        license_id=lic.id,
+        amount_paise=-body.amount_paise,          # signed: debit is negative
+        kind=body.kind,
+        ref=body.ref or "",
+        recipient_phone=body.recipient_phone or "",
+        balance_after_paise=w.balance_paise,
+        machine_id=body.machine_id or "",
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    return WalletDebitResponse(
+        ok=True,
+        balance_after_paise=w.balance_paise,
+        txn_id=txn.id,
+    )
+
+
+@app.post("/api/v1/wallet/topup/create-order",
+          response_model=WalletTopupCreateResponse)
+def wallet_topup_create_order(
+    body: WalletTopupCreateRequest,
+    db: Session = Depends(get_db),
+):
+    """Create a Razorpay order to top up an SMS wallet by `amount_paise`.
+
+    On payment success, `/webhooks/razorpay` branches on
+    `order.kind == 'wallet_topup'` and credits the wallet (no License
+    mint — the License already exists). The `wallet_license_id` column
+    on the Order row carries the target license forward to the webhook
+    handler.
+    """
+    if not razorpay_client.is_enabled():
+        return WalletTopupCreateResponse(
+            ok=False, error="Payments are not configured on this server.",
+        )
+
+    lic, err = _resolve_active_license(db, body.license_key)
+    if lic is None:
+        return WalletTopupCreateResponse(ok=False, error=err)
+
+    email = (body.customer_email or lic.customer_email or "").strip()
+    try:
+        rp_order = razorpay_client.create_order(
+            amount_paise=body.amount_paise,
+            currency="INR",
+            receipt_id=f"wlt-{lic.license_key[:8]}-{int(datetime.utcnow().timestamp())}",
+            notes={
+                "kind":          "wallet_topup",
+                "license_key":   lic.license_key,
+                "license_id":    str(lic.id),
+                "customer_email": email,
+            },
+        )
+    except razorpay_client.RazorpayError as e:
+        return WalletTopupCreateResponse(ok=False, error=f"Razorpay: {e}")
+
+    order = Order(
+        razorpay_order_id=rp_order["id"],
+        kind="wallet_topup",
+        wallet_license_id=lic.id,
+        product=lic.product or "rwagenie",
+        plan=lic.plan,
+        amount_paise=body.amount_paise,
+        currency="INR",
+        country_code="IN",
+        customer_email=email,
+        customer_name=body.customer_name or "",
+        company_name=lic.company_name or "",
+        status="created",
+        notes=f"[create wallet-topup] license={lic.license_key} "
+              f"receipt={rp_order.get('receipt','')}",
+    )
+    db.add(order)
+    db.commit()
+
+    return WalletTopupCreateResponse(
+        ok=True,
+        order_id=rp_order["id"],
+        amount_paise=body.amount_paise,
+        currency="INR",
+        razorpay_key_id=settings.razorpay_key_id,
+    )
+
+
 # ── Checkout (Razorpay) ──────────────────────────────────────────────────────
 
 @app.post("/api/v1/checkout/create-order", response_model=CheckoutCreateResponse)
@@ -1045,10 +1255,44 @@ async def razorpay_webhook(
         return {"ok": True, "status": "failed"}
 
     # Success path. Idempotency: if already paid, just acknowledge.
-    if order.status == "paid" and order.license_id:
+    if order.status == "paid":
         return {"ok": True, "status": "already_paid",
-                "license_id": order.license_id}
+                "license_id": order.license_id,
+                "wallet_license_id": order.wallet_license_id}
 
+    # ── Wallet top-up branch ──
+    # Wallet top-ups don't mint a License — they credit an existing one.
+    # The Order row carries `wallet_license_id` set at create-order time.
+    if (order.kind or "tier_purchase") == "wallet_topup":
+        target_id = order.wallet_license_id
+        if not target_id:
+            raise HTTPException(500, "Wallet top-up order missing wallet_license_id")
+        lic = db.get(License, target_id)
+        if lic is None:
+            raise HTTPException(500, f"Wallet top-up target license {target_id} not found")
+
+        w = _get_or_create_wallet(db, lic.id)
+        w.balance_paise += order.amount_paise
+        w.updated_at = datetime.utcnow()
+        db.add(SMSWalletTxn(
+            license_id=lic.id,
+            amount_paise=order.amount_paise,
+            kind="topup",
+            ref=rp_payment_id,
+            balance_after_paise=w.balance_paise,
+        ))
+        order.status              = "paid"
+        order.razorpay_payment_id = rp_payment_id
+        order.notes               = (order.notes or "") + (
+            f"\n[paid wallet-topup] license={lic.license_key} "
+            f"+{order.amount_paise} paise payment={rp_payment_id}"
+        )
+        db.commit()
+        return {"ok": True, "status": "wallet_credited",
+                "wallet_license_id": lic.id,
+                "balance_paise": w.balance_paise}
+
+    # ── Tier-purchase branch (the original flow) ──
     # Mint the license. Carry the product (accgenie/rwagenie) forward
     # from the order so RWAGenie purchases produce RWAGenie licenses.
     try:

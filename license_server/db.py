@@ -53,6 +53,9 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str]] = [
     ("licenses", "product",       "TEXT NOT NULL DEFAULT 'accgenie'", "'accgenie'"),
     ("installs",  "product",      "TEXT NOT NULL DEFAULT 'accgenie'", "'accgenie'"),
     ("orders",    "product",      "TEXT NOT NULL DEFAULT 'accgenie'", "'accgenie'"),
+    # SMS wallet support (post-2026-05-17). Legacy orders are all tier_purchase.
+    ("orders",    "kind",              "TEXT NOT NULL DEFAULT 'tier_purchase'", "'tier_purchase'"),
+    ("orders",    "wallet_license_id", "INTEGER",                                ""),
 ]
 
 
