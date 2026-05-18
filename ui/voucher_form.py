@@ -453,6 +453,29 @@ class VoucherEntryPage(QWidget):
         )
         eb.addWidget(self._edit_banner_label)
         eb.addStretch()
+        # 🗑 Delete — same soft-delete the Day Book toolbar offers, but
+        # reachable from the edit view you're already on (which is where
+        # users instinctively look for it after opening a voucher).
+        self._delete_edit_btn = QPushButton("🗑  Delete voucher")
+        self._delete_edit_btn.setFixedHeight(28)
+        self._delete_edit_btn.setToolTip(
+            "Cancel this voucher (soft-delete, reversible via audit log)"
+        )
+        self._delete_edit_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {THEME['danger']};
+                border-radius: 5px;
+                color: {THEME['danger']};
+                padding: 0 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {THEME['danger']}22;
+            }}
+        """)
+        self._delete_edit_btn.clicked.connect(self._delete_from_edit)
+        eb.addWidget(self._delete_edit_btn)
         cancel_edit = QPushButton("Cancel edit")
         cancel_edit.setFixedHeight(28)
         cancel_edit.clicked.connect(self._cancel_edit)
@@ -518,16 +541,42 @@ class VoucherEntryPage(QWidget):
 
         # ±1 day steppers — paid (STANDARD+) shortcut for back-dated
         # voucher entry: type today's date once, then nudge a day at a time.
+        # Styled flat/borderless so they read as date-field accessories,
+        # not as standalone buttons that compete with Post / Clear.
         date_row = QHBoxLayout()
-        date_row.setSpacing(4)
+        date_row.setSpacing(2)
         date_row.setContentsMargins(0, 0, 0, 0)
-        self._date_prev_btn = QPushButton("◀")
-        self._date_prev_btn.setFixedSize(28, 34)
+
+        _arrow_qss = f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {THEME['border']};
+                border-radius: 5px;
+                color: {THEME['text_secondary']};
+                padding: 0;
+                font-size: 11px;
+                min-width: 0;
+            }}
+            QPushButton:hover {{
+                background: {THEME['bg_input']};
+                border-color: {THEME['accent']};
+                color: {THEME['accent']};
+            }}
+            QPushButton:pressed {{
+                background: {THEME['accent_dim']};
+            }}
+        """
+        self._date_prev_btn = QPushButton("‹")
+        self._date_prev_btn.setFixedSize(22, 34)
+        self._date_prev_btn.setStyleSheet(_arrow_qss)
         self._date_prev_btn.setToolTip("Previous day  (Alt+,)")
+        self._date_prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._date_prev_btn.clicked.connect(lambda: self._nudge_date(-1))
-        self._date_next_btn = QPushButton("▶")
-        self._date_next_btn.setFixedSize(28, 34)
+        self._date_next_btn = QPushButton("›")
+        self._date_next_btn.setFixedSize(22, 34)
+        self._date_next_btn.setStyleSheet(_arrow_qss)
         self._date_next_btn.setToolTip("Next day  (Alt+.)")
+        self._date_next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._date_next_btn.clicked.connect(lambda: self._nudge_date(+1))
         date_row.addWidget(self._date_prev_btn)
         date_row.addWidget(self.date_edit, 1)
@@ -744,18 +793,6 @@ class VoucherEntryPage(QWidget):
         amt_inner.setContentsMargins(0, 0, 0, 0)
         amt_inner.addWidget(self.amount_edit)
         amt_inner.addStretch()
-
-        # Multi-party button — only visible for PAYMENT/RECEIPT, and only on
-        # tiers that have the feature. Toggled in _select_type().
-        self._multi_party_btn = QPushButton("+ Multi-party…")
-        self._multi_party_btn.setFixedHeight(34)
-        self._multi_party_btn.setToolTip(
-            "Open multi-party voucher: one bank entry, several parties.\n"
-            "Use when a single bank transaction settles many parties at once."
-        )
-        self._multi_party_btn.clicked.connect(self._open_multi_party_dialog)
-        amt_inner.addWidget(self._multi_party_btn)
-
         self._amount_row = _make_row(self._amount_label, amt_inner)
         inner.addWidget(self._amount_row)
 
@@ -828,6 +865,40 @@ class VoucherEntryPage(QWidget):
             min_height=TOTAL_ROW_HEIGHT,
         )
         inner.addWidget(self._gst_combined_row)
+
+        # ── Multi-party row ──
+        # Dedicated row so the button is impossible to miss on Payment /
+        # Receipt vouchers when the feature is unlocked. Sits below the
+        # GST/Total row inside the same card. Was previously crammed into
+        # the Amount row's right edge where it slid off-screen on narrow
+        # windows; the dedicated row fixes that.
+        self._multi_party_btn = QPushButton(
+            "+  Multi-party voucher  (one bank entry, several parties)"
+        )
+        self._multi_party_btn.setMinimumHeight(40)
+        self._multi_party_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._multi_party_btn.setToolTip(
+            "Open multi-party voucher: one bank entry, several parties.\n"
+            "Use when a single bank transaction settles many parties at once "
+            "(e.g. a payment gateway settlement covering N customers)."
+        )
+        self._multi_party_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {THEME['accent_dim']};
+                border: 1.5px dashed {THEME['accent']};
+                border-radius: 8px;
+                color: {THEME['accent']};
+                padding: 8px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {THEME['accent']}22;
+                border-style: solid;
+            }}
+        """)
+        self._multi_party_btn.clicked.connect(self._open_multi_party_dialog)
+        inner.addWidget(self._multi_party_btn)
 
         self._smart_layout.addWidget(frame)
         self._smart_layout.addStretch()
@@ -1360,6 +1431,8 @@ class VoucherEntryPage(QWidget):
         if banner_text:
             self._edit_banner_label.setText(banner_text)
             self._edit_banner.setVisible(True)
+            # No existing voucher in create-mode → nothing to delete.
+            self._delete_edit_btn.setVisible(False)
             # Hide the page-title strip but KEEP the type selector visible —
             # the user needs it to pick PAYMENT / RECEIPT / SALES / etc.
             self._header_strip.setVisible(False)
@@ -1504,6 +1577,8 @@ class VoucherEntryPage(QWidget):
             f"✎ Editing  {v['voucher_number']}  ·  {v['voucher_type'].replace('_',' ')}"
         )
         self._edit_banner.setVisible(True)
+        # Real voucher loaded — Delete is meaningful here.
+        self._delete_edit_btn.setVisible(True)
         self._post_btn.setText("Update Voucher  (Ctrl+S)")
 
         # Hide chrome that's redundant during edit so the row area gets
@@ -1531,6 +1606,45 @@ class VoucherEntryPage(QWidget):
             self._exit_edit_mode()
         else:
             self._exit_create_mode()
+        self._clear()
+        self._select_type("PAYMENT")
+        win = self.window()
+        if hasattr(win, "return_from_voucher_edit"):
+            win.return_from_voucher_edit()
+
+    def _delete_from_edit(self):
+        """Cancel-voucher action triggered from the edit banner. Mirrors the
+        Day Book Delete handler so the cancellation has identical semantics
+        (engine.cancel_voucher → is_cancelled=1, ledger impact reversed,
+        audit row written) — just reachable from a different UI surface."""
+        from PySide6.QtWidgets import QInputDialog
+        vid = self._edit_voucher_id
+        if not vid:
+            return
+        vno = self._edit_voucher_number or f"#{vid}"
+        confirm = QMessageBox.question(
+            self, "Cancel voucher?",
+            f"Cancel voucher {vno}?\n\n"
+            "This soft-deletes the voucher (preserves audit trail) and "
+            "reverses its effect on every ledger it touched.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        reason, ok = QInputDialog.getText(
+            self, "Reason",
+            "Reason for cancellation (optional, kept in audit log):",
+        )
+        if not ok:
+            return
+        try:
+            self.engine.cancel_voucher(vid, reason=reason.strip())
+        except Exception as e:
+            QMessageBox.critical(self, "Cancel failed", str(e))
+            return
+
+        self._exit_edit_mode()
         self._clear()
         self._select_type("PAYMENT")
         win = self.window()
