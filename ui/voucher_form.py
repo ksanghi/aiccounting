@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QDateEdit, QTextEdit,
     QScrollArea, QFrame, QSizePolicy, QMessageBox, QStackedWidget,
-    QSpacerItem, QFileDialog
+    QSpacerItem, QFileDialog, QDialog
 )
 from PySide6.QtCore import Qt, QDate, Signal, QTimer, QThread
 from PySide6.QtGui  import QFont, QShortcut, QKeySequence
@@ -75,6 +75,288 @@ class _AiFillThread(QThread):
             self.error.emit(str(e))
 
 
+class _MultiPartyVoucherDialog(QDialog):
+    """
+    Multi-party Payment / Receipt voucher entry.
+
+    Single bank-or-cash line on one side, N party lines on the other —
+    used when a bank transaction settles multiple parties at once (e.g.
+    a single bank debit covering 5 vendor payments, or a single deposit
+    covering 5 customer receipts).
+
+    On accept(), posts the voucher via engine.build_payment_multi /
+    build_receipt_multi + engine.post(), records the license counter, and
+    emits posted via the `posted` signal.
+    """
+    posted = Signal(object)   # PostedVoucher
+
+    def __init__(self, engine, tree, vtype: str,
+                 default_date: str, default_bank_id: int | None,
+                 party_ledgers: list, bank_ledgers: list,
+                 calculator, parent=None):
+        super().__init__(parent)
+        self.engine    = engine
+        self.tree      = tree
+        self.vtype     = vtype     # "PAYMENT" or "RECEIPT"
+        self.calculator = calculator
+        self._party_ledgers = party_ledgers
+        self._bank_ledgers  = bank_ledgers
+        self._rows: list[dict] = []   # each: {row_widget, ledger, amount, narr}
+
+        is_payment = vtype == "PAYMENT"
+        self.setWindowTitle("Multi-party " + ("Payment" if is_payment else "Receipt"))
+        self.setMinimumSize(820, 520)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = QLabel(
+            ("Pay multiple parties from one bank/cash account."
+             if is_payment else
+             "Receive from multiple parties into one bank/cash account.")
+            + " Add a row per party; the bank total auto-sums."
+        )
+        title.setWordWrap(True)
+        title.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:12px;")
+        layout.addWidget(title)
+
+        # ── Header: date + bank/cash + narration + reference ──
+        from ui.widgets import SmartDateEdit, FilteredLedgerSearchEdit
+        head = QGridLayout()
+        head.setHorizontalSpacing(14)
+        head.setVerticalSpacing(8)
+
+        head.addWidget(make_label("Voucher Date", required=True), 0, 0)
+        self.date_edit = SmartDateEdit(QDate.fromString(default_date, "yyyy-MM-dd"))
+        self.date_edit.setFixedHeight(34)
+        self.date_edit.setDisplayFormat("dd-MMM-yyyy")
+        head.addWidget(self.date_edit, 1, 0)
+
+        bank_label = "Paid from" if is_payment else "Deposited to"
+        head.addWidget(make_label(bank_label, required=True), 0, 1)
+        self.bank_field = FilteredLedgerSearchEdit(
+            tree, calculator, self._bank_ledgers,
+            placeholder="Cash or Bank...",
+        )
+        if default_bank_id:
+            try:
+                name = next(
+                    (l["name"] for l in self._bank_ledgers if l["id"] == default_bank_id),
+                    "",
+                )
+                if name:
+                    self.bank_field.search.setText(name)
+                    self.bank_field._selected_id = default_bank_id
+            except Exception:
+                pass
+        head.addWidget(self.bank_field, 1, 1)
+
+        head.addWidget(make_label("Narration"), 0, 2)
+        self.narration_edit = QLineEdit()
+        self.narration_edit.setFixedHeight(34)
+        self.narration_edit.setPlaceholderText(
+            "Optional — applied to whole voucher"
+        )
+        head.addWidget(self.narration_edit, 1, 2)
+
+        head.addWidget(make_label("Reference"), 0, 3)
+        self.reference_edit = QLineEdit()
+        self.reference_edit.setFixedHeight(34)
+        self.reference_edit.setPlaceholderText("Chq # / UTR")
+        head.addWidget(self.reference_edit, 1, 3)
+
+        head.setColumnStretch(2, 2)
+        head.setColumnStretch(3, 1)
+        layout.addLayout(head)
+
+        # ── Rows area ──
+        rows_hdr = QHBoxLayout()
+        rows_hdr.addWidget(make_label(
+            "Party" if is_payment else "From Party"
+        ))
+        rows_hdr.addStretch()
+        rows_hdr.addWidget(make_label("Amount (Rs.)"))
+        layout.addLayout(rows_hdr)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._rows_wrap = QWidget()
+        self._rows_layout = QVBoxLayout(self._rows_wrap)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(6)
+        self._rows_layout.addStretch()
+        scroll.setWidget(self._rows_wrap)
+        layout.addWidget(scroll, 1)
+
+        # Add row button
+        add_btn = QPushButton("+ Add party row")
+        add_btn.setMinimumHeight(36)
+        add_btn.clicked.connect(self._add_row)
+        layout.addWidget(add_btn)
+
+        # Footer: total + Cancel + Post
+        foot = QHBoxLayout()
+        self._total_lbl = QLabel("Total ₹ 0.00")
+        self._total_lbl.setStyleSheet(
+            f"color:{THEME['accent']}; font-size:14px; font-weight:bold;"
+        )
+        foot.addWidget(self._total_lbl)
+        foot.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        post_btn = QPushButton("Post voucher")
+        post_btn.setObjectName("btn_primary")
+        post_btn.clicked.connect(self._post)
+        foot.addWidget(cancel)
+        foot.addWidget(post_btn)
+        layout.addLayout(foot)
+
+        # Seed with 2 empty rows so the user has something to start with.
+        self._add_row()
+        self._add_row()
+
+    def _add_row(self):
+        from ui.widgets import FilteredLedgerSearchEdit
+        row_w = QFrame()
+        row_w.setObjectName("card")
+        rl = QHBoxLayout(row_w)
+        rl.setContentsMargins(10, 6, 10, 6)
+        rl.setSpacing(8)
+
+        ledger = FilteredLedgerSearchEdit(
+            self.tree, self.calculator, self._party_ledgers,
+            placeholder="Search party...",
+        )
+        amount = AmountEdit()
+        amount.setMinimumWidth(140)
+        amount.valueChanged.connect(self._refresh_total)
+        amount.focused.connect(self.calculator.connect_to)
+        narr = QLineEdit()
+        narr.setFixedHeight(34)
+        narr.setPlaceholderText("Line note (optional)")
+        rm = QPushButton("✕")
+        rm.setFixedSize(32, 34)
+        rm.setToolTip("Remove this party row")
+
+        rl.addWidget(ledger, 3)
+        rl.addWidget(amount, 1)
+        rl.addWidget(narr, 2)
+        rl.addWidget(rm)
+
+        # Insert above the trailing stretch
+        insert_pos = self._rows_layout.count() - 1
+        if insert_pos < 0:
+            insert_pos = 0
+        self._rows_layout.insertWidget(insert_pos, row_w)
+
+        row_data = {
+            "widget": row_w, "ledger": ledger,
+            "amount": amount, "narr": narr,
+        }
+        self._rows.append(row_data)
+        rm.clicked.connect(lambda _, r=row_data: self._remove_row(r))
+        self._refresh_total()
+
+    def _remove_row(self, row_data: dict):
+        if len(self._rows) <= 1:
+            return  # keep at least one row
+        self._rows_layout.removeWidget(row_data["widget"])
+        row_data["widget"].deleteLater()
+        self._rows.remove(row_data)
+        self._refresh_total()
+
+    def _refresh_total(self):
+        total = sum(r["amount"].value() for r in self._rows)
+        self._total_lbl.setText(f"Total ₹ {total:,.2f}")
+
+    def _post(self):
+        # License gate (same as VoucherEntryPage)
+        try:
+            from core.license_manager import LicenseManager
+            _lmgr = LicenseManager()
+            _allowed, _msg, _cost = _lmgr.can_post_voucher()
+            if not _allowed:
+                QMessageBox.warning(self, "Limit reached", _msg)
+                return
+            if _msg:
+                reply = QMessageBox.question(
+                    self, "Overage charge applies",
+                    f"{_msg}\n\nPost anyway?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+        except Exception:
+            pass
+
+        bank_id = self.bank_field.selected_id
+        if not bank_id:
+            QMessageBox.warning(self, "Missing", "Please select the bank / cash account.")
+            return
+
+        party_lines = []
+        for r in self._rows:
+            lid = r["ledger"].selected_id
+            amt = r["amount"].value()
+            if amt <= 0 and not lid:
+                continue  # skip blank rows entirely
+            if not lid:
+                QMessageBox.warning(self, "Missing party",
+                    "Each non-blank row needs a party ledger.")
+                return
+            if amt <= 0:
+                QMessageBox.warning(self, "Missing amount",
+                    "Each party row needs an amount greater than zero.")
+                return
+            if lid == bank_id:
+                QMessageBox.warning(self, "Same ledger",
+                    "Party ledger can't be the same as the bank/cash account.")
+                return
+            party_lines.append({
+                "ledger_id": lid, "amount": amt,
+                "narration": r["narr"].text().strip(),
+            })
+
+        if not party_lines:
+            QMessageBox.warning(self, "Empty", "Add at least one party row.")
+            return
+
+        vdate = self.date_edit.date().toString("yyyy-MM-dd")
+        narration = self.narration_edit.text().strip()
+        reference = self.reference_edit.text().strip()
+
+        try:
+            if self.vtype == "PAYMENT":
+                draft = self.engine.build_payment_multi(
+                    vdate, bank_id, party_lines, narration, reference,
+                )
+            else:
+                draft = self.engine.build_receipt_multi(
+                    vdate, bank_id, party_lines, narration, reference,
+                )
+            posted = self.engine.post(draft)
+        except Exception as e:
+            QMessageBox.critical(self, "Post failed", str(e))
+            return
+
+        try:
+            from core.license_manager import LicenseManager
+            LicenseManager().record_voucher_posted()
+        except Exception:
+            pass
+
+        self.posted.emit(posted)
+        QMessageBox.information(
+            self, "Posted",
+            f"✓  {posted.voucher_number}\n"
+            f"₹{posted.total_amount:,.2f} across {len(party_lines)} parties",
+        )
+        self.accept()
+
+
 class VoucherEntryPage(QWidget):
     voucher_posted = Signal(str, str, float)  # type, number, amount
 
@@ -104,6 +386,17 @@ class VoucherEntryPage(QWidget):
         self._create_prefill          = None
         self._build_ui()
         self._wire_shortcuts()
+
+    def _has_feature(self, feature: str) -> bool:
+        try:
+            from core.license_manager import LicenseManager
+            return LicenseManager().has_feature(feature)
+        except Exception:
+            return False
+
+    def _nudge_date(self, days: int):
+        cur = self.date_edit.date()
+        self.date_edit.setDate(cur.addDays(days))
 
     def _load_filtered_ledgers(self):
         try:
@@ -222,7 +515,30 @@ class VoucherEntryPage(QWidget):
         self.date_edit = SmartDateEdit(QDate.currentDate())
         self.date_edit.setFixedHeight(34)
         self.date_edit.setDisplayFormat("dd-MMM-yyyy")
-        date_col.addWidget(self.date_edit)
+
+        # ±1 day steppers — paid (STANDARD+) shortcut for back-dated
+        # voucher entry: type today's date once, then nudge a day at a time.
+        date_row = QHBoxLayout()
+        date_row.setSpacing(4)
+        date_row.setContentsMargins(0, 0, 0, 0)
+        self._date_prev_btn = QPushButton("◀")
+        self._date_prev_btn.setFixedSize(28, 34)
+        self._date_prev_btn.setToolTip("Previous day  (Alt+,)")
+        self._date_prev_btn.clicked.connect(lambda: self._nudge_date(-1))
+        self._date_next_btn = QPushButton("▶")
+        self._date_next_btn.setFixedSize(28, 34)
+        self._date_next_btn.setToolTip("Next day  (Alt+.)")
+        self._date_next_btn.clicked.connect(lambda: self._nudge_date(+1))
+        date_row.addWidget(self._date_prev_btn)
+        date_row.addWidget(self.date_edit, 1)
+        date_row.addWidget(self._date_next_btn)
+        date_col.addLayout(date_row)
+
+        # Hide the steppers for tiers that don't have the feature.
+        if not self._has_feature("sticky_voucher_date"):
+            self._date_prev_btn.setVisible(False)
+            self._date_next_btn.setVisible(False)
+
         meta_layout.addLayout(date_col)
 
         # Narration
@@ -428,6 +744,18 @@ class VoucherEntryPage(QWidget):
         amt_inner.setContentsMargins(0, 0, 0, 0)
         amt_inner.addWidget(self.amount_edit)
         amt_inner.addStretch()
+
+        # Multi-party button — only visible for PAYMENT/RECEIPT, and only on
+        # tiers that have the feature. Toggled in _select_type().
+        self._multi_party_btn = QPushButton("+ Multi-party…")
+        self._multi_party_btn.setFixedHeight(34)
+        self._multi_party_btn.setToolTip(
+            "Open multi-party voucher: one bank entry, several parties.\n"
+            "Use when a single bank transaction settles many parties at once."
+        )
+        self._multi_party_btn.clicked.connect(self._open_multi_party_dialog)
+        amt_inner.addWidget(self._multi_party_btn)
+
         self._amount_row = _make_row(self._amount_label, amt_inner)
         inner.addWidget(self._amount_row)
 
@@ -597,6 +925,10 @@ class VoucherEntryPage(QWidget):
         self._gst_combined_row.setVisible(has_gst)
         self._amount_label.setText("Base Amount (Rs.)" if has_gst else "Amount (Rs.)")
         self._ai_fill_btn.setVisible(vtype in ("SALES", "PURCHASE"))
+        self._multi_party_btn.setVisible(
+            vtype in ("PAYMENT", "RECEIPT")
+            and self._has_feature("multi_party_voucher")
+        )
 
         # Remove old field widgets from their row layouts
         if self.field1_ledger is not None:
@@ -1214,10 +1546,13 @@ class VoucherEntryPage(QWidget):
             self.field2_ledger.clear()
         except Exception:
             pass
-        # Honor the 'default_voucher_date' pref: "today" (default) or
-        # "last_used" — in which case we keep whatever was on the field.
+        # Honor 'default_voucher_date' pref: "today" or "last_used". On
+        # STANDARD+ the sticky-date feature flips the default to "last_used"
+        # so the date persists across posts until the user changes it; FREE
+        # keeps the old "today" reset.
         from core.user_prefs import prefs as _prefs
-        if _prefs.get("default_voucher_date", "today") == "today":
+        _default = "last_used" if self._has_feature("sticky_voucher_date") else "today"
+        if _prefs.get("default_voucher_date", _default) == "today":
             self.date_edit.setDate(QDate.currentDate())
         for row in self._journal_rows[:]:
             self._rows_layout.removeWidget(row)
@@ -1249,12 +1584,49 @@ class VoucherEntryPage(QWidget):
             sc = QShortcut(QKeySequence(seq), self)
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(self._show_calculator)
+        # Date steppers — only wired when the feature is on. Keeps the
+        # shortcut from silently nudging the date for FREE-tier users
+        # who don't see the buttons.
+        if self._has_feature("sticky_voucher_date"):
+            sc_prev = QShortcut(QKeySequence("Alt+,"), self)
+            sc_prev.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc_prev.activated.connect(lambda: self._nudge_date(-1))
+            sc_next = QShortcut(QKeySequence("Alt+."), self)
+            sc_next.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc_next.activated.connect(lambda: self._nudge_date(+1))
 
     def _show_calculator(self):
         btn_pos = self._post_btn.mapToGlobal(self._post_btn.rect().topLeft())
         self.calculator.move(btn_pos.x() - 270, btn_pos.y() - 360)
         self.calculator.show()
         self.calculator.raise_()
+
+    def _open_multi_party_dialog(self):
+        """Open the multi-party Payment/Receipt dialog. Carries over the
+        current date and the bank/cash ledger from field2 so the user
+        doesn't have to retype them."""
+        vtype = self._current_type
+        if vtype not in ("PAYMENT", "RECEIPT"):
+            return
+        if not self._has_feature("multi_party_voucher"):
+            return
+        default_bank_id = getattr(self.field2_ledger, "selected_id", None)
+        dlg = _MultiPartyVoucherDialog(
+            self.engine, self.tree, vtype,
+            default_date=self._get_date_str(),
+            default_bank_id=default_bank_id,
+            party_ledgers=self._party_ledgers,
+            bank_ledgers=self._bank_cash,
+            calculator=self.calculator,
+            parent=self,
+        )
+
+        def _on_posted(posted):
+            self.voucher_posted.emit(posted.voucher_number, vtype, posted.total_amount)
+            self._clear()
+
+        dlg.posted.connect(_on_posted)
+        dlg.exec()
 
     # ── In-context AI fill (Sales / Purchase) ─────────────────────────────────
 

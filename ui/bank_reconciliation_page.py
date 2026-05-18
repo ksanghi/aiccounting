@@ -274,74 +274,169 @@ class _CreateVoucherDialog(QDialog):
 # ── "Find candidate" picker ──────────────────────────────────────────────────
 
 class _FindCandidateDialog(QDialog):
-    picked = Signal(int)   # voucher_line_id
+    """
+    Find Candidate picker.
 
-    def __init__(self, candidates: list[dict], parent=None):
+    Default mode: single-select — pick ONE book entry whose amount equals
+    the statement amount (used by the auto-match candidate query, which
+    already filters within ±₹1).
+
+    Split mode (paid 'bank_reco_split' feature): multi-select — pick N book
+    entries that SUM to the statement amount. Used when a bank settlement
+    bundles several smaller payments/receipts under one bank line.
+    """
+    picked = Signal(int)        # legacy single-pick signal
+    picked_many = Signal(list)  # list[int] — split-mode multi-pick
+
+    def __init__(self, candidates: list[dict],
+                 stmt_sign: str = "DR",
+                 stmt_amount: float = 0.0,
+                 split_mode: bool = False,
+                 tolerance: float = 1.0,
+                 parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Find a matching ledger entry")
-        self.setMinimumWidth(620)
-        self.setMinimumHeight(360)
+        self.split_mode  = split_mode
+        self.stmt_sign   = stmt_sign
+        self.stmt_amount = float(stmt_amount or 0)
+        self.tolerance   = tolerance
+
+        self.setWindowTitle(
+            "Pick ledger entries that sum to the bank amount"
+            if split_mode else
+            "Find a matching ledger entry"
+        )
+        self.setMinimumWidth(680)
+        self.setMinimumHeight(420)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
 
         if not candidates:
-            layout.addWidget(QLabel(
+            hint = (
+                "No uncleared ledger entries on the matching side within "
+                "the date window."
+                if split_mode else
                 "No uncleared ledger entries within ±7 days "
                 "and ±₹1.00 of this statement line."
-            ))
+            )
+            layout.addWidget(QLabel(hint))
             close = QPushButton("Close")
             close.clicked.connect(self.reject)
             layout.addWidget(close)
             return
 
-        layout.addWidget(QLabel(
-            f"{len(candidates)} candidate(s) found. Select one to mark as cleared:"
-        ))
+        if split_mode:
+            layout.addWidget(QLabel(
+                f"<b>{len(candidates)}</b> candidate(s) on the matching side. "
+                f"Tick the rows whose amounts together equal the bank line of "
+                f"<b>Rs. {self.stmt_amount:,.2f}</b>. Use Ctrl+click for "
+                f"multi-select."
+            ))
+        else:
+            layout.addWidget(QLabel(
+                f"{len(candidates)} candidate(s) found. "
+                "Select one to mark as cleared:"
+            ))
 
         self._table = QTableWidget(len(candidates), 5)
         self._table.setHorizontalHeaderLabels(
             ["Date", "Voucher #", "Type", "Narration", "Amount (Dr / Cr)"]
         )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        if split_mode:
+            self._table.setSelectionMode(
+                QAbstractItemView.SelectionMode.ExtendedSelection
+            )
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
         self._table.verticalHeader().setDefaultSectionSize(40)
         self._row_to_id: dict[int, int] = {}
+        self._row_to_amount: dict[int, float] = {}
         for r, c in enumerate(candidates):
             self._row_to_id[r] = c["id"]
+            # Pull whichever side carries the amount opposite the stmt sign —
+            # that's what gets summed in split mode.
+            amt_val = (
+                float(c["dr_amount"] or 0)
+                if stmt_sign == "CR" else
+                float(c["cr_amount"] or 0)
+            )
+            self._row_to_amount[r] = amt_val
             self._table.setItem(r, 0, QTableWidgetItem(c["voucher_date"]))
             self._table.setItem(r, 1, QTableWidgetItem(c["voucher_number"] or ""))
             self._table.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             self._table.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
             amt = (
-                f"Dr ₹ {c['dr_amount']:,.2f}"
+                f"Dr Rs. {c['dr_amount']:,.2f}"
                 if c["dr_amount"] else
-                f"Cr ₹ {c['cr_amount']:,.2f}"
+                f"Cr Rs. {c['cr_amount']:,.2f}"
             )
             self._table.setItem(r, 4, QTableWidgetItem(amt))
         layout.addWidget(self._table)
+
+        # Running-total bar — only shown in split mode.
+        self._total_lbl = QLabel("")
+        if split_mode:
+            self._total_lbl.setStyleSheet(
+                f"color:{THEME['text_secondary']}; font-size:12px; "
+                f"padding:6px 0;"
+            )
+            layout.addWidget(self._total_lbl)
+            self._table.itemSelectionChanged.connect(self._refresh_total)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
-        ok = QPushButton("Match Selected")
-        ok.setObjectName("btn_primary")
-        ok.clicked.connect(self._on_ok)
+        self._ok_btn = QPushButton("Match Selected")
+        self._ok_btn.setObjectName("btn_primary")
+        self._ok_btn.clicked.connect(self._on_ok)
         btn_row.addWidget(cancel)
-        btn_row.addWidget(ok)
+        btn_row.addWidget(self._ok_btn)
         layout.addLayout(btn_row)
+
+        if split_mode:
+            self._refresh_total()
+
+    def _refresh_total(self):
+        rows = self._table.selectionModel().selectedRows()
+        picked_total = sum(self._row_to_amount[r.row()] for r in rows)
+        diff = picked_total - self.stmt_amount
+        n = len(rows)
+        if n == 0:
+            self._total_lbl.setText(
+                f"Selected: 0 rows · target Rs. {self.stmt_amount:,.2f}"
+            )
+            self._ok_btn.setEnabled(False)
+            return
+        within = abs(diff) <= self.tolerance
+        status = "matches ✓" if within else (
+            f"short by Rs. {-diff:,.2f}" if diff < 0
+            else f"over by Rs. {diff:,.2f}"
+        )
+        self._total_lbl.setText(
+            f"Selected: {n} row(s) · sum Rs. {picked_total:,.2f} "
+            f"vs target Rs. {self.stmt_amount:,.2f} — {status}"
+        )
+        self._total_lbl.setStyleSheet(
+            f"color:{THEME['success'] if within else THEME['danger']}; "
+            f"font-size:12px; font-weight:bold; padding:6px 0;"
+        )
+        self._ok_btn.setEnabled(within)
 
     def _on_ok(self):
         rows = self._table.selectionModel().selectedRows()
         if not rows:
             QMessageBox.warning(self, "Pick one", "Select a candidate row first.")
             return
-        vl_id = self._row_to_id[rows[0].row()]
-        self.picked.emit(vl_id)
+        if self.split_mode:
+            vl_ids = [self._row_to_id[r.row()] for r in rows]
+            self.picked_many.emit(vl_ids)
+        else:
+            vl_id = self._row_to_id[rows[0].row()]
+            self.picked.emit(vl_id)
         self.accept()
 
 
@@ -1370,10 +1465,20 @@ class BankReconciliationPage(QWidget):
             cv.clicked.connect(lambda _, line=s: self._on_create_voucher(line))
             fc = self._compact_btn("Find candidate")
             fc.clicked.connect(lambda _, line=s: self._on_find_candidate(line))
-            ig = self._compact_btn("Ignore")
-            ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
             ah.addWidget(cv)
             ah.addWidget(fc)
+            # Split-match: settlement scenarios where one bank line pairs
+            # with N book lines summing to the bank amount. Standard+ only.
+            if self._has_feature("bank_reco_split"):
+                sm = self._compact_btn("Split match")
+                sm.setToolTip(
+                    "Match this bank line to several ledger entries that "
+                    "together total the bank amount (settlement scenario)."
+                )
+                sm.clicked.connect(lambda _, line=s: self._on_split_match(line))
+                ah.addWidget(sm)
+            ig = self._compact_btn("Ignore")
+            ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
             ah.addWidget(ig)
             ah.addStretch()
             self._unmatched_stmt_table.setCellWidget(r, 6, actions)
@@ -1514,12 +1619,24 @@ class BankReconciliationPage(QWidget):
         dlg.posted.connect(lambda *_: self._populate_review())
         dlg.exec()
 
+    def _has_feature(self, feature: str) -> bool:
+        try:
+            return bool(self.license_mgr.has_feature(feature))
+        except Exception:
+            return False
+
     def _on_find_candidate(self, stmt_line: dict):
         candidates = self.reconciler.candidate_book_lines(
             self._bank_ledger_id, stmt_line["txn_date"],
             float(stmt_line["amount"]), stmt_line["sign"],
         )
-        dlg = _FindCandidateDialog(candidates, parent=self)
+        dlg = _FindCandidateDialog(
+            candidates,
+            stmt_sign=stmt_line["sign"],
+            stmt_amount=float(stmt_line["amount"]),
+            split_mode=False,
+            parent=self,
+        )
 
         def _on_pick(vl_id: int):
             try:
@@ -1530,6 +1647,35 @@ class BankReconciliationPage(QWidget):
             self._populate_review()
 
         dlg.picked.connect(_on_pick)
+        dlg.exec()
+
+    def _on_split_match(self, stmt_line: dict):
+        """Settlement match — one bank line ↔ many book entries summing to
+        the bank amount. Standard+ only (bank_reco_split feature)."""
+        if not self._has_feature("bank_reco_split"):
+            return
+        candidates = self.reconciler.candidate_book_lines(
+            self._bank_ledger_id, stmt_line["txn_date"],
+            float(stmt_line["amount"]), stmt_line["sign"],
+            split_mode=True,
+        )
+        dlg = _FindCandidateDialog(
+            candidates,
+            stmt_sign=stmt_line["sign"],
+            stmt_amount=float(stmt_line["amount"]),
+            split_mode=True,
+            parent=self,
+        )
+
+        def _on_pick_many(vl_ids: list):
+            try:
+                self.reconciler.manual_match_many(stmt_line["id"], vl_ids)
+            except Exception as e:
+                QMessageBox.critical(self, "Match failed", str(e))
+                return
+            self._populate_review()
+
+        dlg.picked_many.connect(_on_pick_many)
         dlg.exec()
 
     def _on_ignore(self, stmt_line: dict):

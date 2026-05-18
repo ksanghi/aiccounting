@@ -684,6 +684,93 @@ class VoucherEngine:
             ],
         )
 
+    def build_payment_multi(
+        self,
+        voucher_date: str,
+        bank_ledger_id: int,
+        party_lines: list[dict],
+        narration: str = "",
+        reference: str = "",
+    ) -> VoucherDraft:
+        """
+        Multi-party Payment voucher — one bank/cash credit, N party debits.
+        Use case: a single bank outflow that settles N suppliers/parties at once.
+
+        `party_lines` items: {"ledger_id": int, "amount": float, "narration": str}
+
+        Dr: each party (its share)   Cr: Bank/Cash (sum)
+        TDS is not auto-applied here — caller must compose explicit lines if
+        TDS is needed for any party (engine.post() will still validate).
+        """
+        if not party_lines:
+            raise ValueError("At least one party line is required.")
+        lines: list[VoucherLine] = []
+        total = 0.0
+        for pl in party_lines:
+            amt = float(pl.get("amount") or 0)
+            if amt <= 0:
+                continue
+            lines.append(VoucherLine(
+                ledger_id=int(pl["ledger_id"]),
+                dr_amount=amt,
+                line_narration=(pl.get("narration") or "").strip(),
+            ))
+            total += amt
+        if not lines:
+            raise ValueError("All party amounts are zero.")
+        lines.append(VoucherLine(
+            ledger_id=bank_ledger_id, cr_amount=round(total, 2),
+        ))
+        return VoucherDraft(
+            voucher_type="PAYMENT",
+            voucher_date=voucher_date,
+            lines=lines,
+            narration=narration,
+            reference=reference,
+        )
+
+    def build_receipt_multi(
+        self,
+        voucher_date: str,
+        bank_ledger_id: int,
+        party_lines: list[dict],
+        narration: str = "",
+        reference: str = "",
+    ) -> VoucherDraft:
+        """
+        Multi-party Receipt voucher — one bank/cash debit, N party credits.
+        Mirror of build_payment_multi for settlement-style deposits where one
+        bank credit covers payments from multiple customers.
+
+        Dr: Bank/Cash (sum)   Cr: each party (its share)
+        """
+        if not party_lines:
+            raise ValueError("At least one party line is required.")
+        lines: list[VoucherLine] = []
+        total = 0.0
+        for pl in party_lines:
+            amt = float(pl.get("amount") or 0)
+            if amt <= 0:
+                continue
+            lines.append(VoucherLine(
+                ledger_id=int(pl["ledger_id"]),
+                cr_amount=amt,
+                line_narration=(pl.get("narration") or "").strip(),
+            ))
+            total += amt
+        if not lines:
+            raise ValueError("All party amounts are zero.")
+        lines.insert(0, VoucherLine(
+            ledger_id=bank_ledger_id, dr_amount=round(total, 2),
+        ))
+        return VoucherDraft(
+            voucher_type="RECEIPT",
+            voucher_date=voucher_date,
+            lines=lines,
+            narration=narration,
+            reference=reference,
+        )
+
     def build_contra(
         self,
         voucher_date: str,

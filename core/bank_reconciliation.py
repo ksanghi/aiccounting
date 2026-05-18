@@ -984,17 +984,36 @@ class BankReconciler:
         sign: str,
         days: int = 7,
         amount_tolerance: float = 1.0,
+        split_mode: bool = False,
     ) -> list[dict]:
-        """For the 'Find Candidate' dialog — uncleared book lines near the stmt line."""
+        """For the 'Find Candidate' dialog — uncleared book lines near the stmt line.
+
+        When `split_mode=True`, drops the per-line amount filter and widens
+        the date window — caller intends to pick several lines that *sum*
+        to the statement amount (settlement scenario). Each candidate must
+        be smaller than the statement amount + tolerance (a line bigger
+        than the bank line can't be part of a sum that equals it).
+        """
         from datetime import date as _date, timedelta
         try:
             d = _date.fromisoformat(around_date)
         except ValueError:
             return []
+
+        # Settlement legs may post days before/after the bank credit hits,
+        # so split-mode widens the window. Exact-match keeps the tighter
+        # ±7d window so auto-match noise doesn't pollute the dropdown.
+        if split_mode:
+            days = max(days, 14)
         lo = (d - timedelta(days=days)).isoformat()
         hi = (d + timedelta(days=days)).isoformat()
-        amt_lo = max(0.0, amount - amount_tolerance)
-        amt_hi = amount + amount_tolerance
+
+        if split_mode:
+            amt_lo = 0.0
+            amt_hi = amount + amount_tolerance
+        else:
+            amt_lo = max(0.0, amount - amount_tolerance)
+            amt_hi = amount + amount_tolerance
 
         if sign == "CR":
             amount_filter = "vl.dr_amount BETWEEN ? AND ?"
@@ -1050,19 +1069,108 @@ class BankReconciler:
                 (sl["txn_date"], statement_line_id, user_id, voucher_line_id),
             )
 
+    def manual_match_many(
+        self,
+        statement_line_id: int,
+        voucher_line_ids: list[int],
+        user_id: int | None = None,
+        tolerance: float = 1.0,
+    ) -> None:
+        """
+        Link ONE bank statement line to MANY voucher lines.
+
+        Use case: a bank "settlement" credit that bundles several customer
+        receipts (or a single bank debit paying several vendors). Sum of the
+        selected voucher lines (on the side opposite the statement sign)
+        must equal the statement amount within `tolerance`.
+
+        bank_statement_lines.matched_voucher_line_id stores the first vl_id
+        as the "primary" pointer so the Matched-tab join still resolves a
+        voucher number. voucher_lines.bank_statement_line_id is set on ALL
+        of them — that's the load-bearing relationship the unmatch flow
+        relies on.
+        """
+        if not voucher_line_ids:
+            raise ValueError("Pick at least one ledger entry to match.")
+
+        with self.db:
+            sl = self.db.execute(
+                "SELECT txn_date, amount, sign FROM bank_statement_lines "
+                "WHERE id=?",
+                (statement_line_id,),
+            ).fetchone()
+            if not sl:
+                raise ValueError("Statement line not found.")
+
+            placeholders = ",".join("?" * len(voucher_line_ids))
+            rows = self.db.execute(
+                f"SELECT id, dr_amount, cr_amount, bank_statement_line_id, "
+                f"       cleared_date "
+                f"  FROM voucher_lines WHERE id IN ({placeholders})",
+                voucher_line_ids,
+            ).fetchall()
+            if len(rows) != len(voucher_line_ids):
+                raise ValueError("One or more ledger entries could not be loaded.")
+
+            for r in rows:
+                if r["bank_statement_line_id"] and \
+                   r["bank_statement_line_id"] != statement_line_id:
+                    raise ValueError(
+                        "One of the chosen ledger entries is already matched "
+                        "to a different bank line."
+                    )
+
+            # Statement CR (money in) pairs with book DR (e.g. bank debit on
+            # a Receipt voucher); statement DR pairs with book CR.
+            if sl["sign"] == "CR":
+                total = sum(float(r["dr_amount"] or 0) for r in rows)
+            else:
+                total = sum(float(r["cr_amount"] or 0) for r in rows)
+
+            stmt_amount = float(sl["amount"])
+            if abs(total - stmt_amount) > tolerance:
+                raise ValueError(
+                    f"Selected entries total Rs.{total:,.2f}, but the bank "
+                    f"line is Rs.{stmt_amount:,.2f}. Pick entries whose total "
+                    f"matches the bank amount (within Rs.{tolerance:.2f})."
+                )
+
+            primary_vl_id = voucher_line_ids[0]
+            self.db.execute(
+                "UPDATE bank_statement_lines "
+                "   SET match_status='MANUAL_MATCHED', "
+                "       matched_voucher_line_id=?, "
+                "       resolved_at=datetime('now'), "
+                "       resolved_by_user_id=? "
+                " WHERE id=?",
+                (primary_vl_id, user_id, statement_line_id),
+            )
+            self.db.execute(
+                f"UPDATE voucher_lines "
+                f"   SET cleared_date=?, "
+                f"       bank_statement_line_id=?, "
+                f"       cleared_by_user_id=? "
+                f" WHERE id IN ({placeholders})",
+                [sl["txn_date"], statement_line_id, user_id, *voucher_line_ids],
+            )
+
     def unmatch(
         self,
         statement_line_id: int,
         user_id: int | None = None,
     ) -> None:
+        # Clears the match on BOTH sides. Multi-match (manual_match_many)
+        # leaves N voucher_lines pointing at this statement line via
+        # voucher_lines.bank_statement_line_id, not just the one stored in
+        # matched_voucher_line_id — so we clear by the reverse link to
+        # avoid leaving stragglers cleared after an unmatch.
         with self.db:
             row = self.db.execute(
-                "SELECT matched_voucher_line_id FROM bank_statement_lines WHERE id=?",
+                "SELECT id FROM bank_statement_lines WHERE id=?",
                 (statement_line_id,),
             ).fetchone()
             if not row:
                 return
-            vl_id = row["matched_voucher_line_id"]
             self.db.execute(
                 "UPDATE bank_statement_lines "
                 "   SET match_status='UNMATCHED', "
@@ -1072,15 +1180,14 @@ class BankReconciler:
                 " WHERE id=?",
                 (statement_line_id,),
             )
-            if vl_id:
-                self.db.execute(
-                    "UPDATE voucher_lines "
-                    "   SET cleared_date=NULL, "
-                    "       bank_statement_line_id=NULL, "
-                    "       cleared_by_user_id=NULL "
-                    " WHERE id=?",
-                    (vl_id,),
-                )
+            self.db.execute(
+                "UPDATE voucher_lines "
+                "   SET cleared_date=NULL, "
+                "       bank_statement_line_id=NULL, "
+                "       cleared_by_user_id=NULL "
+                " WHERE bank_statement_line_id=?",
+                (statement_line_id,),
+            )
 
     def create_voucher_for_line(
         self,
