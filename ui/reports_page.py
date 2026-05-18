@@ -1092,11 +1092,20 @@ class LedgerAccountPage(_ReportBase):
 
     # Excel / PDF — wrap into the ledger_book exporter's expected shape.
     def _wrap_for_export(self) -> dict:
+        # The exporter expects each transaction to carry "voucher_type",
+        # but the report engine returns the column as "type" for the
+        # ledger_account view (other views use "voucher_type" directly).
+        # Map here rather than renaming in the engine — keeps the engine
+        # contract stable for any other consumer.
+        txns = [
+            {**t, "voucher_type": t.get("voucher_type") or t.get("type") or ""}
+            for t in self._data["transactions"]
+        ]
         return {
             "books": [{
                 "ledger":       self._data["ledger"],
                 "opening":      self._data["opening"],
-                "transactions": self._data["transactions"],
+                "transactions": txns,
                 "closing":      self._data["closing"],
             }],
             "from_date": self._data["from_date"],
