@@ -65,5 +65,12 @@ class Settings(BaseSettings):
     smtp_from_name: str = "AccGenie"
     smtp_use_tls:  bool = True
 
+    # ── Ops alerts ───────────────────────────────────────────────────────────
+    # Destination for security/abuse alerts (currently: seat-release
+    # cooldown trips). Multiple addresses can be comma-separated. Empty
+    # string disables alerts entirely; the cooldown still fires, the
+    # operator just doesn't get an email about it.
+    ops_alert_email: str = "info@ai-consultants.in"
+
 
 settings = Settings()

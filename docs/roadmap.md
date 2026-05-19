@@ -243,11 +243,13 @@ the application *before* the feature build is needed.
 
 ## Already on the list (not new today)
 
-- 🔴 Wire AI page costs into actual billing — `config/pricing.xlsx`
-  Countries sheet has `ai_text_page_cost` / `ai_scanned_page_cost` /
-  `ai_per_transaction_cost` columns, but no code reads them. Today's
-  `/ai/proxy` meters by Anthropic tokens. Decide: drop the page-cost
-  columns OR rewire metering. (Task #13 in the running task list.)
+- 🟢 ~~Wire AI page costs into actual billing~~ — **resolved by dropping
+  the unused columns** (2026-05-19). `config/pricing.xlsx` Countries
+  sheet no longer carries `ai_text_page_cost` / `ai_scanned_page_cost` /
+  `ai_per_transaction_cost`; the live AI proxy already meters per
+  Anthropic token via `license_server.config.ai_input_paise_per_1k` /
+  `ai_output_paise_per_1k`, which is more accurate. Page-based billing
+  was never wired and would have been less faithful to actual cost.
 - 🔴 Pricing page + checkout flow — desktop's Upgrade button currently
   uses mailto: to `info@ai-consultants.in` (placeholder). The server
   has the Razorpay create-order + webhook endpoints built but unwired

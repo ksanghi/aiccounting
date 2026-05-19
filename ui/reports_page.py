@@ -13,6 +13,7 @@ from PySide6.QtGui  import QColor
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, SmartDateEdit
 from ui.table_utils import make_sortable
+from core.i18n   import format_currency
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -23,7 +24,11 @@ def _fy_start() -> QDate:
     return QDate(y, 4, 1)
 
 def _fmt(v: float) -> str:
-    return f"₹{v:,.2f}"
+    # Locale-aware: ₹ 12,34,567.89 in IN (lakh grouping); $ 1,234,567.89
+    # in US; etc. The thin space after the symbol is intentional — keeps
+    # the visual separation that the old `₹{v:,.2f}` lost when amounts
+    # hit 1 crore (₹10000000.00 ran the digits into the symbol).
+    return format_currency(v)
 
 def _item(text: str, right: bool = False, colour: str = None,
           bold: bool = False) -> QTableWidgetItem:
@@ -502,8 +507,13 @@ class BalanceSheetPage(_ReportBase):
         self._fmt_combo = QComboBox()
         self._fmt_combo.addItem("Grouped", "grouped")
         self._fmt_combo.addItem("Flat",    "flat")
-        self._fmt_combo.addItem("Schedule III (coming soon)", "schedule3")
-        self._fmt_combo.model().item(2).setEnabled(False)
+        # "Schedule III" (Companies Act 2013 format) is a real
+        # categorisation problem — every chart-of-accounts group would
+        # need a schedule3_head mapping (Shareholders' Funds /
+        # Non-Current Liabilities / Current Liabilities / Non-Current
+        # Assets / Current Assets). Until we ship that mapping, showing
+        # a disabled "(coming soon)" option is just UI clutter that
+        # makes users hover-poke-give-up. Re-add when the mapping is in.
         self._fmt_combo.setFixedHeight(30)
         self._fmt_combo.currentIndexChanged.connect(self._on_fmt_change)
         row.addWidget(self._fmt_combo)

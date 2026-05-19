@@ -18,9 +18,16 @@ Shape (see `config/pricing.xlsx` for the live data):
     COUNTRIES = [
         {"country_code": "IN", "currency_code": "INR",
          "tier_prices": {"DEMO": 0, "FREE": 0, "STANDARD": 1999, ...},
-         "ai_text_page_cost": 0.10, "ai_scanned_page_cost": 5.00, ...},
+         "active": True, "notes": "..."},
         ...
     ]
+
+Note: an earlier design billed AI usage per text/scanned page, with
+`ai_text_page_cost` / `ai_scanned_page_cost` / `ai_per_transaction_cost`
+columns on the Countries sheet. We never shipped that — the live AI
+proxy on the license server meters by Anthropic tokens
+(`ai_input_paise_per_1k` / `ai_output_paise_per_1k`). Those page-cost
+columns were dropped from pricing.xlsx and `make_config_xlsx.py`.
 
 Tier definitions are GLOBAL; per-country pricing references tier codes.
 To add a new tier: append to the Tiers sheet AND add a `price_<CODE>`

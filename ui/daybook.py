@@ -14,6 +14,7 @@ from PySide6.QtGui  import QColor, QFont, QKeySequence, QShortcut
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, make_separator, SmartDateEdit
 from ui.table_utils import NumericTableItem, make_sortable, populating
+from core.i18n   import format_currency
 
 
 _VOUCHER_ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -153,7 +154,7 @@ class DayBookPage(QWidget):
                     v["voucher_date"],
                     v["voucher_number"],
                     v["voucher_type"].replace("_", " "),
-                    f"₹{v['total_amount']:,.2f}",
+                    format_currency(v["total_amount"]),
                     v["narration"] or "",
                     v["reference"] or "",
                 ]
@@ -179,7 +180,7 @@ class DayBookPage(QWidget):
                 total += v["total_amount"]
 
             self.total_label.setText(
-                f"{len(vouchers)} vouchers  |  Total ₹{total:,.2f}"
+                f"{len(vouchers)} vouchers  |  Total {format_currency(total)}"
             )
         self._update_action_buttons()
 
@@ -412,7 +413,7 @@ class LedgerBalancePage(QWidget):
                 is_dr = d["type"] == "Dr"
                 colour = THEME["accent"] if is_dr else THEME["warning"]
 
-                items = [d["name"], d["group"], f"₹{d['balance']:,.2f}", d["type"]]
+                items = [d["name"], d["group"], format_currency(d["balance"]), d["type"]]
                 for j, text in enumerate(items):
                     if j == 2:
                         item = NumericTableItem(text, d["balance"])
@@ -435,7 +436,7 @@ class LedgerBalancePage(QWidget):
 
         self.summary_label.setText(
             f"{len(rows)} ledgers  |  "
-            f"Total Dr ₹{total_dr:,.2f}  |  Total Cr ₹{total_cr:,.2f}"
+            f"Total Dr {format_currency(total_dr)}  |  Total Cr {format_currency(total_cr)}"
         )
 
     def _add_ledger(self):

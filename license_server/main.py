@@ -287,6 +287,79 @@ def _log_validation(
     ))
 
 
+def _mask_key(key: str) -> str:
+    """Show first 4 + last 4 chars; redact the middle. So a leaked
+    alert email doesn't hand a working key to whoever sees it."""
+    k = (key or "").strip()
+    if len(k) <= 8:
+        return "****"
+    return f"{k[:4]}…{k[-4:]}"
+
+
+def _maybe_alert_seat_release_abuse(
+    db: Session, lic: "License", key: str,
+    prior_machine: str, prior_time: datetime,
+    new_machine: str, new_ip: str,
+) -> None:
+    """Send an ops email when a key trips the seat-release cooldown.
+    Debounced: only one alert per key per 24h so a desktop client
+    looping on deactivate-then-retry doesn't pile up inbox noise.
+    Best-effort — never raises; missing SMTP or alert email just no-ops.
+    """
+    from datetime import timedelta as _td
+    to = (settings.ops_alert_email or "").strip()
+    if not to:
+        return
+
+    # Debounce: have we already alerted for THIS key in the last 24h?
+    cutoff = datetime.utcnow() - _td(hours=24)
+    prior_alert = db.scalar(
+        select(ValidationLog).where(
+            ValidationLog.license_id == lic.id,
+            ValidationLog.error      == "seat_release_alert_sent",
+            ValidationLog.created_at >= cutoff,
+        ).limit(1)
+    )
+    if prior_alert is not None:
+        return
+
+    subject = f"[AccGenie] Seat-release cooldown tripped — {_mask_key(key)}"
+    body = (
+        "A licence key tripped the 24-hour seat-release cooldown — i.e.\n"
+        "the desktop client tried to release ONE machine and then\n"
+        "ROTATE the seat to a DIFFERENT machine within 24 hours. This\n"
+        "is the abuse pattern the cooldown is designed to block.\n\n"
+        f"  Key (masked):     {_mask_key(key)}\n"
+        f"  Licence id:       {lic.id}\n"
+        f"  Plan:             {getattr(lic, 'plan', '?')}\n"
+        f"  Email on file:    {getattr(lic, 'email', '') or '(none)'}\n"
+        f"  Prior release:    machine {prior_machine} at "
+        f"{prior_time.isoformat() if prior_time else '(unknown)'} UTC\n"
+        f"  New attempt:      machine {new_machine} from IP {new_ip}\n"
+        f"  Server time:      {datetime.utcnow().isoformat()} UTC\n\n"
+        "The deactivate request was blocked; the customer was told to\n"
+        "wait or contact support. If this looks like an honest mistake\n"
+        "(lost laptop, etc.), use the admin endpoint to release the\n"
+        "stale binding manually:\n\n"
+        "  POST /admin/keys/{key}/seats   (or DELETE on the binding)\n"
+    )
+    try:
+        sent = email_service.send_email(to_email=to, subject=subject,
+                                        body_text=body)
+        if sent:
+            # Stamp the debounce marker so a repeat trip in <24h is silent.
+            _log_validation(
+                db, lic.id, key, new_machine, "", new_ip,
+                success=False, error="seat_release_alert_sent",
+            )
+            db.commit()
+    except Exception:
+        # Swallow — alerts are best-effort. Log via the email_service's
+        # own logger; we don't want a flaky SMTP server to error the
+        # cooldown response path.
+        pass
+
+
 # ── Public endpoints ──────────────────────────────────────────────────────
 
 @app.get("/", include_in_schema=False)
@@ -535,6 +608,15 @@ def deactivate(
             success=False, error="seat_release_blocked_cooldown",
         )
         db.commit()
+        # Ops alert (best-effort, debounced to once per key per 24h so a
+        # script hammering deactivate doesn't flood the inbox).
+        _maybe_alert_seat_release_abuse(
+            db, lic, key,
+            prior_machine=recent_other.machine_id,
+            prior_time=recent_other.created_at,
+            new_machine=machine_id,
+            new_ip=ip,
+        )
         return DeactivateResponse(
             ok=False,
             error=(

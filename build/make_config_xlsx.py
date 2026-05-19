@@ -161,12 +161,16 @@ FEATURE_UPGRADE_MAP_SEED = {
 COUNTRIES_SEED = [
     # country_code, country_name, currency_code, currency_symbol,
     # price_DEMO, price_FREE, price_STANDARD, price_PRO, price_PREMIUM,
-    # ai_text_page_cost, ai_scanned_page_cost, ai_per_transaction_cost,
     # active, notes
-    ("IN", "India",                "INR", "Rs.",  0, 0,    1999, 4999, 9999,  0.10, 5.00, None, "Y", "Home market. Prices in INR per year."),
-    ("US", "United States",        "USD", "$",    0, None, None, None, None,  None, None, None, "Y", "Fill USD prices."),
-    ("SG", "Singapore",            "SGD", "S$",   0, None, None, None, None,  None, None, None, "Y", "Fill SGD prices."),
-    ("AE", "United Arab Emirates", "AED", "AED",  0, None, None, None, None,  None, None, None, "Y", "Fill AED prices."),
+    #
+    # The earlier ai_text_page_cost / ai_scanned_page_cost /
+    # ai_per_transaction_cost columns were dropped: the live AI proxy
+    # meters by Anthropic tokens (see license_server.config
+    # .ai_input_paise_per_1k / .ai_output_paise_per_1k), not by pages.
+    ("IN", "India",                "INR", "Rs.",  0, 0,    1999, 4999, 9999,  "Y", "Home market. Prices in INR per year."),
+    ("US", "United States",        "USD", "$",    0, None, None, None, None,  "Y", "Fill USD prices."),
+    ("SG", "Singapore",            "SGD", "S$",   0, None, None, None, None,  "Y", "Fill SGD prices."),
+    ("AE", "United Arab Emirates", "AED", "AED",  0, None, None, None, None,  "Y", "Fill AED prices."),
 ]
 
 
@@ -359,20 +363,18 @@ def make_pricing_xlsx(path: Path):
     ws3["A2"] = (
         "Tier price columns hold the per-year price in this country's currency. "
         "Leave a tier's price blank if the tier is not sold in this country. "
-        "ai_text_page_cost / ai_scanned_page_cost = wallet debit per AI page. "
         "active=Y to expose the country in the upgrade UI."
     )
     ws3["A2"].font = NOTE_FONT
     ws3["A2"].alignment = LEFT
-    ws3.merge_cells("A2:N2")
+    ws3.merge_cells("A2:K2")
     ws3.row_dimensions[2].height = 44
 
     tier_price_headers = [f"price_{p}" for p in plan_codes]
     headers3 = (
         ["country_code", "country_name", "currency_code", "currency_symbol"]
         + tier_price_headers
-        + ["ai_text_page_cost", "ai_scanned_page_cost",
-           "ai_per_transaction_cost", "active", "notes"]
+        + ["active", "notes"]
     )
     for i, h in enumerate(headers3, start=1):
         ws3.cell(row=4, column=i, value=h)
