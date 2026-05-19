@@ -27,6 +27,14 @@ echo.
 echo === [1/2]  Compiling with Nuitka  (this takes 5-15 minutes) ===
 echo.
 
+REM --product-name / --product-version / --file-version / --file-description /
+REM --copyright are intentionally dropped. They trigger Nuitka's resource-
+REM injection post-processing step, which fails on this machine because
+REM Windows Defender real-time scan locks the freshly-written .exe before
+REM rcedit can patch it ("Failed to add resources... attempt N/5", FATAL).
+REM Same workaround as RWAGenie commit b0ddc86. The installer carries the
+REM version in its filename and Inno Setup metadata, so the exe-property
+REM "Version" tab being blank is the only cost.
 python -m nuitka ^
     --standalone ^
     --enable-plugin=pyside6 ^
@@ -40,11 +48,6 @@ python -m nuitka ^
     --output-filename=%APP_NAME%.exe ^
     --remove-output ^
     --assume-yes-for-downloads ^
-    --product-name=%APP_NAME% ^
-    --product-version=%VERSION% ^
-    --file-version=%VERSION% ^
-    --file-description="AccGenie - Indian Accounting Software" ^
-    --copyright="(c) 2026 Aiccounting" ^
     main.py
 
 if errorlevel 1 (
