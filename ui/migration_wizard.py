@@ -302,6 +302,7 @@ class MigrationWizard(QDialog):
         )
 
         # Sample table — first 200 ledgers
+        self._preview_table.setSortingEnabled(False)
         self._preview_table.setRowCount(0)
         for ld in self._payload.ledgers[:200]:
             r = self._preview_table.rowCount()
@@ -312,6 +313,8 @@ class MigrationWizard(QDialog):
                 f"₹ {ld.opening_balance:,.2f}"
             ))
             self._preview_table.setItem(r, 3, QTableWidgetItem(ld.opening_type))
+        from ui.table_utils import make_sortable as _ms
+        _ms(self._preview_table)
 
         msgs = []
         if v.warnings:

@@ -32,6 +32,7 @@ from core.bank_reconciliation import (
     UnverifiedStatement,
 )
 from core.voucher_engine import VoucherDraft, VoucherLine
+from ui.table_utils import NumericTableItem, make_sortable, populating
 
 
 # ── Background worker for import + auto-match ────────────────────────────────
@@ -374,6 +375,8 @@ class _FindCandidateDialog(QDialog):
                 f"Cr Rs. {c['cr_amount']:,.2f}"
             )
             self._table.setItem(r, 4, QTableWidgetItem(amt))
+        # Enable sort AFTER populating so the inserts don't re-sort live.
+        make_sortable(self._table)
         layout.addWidget(self._table)
 
         # Running-total bar — only shown in split mode.
@@ -790,6 +793,7 @@ class BankReconciliationPage(QWidget):
             self._imports_table.setColumnWidth(col, w)
         self._imports_table.verticalHeader().setDefaultSectionSize(44)
         self._imports_table.setMinimumHeight(120)
+        make_sortable(self._imports_table)
         imp_lay.addWidget(self._imports_table)
         layout.addWidget(imp_card)
 
@@ -815,6 +819,7 @@ class BankReconciliationPage(QWidget):
         )
         self._history_table.verticalHeader().setDefaultSectionSize(40)
         self._history_table.setMinimumHeight(120)
+        make_sortable(self._history_table)
         hist_lay.addWidget(self._history_table)
         layout.addWidget(hist_card)
 
@@ -890,6 +895,11 @@ class BankReconciliationPage(QWidget):
         self._imports_table.setRowCount(0)
         if not self._bank_ledger_id:
             return
+
+        # Disable sort while bulk-populating — otherwise each setItem
+        # re-sorts and the row indexes we're writing into stop matching.
+        self._imports_table.setSortingEnabled(False)
+        self._history_table.setSortingEnabled(False)
 
         # Imported statements
         imports = self.reconciler.recent_imports(self._bank_ledger_id)
@@ -977,11 +987,11 @@ class BankReconciliationPage(QWidget):
         self._history_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             self._history_table.setItem(r, 0, QTableWidgetItem(row["as_of_date"]))
-            self._history_table.setItem(r, 1, QTableWidgetItem(
-                f"₹ {row['book_balance']:,.2f}"
+            self._history_table.setItem(r, 1, NumericTableItem(
+                f"₹ {row['book_balance']:,.2f}", row["book_balance"]
             ))
-            self._history_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {row['statement_balance']:,.2f}"
+            self._history_table.setItem(r, 2, NumericTableItem(
+                f"₹ {row['statement_balance']:,.2f}", row["statement_balance"]
             ))
             self._history_table.setItem(r, 3, QTableWidgetItem(
                 f"{row['matched_count']}  /  "
@@ -990,6 +1000,9 @@ class BankReconciliationPage(QWidget):
             self._history_table.setItem(r, 4, QTableWidgetItem(
                 row["finalised_at"][:16]
             ))
+
+        self._imports_table.setSortingEnabled(True)
+        self._history_table.setSortingEnabled(True)
 
     def _on_delete_statement(self, statement_id: int, summary: dict):
         matched = summary.get("matched") or 0
@@ -1172,11 +1185,19 @@ class BankReconciliationPage(QWidget):
 
     def _on_import_done(self, statement_id: int, result):
         self._statement_id = statement_id
-        self._status_lbl.setText(
+        ambig = getattr(result, "ambiguous_skipped", 0)
+        msg = (
             f"Imported. Matched {result.matched}, "
             f"{result.unmatched_stmt} stmt unmatched, "
             f"{result.unmatched_book} book unmatched."
         )
+        if ambig:
+            # Conservative auto-match leaves same-(date,amount,sign) ties
+            # for the user. Surface the count so they know there's work to
+            # do on the Unmatched tab and aren't surprised by the lower
+            # matched count vs. older builds.
+            msg += f" {ambig} ambiguous — left for manual review."
+        self._status_lbl.setText(msg)
         self._populate_review()
         self._stack.setCurrentWidget(self._review_page)
 
@@ -1295,7 +1316,30 @@ class BankReconciliationPage(QWidget):
             self._refresh_bulk_buttons
         )
 
-        self._tabs.addTab(self._matched_table, "Matched")
+        # Matched tab: thin toolbar with "Undo auto-matches" so a polluted
+        # auto-match pass can be wiped in one click without touching the
+        # user's manual / voucher_created resolutions.
+        matched_wrap = QWidget()
+        mw_layout = QVBoxLayout(matched_wrap)
+        mw_layout.setContentsMargins(0, 0, 0, 0)
+        mw_layout.setSpacing(4)
+        m_bar = QHBoxLayout()
+        m_bar.setContentsMargins(2, 2, 2, 2)
+        m_bar.setSpacing(6)
+        m_bar.addStretch(1)
+        self._undo_auto_btn = QPushButton("Undo all auto-matches")
+        self._undo_auto_btn.setFixedHeight(28)
+        self._undo_auto_btn.setToolTip(
+            "Reverts every auto-matched row on this statement back to "
+            "Unmatched. Leaves your manual matches and created vouchers "
+            "alone."
+        )
+        self._undo_auto_btn.clicked.connect(self._on_undo_auto_matches)
+        m_bar.addWidget(self._undo_auto_btn)
+        mw_layout.addLayout(m_bar)
+        mw_layout.addWidget(self._matched_table)
+
+        self._tabs.addTab(matched_wrap, "Matched")
         self._tabs.addTab(unmatched_wrap, "Unmatched Statement")
         self._tabs.addTab(self._unmatched_book_table, "Unmatched Book")
         self._tabs.addTab(self._ignored_table, "Ignored")
@@ -1411,6 +1455,7 @@ class BankReconciliationPage(QWidget):
             else:
                 hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
                 t.setColumnWidth(i, w)
+        make_sortable(t)
         return t
 
     def _populate_review(self):
@@ -1419,121 +1464,126 @@ class BankReconciliationPage(QWidget):
 
         # Matched
         matched = self.reconciler.matched_lines(self._statement_id)
-        self._matched_table.setRowCount(len(matched))
-        for r, m in enumerate(matched):
-            self._matched_table.setItem(r, 0, QTableWidgetItem(m["txn_date"]))
-            self._matched_table.setItem(r, 1, QTableWidgetItem(m["sign"]))
-            self._matched_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {m['amount']:,.2f}"
-            ))
-            self._matched_table.setItem(r, 3, QTableWidgetItem(m.get("voucher_number") or ""))
-            self._matched_table.setItem(r, 4, QTableWidgetItem(m.get("voucher_type") or ""))
-            self._matched_table.setItem(r, 5, QTableWidgetItem(m.get("narration") or ""))
-            unmatch_btn = self._compact_btn("Unmatch")
-            unmatch_btn.clicked.connect(
-                lambda _, sl_id=m["id"]: self._on_unmatch(sl_id)
-            )
-            cell = QWidget()
-            ch = QHBoxLayout(cell)
-            ch.setContentsMargins(6, 0, 6, 0)
-            ch.addWidget(unmatch_btn)
-            ch.addStretch()
-            self._matched_table.setCellWidget(r, 6, cell)
+        with populating(self._matched_table):
+            self._matched_table.setRowCount(len(matched))
+            for r, m in enumerate(matched):
+                self._matched_table.setItem(r, 0, QTableWidgetItem(m["txn_date"]))
+                self._matched_table.setItem(r, 1, QTableWidgetItem(m["sign"]))
+                self._matched_table.setItem(r, 2, NumericTableItem(
+                    f"₹ {m['amount']:,.2f}", m["amount"]
+                ))
+                self._matched_table.setItem(r, 3, QTableWidgetItem(m.get("voucher_number") or ""))
+                self._matched_table.setItem(r, 4, QTableWidgetItem(m.get("voucher_type") or ""))
+                self._matched_table.setItem(r, 5, QTableWidgetItem(m.get("narration") or ""))
+                unmatch_btn = self._compact_btn("Unmatch")
+                unmatch_btn.clicked.connect(
+                    lambda _, sl_id=m["id"]: self._on_unmatch(sl_id)
+                )
+                cell = QWidget()
+                ch = QHBoxLayout(cell)
+                ch.setContentsMargins(6, 0, 6, 0)
+                ch.addWidget(unmatch_btn)
+                ch.addStretch()
+                self._matched_table.setCellWidget(r, 6, cell)
 
         # Unmatched stmt
         u_stmt = self.reconciler.unmatched_statement_lines(self._statement_id)
-        self._unmatched_stmt_table.setRowCount(len(u_stmt))
-        for r, s in enumerate(u_stmt):
-            date_item = QTableWidgetItem(s["txn_date"])
-            # Carry the statement_line.id on column 0 so multi-select
-            # bulk actions can map row → id.
-            date_item.setData(Qt.ItemDataRole.UserRole, s["id"])
-            self._unmatched_stmt_table.setItem(r, 0, date_item)
-            self._unmatched_stmt_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
-            self._unmatched_stmt_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {s['amount']:,.2f}"
-            ))
-            self._unmatched_stmt_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
-            self._unmatched_stmt_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
-            self._unmatched_stmt_table.setItem(r, 5, QTableWidgetItem(s["match_status"]))
+        with populating(self._unmatched_stmt_table):
+            self._unmatched_stmt_table.setRowCount(len(u_stmt))
+            for r, s in enumerate(u_stmt):
+                date_item = QTableWidgetItem(s["txn_date"])
+                # Carry the statement_line.id on column 0 so multi-select
+                # bulk actions can map row → id.
+                date_item.setData(Qt.ItemDataRole.UserRole, s["id"])
+                self._unmatched_stmt_table.setItem(r, 0, date_item)
+                self._unmatched_stmt_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
+                self._unmatched_stmt_table.setItem(r, 2, NumericTableItem(
+                    f"₹ {s['amount']:,.2f}", s["amount"]
+                ))
+                self._unmatched_stmt_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
+                self._unmatched_stmt_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
+                self._unmatched_stmt_table.setItem(r, 5, QTableWidgetItem(s["match_status"]))
 
-            actions = QWidget()
-            ah = QHBoxLayout(actions)
-            ah.setContentsMargins(6, 0, 6, 0)
-            ah.setSpacing(4)
-            cv = self._compact_btn("Create voucher")
-            cv.clicked.connect(lambda _, line=s: self._on_create_voucher(line))
-            fc = self._compact_btn("Find candidate")
-            fc.clicked.connect(lambda _, line=s: self._on_find_candidate(line))
-            ah.addWidget(cv)
-            ah.addWidget(fc)
-            # Split-match: settlement scenarios where one bank line pairs
-            # with N book lines summing to the bank amount. Standard+ only.
-            if self._has_feature("bank_reco_split"):
-                sm = self._compact_btn("Split match")
-                sm.setToolTip(
-                    "Match this bank line to several ledger entries that "
-                    "together total the bank amount (settlement scenario)."
-                )
-                sm.clicked.connect(lambda _, line=s: self._on_split_match(line))
-                ah.addWidget(sm)
-            ig = self._compact_btn("Ignore")
-            ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
-            ah.addWidget(ig)
-            ah.addStretch()
-            self._unmatched_stmt_table.setCellWidget(r, 6, actions)
+                actions = QWidget()
+                ah = QHBoxLayout(actions)
+                ah.setContentsMargins(6, 0, 6, 0)
+                ah.setSpacing(4)
+                cv = self._compact_btn("Create voucher")
+                cv.clicked.connect(lambda _, line=s: self._on_create_voucher(line))
+                fc = self._compact_btn("Find candidate")
+                fc.clicked.connect(lambda _, line=s: self._on_find_candidate(line))
+                ah.addWidget(cv)
+                ah.addWidget(fc)
+                # Split-match: settlement scenarios where one bank line pairs
+                # with N book lines summing to the bank amount. Standard+ only.
+                if self._has_feature("bank_reco_split"):
+                    sm = self._compact_btn("Split match")
+                    sm.setToolTip(
+                        "Match this bank line to several ledger entries that "
+                        "together total the bank amount (settlement scenario)."
+                    )
+                    sm.clicked.connect(lambda _, line=s: self._on_split_match(line))
+                    ah.addWidget(sm)
+                ig = self._compact_btn("Ignore")
+                ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
+                ah.addWidget(ig)
+                ah.addStretch()
+                self._unmatched_stmt_table.setCellWidget(r, 6, actions)
 
         # Unmatched book
         u_book = self.reconciler.unmatched_book_lines(
             self._bank_ledger_id, self._period_from, self._period_to,
         )
-        self._unmatched_book_table.setRowCount(len(u_book))
-        for r, b in enumerate(u_book):
-            self._unmatched_book_table.setItem(r, 0, QTableWidgetItem(b["voucher_date"]))
-            self._unmatched_book_table.setItem(r, 1, QTableWidgetItem(b["voucher_number"] or ""))
-            self._unmatched_book_table.setItem(r, 2, QTableWidgetItem(b["voucher_type"]))
-            amt = (
-                f"Dr ₹ {b['dr_amount']:,.2f}"
-                if b["dr_amount"] else
-                f"Cr ₹ {b['cr_amount']:,.2f}"
-            )
-            self._unmatched_book_table.setItem(r, 3, QTableWidgetItem(amt))
-            self._unmatched_book_table.setItem(r, 4, QTableWidgetItem(b.get("narration") or ""))
+        with populating(self._unmatched_book_table):
+            self._unmatched_book_table.setRowCount(len(u_book))
+            for r, b in enumerate(u_book):
+                self._unmatched_book_table.setItem(r, 0, QTableWidgetItem(b["voucher_date"]))
+                self._unmatched_book_table.setItem(r, 1, QTableWidgetItem(b["voucher_number"] or ""))
+                self._unmatched_book_table.setItem(r, 2, QTableWidgetItem(b["voucher_type"]))
+                amt = (
+                    f"Dr ₹ {b['dr_amount']:,.2f}"
+                    if b["dr_amount"] else
+                    f"Cr ₹ {b['cr_amount']:,.2f}"
+                )
+                amt_val = float(b["dr_amount"] or b["cr_amount"] or 0)
+                self._unmatched_book_table.setItem(r, 3, NumericTableItem(amt, amt_val))
+                self._unmatched_book_table.setItem(r, 4, QTableWidgetItem(b.get("narration") or ""))
 
-            mark = self._compact_btn("Mark cleared")
-            mark.clicked.connect(
-                lambda _, vl_id=b["id"]: self._on_mark_book_cleared(vl_id)
-            )
-            cell = QWidget()
-            ch = QHBoxLayout(cell)
-            ch.setContentsMargins(6, 0, 6, 0)
-            ch.addWidget(mark)
-            ch.addStretch()
-            self._unmatched_book_table.setCellWidget(r, 5, cell)
+                mark = self._compact_btn("Mark cleared")
+                mark.clicked.connect(
+                    lambda _, vl_id=b["id"]: self._on_mark_book_cleared(vl_id)
+                )
+                cell = QWidget()
+                ch = QHBoxLayout(cell)
+                ch.setContentsMargins(6, 0, 6, 0)
+                ch.addWidget(mark)
+                ch.addStretch()
+                self._unmatched_book_table.setCellWidget(r, 5, cell)
 
         # Ignored — separate tab so resolved-as-ignored lines don't crowd
         # the Unmatched view but stay reviewable.
         ignored = self.reconciler.ignored_statement_lines(self._statement_id)
-        self._ignored_table.setRowCount(len(ignored))
-        for r, s in enumerate(ignored):
-            self._ignored_table.setItem(r, 0, QTableWidgetItem(s["txn_date"]))
-            self._ignored_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
-            self._ignored_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {s['amount']:,.2f}"
-            ))
-            self._ignored_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
-            self._ignored_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
-            self._ignored_table.setItem(r, 5, QTableWidgetItem(s.get("notes") or ""))
-            unignore = self._compact_btn("Un-ignore")
-            unignore.clicked.connect(
-                lambda _, sl_id=s["id"]: self._on_unignore(sl_id)
-            )
-            cell = QWidget()
-            ch = QHBoxLayout(cell)
-            ch.setContentsMargins(6, 0, 6, 0)
-            ch.addWidget(unignore)
-            ch.addStretch()
-            self._ignored_table.setCellWidget(r, 6, cell)
+        with populating(self._ignored_table):
+            self._ignored_table.setRowCount(len(ignored))
+            for r, s in enumerate(ignored):
+                self._ignored_table.setItem(r, 0, QTableWidgetItem(s["txn_date"]))
+                self._ignored_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
+                self._ignored_table.setItem(r, 2, NumericTableItem(
+                    f"₹ {s['amount']:,.2f}", s["amount"]
+                ))
+                self._ignored_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
+                self._ignored_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
+                self._ignored_table.setItem(r, 5, QTableWidgetItem(s.get("notes") or ""))
+                unignore = self._compact_btn("Un-ignore")
+                unignore.clicked.connect(
+                    lambda _, sl_id=s["id"]: self._on_unignore(sl_id)
+                )
+                cell = QWidget()
+                ch = QHBoxLayout(cell)
+                ch.setContentsMargins(6, 0, 6, 0)
+                ch.addWidget(unignore)
+                ch.addStretch()
+                self._ignored_table.setCellWidget(r, 6, cell)
 
         # Update tab labels with counts so the user sees at-a-glance what
         # needs attention vs what's already resolved.
@@ -1609,6 +1659,31 @@ class BankReconciliationPage(QWidget):
             QMessageBox.critical(self, "Unmatch failed", str(e))
             return
         self._populate_review()
+
+    def _on_undo_auto_matches(self):
+        if self._statement_id is None:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Undo auto-matches?",
+            "This will revert every auto-matched row on this statement "
+            "back to Unmatched. Manual matches and created vouchers are "
+            "left alone. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            n = self.reconciler.unmatch_all_auto(self._statement_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Undo failed", str(e))
+            return
+        self._populate_review()
+        QMessageBox.information(
+            self, "Undo complete",
+            f"Reverted {n} auto-matched row(s) back to Unmatched."
+        )
 
     def _on_create_voucher(self, stmt_line: dict):
         dlg = _CreateVoucherDialog(

@@ -129,6 +129,7 @@ class AutoMatchResult:
     matched: int
     unmatched_stmt: int
     unmatched_book: int
+    ambiguous_skipped: int = 0
 
 
 class BankReconciler:
@@ -552,7 +553,17 @@ class BankReconciler:
     ) -> AutoMatchResult:
         """
         Match statement lines 1-to-1 to uncleared voucher_lines on
-        (date, round(amount,2), sign). First-come-first-served; conservative.
+        (date, round(amount,2), sign). Conservative — when a triple matches
+        more than one book line OR more than one stmt line, we leave it
+        alone for the user to disambiguate. Two damage modes the old greedy
+        version caused:
+          - Two ₹500 payments on the same day → arbitrary 1-to-1 pairing,
+            sticking the wrong narration on each.
+          - Settlement bundling (one bank credit = N customer receipts):
+            the individual receipts auto-matched 1-to-1 against unrelated
+            stmt lines that happened to share their date+amount, leaving
+            the bundled bank line with no candidates left for split-match.
+        Caller can review/clear via `unmatch_all_auto`.
         """
         stmt = self.db.execute(
             "SELECT bank_ledger_id, period_from, period_to "
@@ -589,7 +600,7 @@ class BankReconciler:
 
         # Index: (date, round(amount,2), sign) → list of voucher_line ids.
         # Sign convention again: dr > 0 = money INTO bank = stmt 'CR'.
-        index: dict[tuple, list[int]] = {}
+        book_index: dict[tuple, list[int]] = {}
         for r in book_rows:
             if r["dr_amount"] and r["dr_amount"] > 0:
                 key = (r["voucher_date"], round(r["dr_amount"], 2), "CR")
@@ -597,16 +608,28 @@ class BankReconciler:
                 key = (r["voucher_date"], round(r["cr_amount"], 2), "DR")
             else:
                 continue
-            index.setdefault(key, []).append(r["id"])
+            book_index.setdefault(key, []).append(r["id"])
+
+        # Count statement-side duplicates of each key too: a single book
+        # line can't be auto-matched if N stmt lines all want it.
+        stmt_key_count: dict[tuple, int] = {}
+        for sl in stmt_lines:
+            key = (sl["txn_date"], round(sl["amount"], 2), sl["sign"])
+            stmt_key_count[key] = stmt_key_count.get(key, 0) + 1
 
         matched = 0
+        ambiguous = 0
         with self.db:
             for sl in stmt_lines:
                 key = (sl["txn_date"], round(sl["amount"], 2), sl["sign"])
-                bucket = index.get(key)
+                bucket = book_index.get(key)
                 if not bucket:
                     continue
-                vl_id = bucket.pop(0)
+                if len(bucket) > 1 or stmt_key_count[key] > 1:
+                    # Ambiguous on either side — leave for manual.
+                    ambiguous += 1
+                    continue
+                vl_id = bucket[0]
                 self.db.execute(
                     "UPDATE bank_statement_lines "
                     "   SET match_status='AUTO_MATCHED', "
@@ -648,6 +671,7 @@ class BankReconciler:
             matched=matched,
             unmatched_stmt=unmatched_stmt,
             unmatched_book=unmatched_book,
+            ambiguous_skipped=ambiguous,
         )
 
     # ── Read-side queries (for the review tabs) ───────────────────────────────
@@ -1188,6 +1212,40 @@ class BankReconciler:
                 " WHERE bank_statement_line_id=?",
                 (statement_line_id,),
             )
+
+    def unmatch_all_auto(self, statement_id: int) -> int:
+        """Revert every AUTO_MATCHED stmt line on this statement back to
+        UNMATCHED, clearing the cleared_date on the linked voucher_lines.
+        Leaves MANUAL_MATCHED / VOUCHER_CREATED / IGNORED / FLAGGED alone —
+        those are user resolutions. Returns the count of rows reset.
+
+        Why: the old greedy auto_match has historically polluted
+        reconciliations with arbitrary 1-to-1 pairings on same-amount
+        same-day triples. Even with the new conservative algorithm,
+        legacy data needs a one-click escape hatch.
+        """
+        with self.db:
+            self.db.execute(
+                """UPDATE voucher_lines
+                      SET cleared_date=NULL,
+                          bank_statement_line_id=NULL,
+                          cleared_by_user_id=NULL
+                    WHERE bank_statement_line_id IN (
+                        SELECT id FROM bank_statement_lines
+                         WHERE statement_id=? AND match_status='AUTO_MATCHED'
+                    )""",
+                (statement_id,),
+            )
+            cur = self.db.execute(
+                "UPDATE bank_statement_lines "
+                "   SET match_status='UNMATCHED', "
+                "       matched_voucher_line_id=NULL, "
+                "       resolved_at=NULL, "
+                "       resolved_by_user_id=NULL "
+                " WHERE statement_id=? AND match_status='AUTO_MATCHED'",
+                (statement_id,),
+            )
+            return cur.rowcount or 0
 
     def create_voucher_for_line(
         self,

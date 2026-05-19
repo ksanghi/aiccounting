@@ -559,6 +559,7 @@ class DocumentReaderPage(QWidget):
     # ── Review table ──────────────────────────────────────────────────────────
 
     def _fill_review_table(self, vouchers: list):
+        self._table.setSortingEnabled(False)
         self._table.setRowCount(len(vouchers))
         total_dr = 0.0
         total_cr = 0.0
@@ -637,6 +638,8 @@ class DocumentReaderPage(QWidget):
             else:
                 total_cr += amount
 
+        from ui.table_utils import make_sortable
+        make_sortable(self._table)
         self._update_count()
         net = abs(total_dr - total_cr)
         self._total_label.setText(

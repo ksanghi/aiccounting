@@ -12,6 +12,7 @@ from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, SmartDateEdit
+from ui.table_utils import make_sortable
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -41,6 +42,10 @@ def _item(text: str, right: bool = False, colour: str = None,
     return it
 
 def _make_table(headers: list, stretch_cols: list = None) -> QTableWidget:
+    """Construct a styled report table. Sort is OFF by default — many
+    reports (Balance Sheet grouped, P&L with sub-totals, etc.) have
+    layout meaning in their row order. Tables that ARE a flat list
+    should call `make_sortable(t)` AFTER populating to opt in."""
     t = QTableWidget()
     t.setColumnCount(len(headers))
     t.setHorizontalHeaderLabels(headers)
@@ -313,6 +318,7 @@ class TrialBalancePage(_ReportBase):
         as_of = self._dates()
         self._data = self.rpt.trial_balance(as_of)
         t = self._table
+        t.setSortingEnabled(False)
         t.setRowCount(len(self._data))
         for i, d in enumerate(self._data):
             net_dr = d["closing_dr"]
@@ -328,6 +334,7 @@ class TrialBalancePage(_ReportBase):
             t.setItem(i, 7, _item(_fmt(d["txn_cr"]),     right=True))
             t.setItem(i, 8, _item(_fmt(d["closing_dr"]), right=True, colour=colour if net_dr else None))
             t.setItem(i, 9, _item(_fmt(d["closing_cr"]), right=True, colour=colour if net_cr else None))
+        make_sortable(t)
 
         tot_dr = sum(d["closing_dr"] for d in self._data)
         tot_cr = sum(d["closing_cr"] for d in self._data)
@@ -472,7 +479,8 @@ class BalanceSheetPage(_ReportBase):
             hdr = QLabel(hdr_text)
             hdr.setStyleSheet(f"color:{hdr_col}; font-weight:bold; font-size:12px;")
             lay.addWidget(hdr)
-            tbl = _make_table(["Ledger","Group","Balance","Side"], stretch_cols=[0])
+            tbl = _make_table(["Ledger","Group","Balance","Side"],
+                              stretch_cols=[0])
             lay.addWidget(tbl, 1)
             total_lbl = QLabel("")
             total_lbl.setStyleSheet(
@@ -513,6 +521,7 @@ class BalanceSheetPage(_ReportBase):
                if hasattr(self, "_fmt_combo") else "grouped")
 
         if fmt == "flat":
+            table.setSortingEnabled(False)
             table.setRowCount(len(rows))
             for i, d in enumerate(rows):
                 table.setItem(i, 0, _item(d["ledger"]))
@@ -520,7 +529,14 @@ class BalanceSheetPage(_ReportBase):
                 table.setItem(i, 2, _item(_fmt(d["balance"]),
                                           right=True, colour=colour))
                 table.setItem(i, 3, _item(d["side"]))
+            # Flat balance-sheet has no hierarchy — sort is safe.
+            make_sortable(table)
             return
+
+        # Grouped mode below — leave sort off (set inline because the table
+        # may have been re-enabled by a prior flat-mode render).
+        table.setSortingEnabled(False)
+        table.horizontalHeader().setSortIndicatorShown(False)
 
         # Grouped: bucket by chart-of-accounts group, header + ledgers +
         # implicit subtotal in the group header row.
@@ -659,6 +675,10 @@ class _LedgerBookPage(_ReportBase):
                     "✓" if cleared else "",
                     colour=THEME["success"] if cleared else None,
                 ))
+        # Enable sort after populate. The running-balance column stops
+        # being meaningful once rows are re-ordered, but a user clicking
+        # a column header has clearly asked for that trade-off.
+        make_sortable(t)
 
         # KEY FIX: size the inner table to fit ALL its rows. Without this
         # Qt sizes the table to its default minimum (~80 px ≈ 2-3 rows)

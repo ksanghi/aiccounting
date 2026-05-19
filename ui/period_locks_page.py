@@ -165,6 +165,8 @@ class PeriodLocksPage(QWidget):
         h.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._fy_table.setMinimumHeight(120)
+        from ui.table_utils import make_sortable as _ms
+        _ms(self._fy_table)
         fyc.addWidget(self._fy_table)
         body.addWidget(fy_card)
 
@@ -206,6 +208,7 @@ class PeriodLocksPage(QWidget):
         h2.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         h2.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._lk_table.setMinimumHeight(140)
+        _ms(self._lk_table)
         lkc.addWidget(self._lk_table)
         body.addWidget(lk_card)
 
@@ -226,6 +229,7 @@ class PeriodLocksPage(QWidget):
                 ORDER BY start_date""",
             (self.company_id,),
         ).fetchall()
+        self._fy_table.setSortingEnabled(False)
         self._fy_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             self._fy_table.setItem(r, 0, QTableWidgetItem(row["fy"]))
@@ -270,6 +274,7 @@ class PeriodLocksPage(QWidget):
             )
             cl.addWidget(btn)
             self._fy_table.setCellWidget(r, 3, cell)
+        self._fy_table.setSortingEnabled(True)
 
     def _fill_lk_table(self):
         rows = self.db.execute(
@@ -279,6 +284,7 @@ class PeriodLocksPage(QWidget):
                 ORDER BY lock_from""",
             (self.company_id,),
         ).fetchall()
+        self._lk_table.setSortingEnabled(False)
         self._lk_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             self._lk_table.setItem(r, 0, QTableWidgetItem(row["lock_from"]))
@@ -308,6 +314,7 @@ class PeriodLocksPage(QWidget):
                 lambda _, i=lk_id, f=lf, t=lt: self._delete_lock(i, f, t)
             )
             self._lk_table.setCellWidget(r, 4, del_btn)
+        self._lk_table.setSortingEnabled(True)
 
     # ── Mutations (each audit-logged) ─────────────────────────────────────────
 

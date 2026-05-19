@@ -89,6 +89,8 @@ class MigrationPage(QWidget):
             QHeaderView.ResizeMode.Stretch
         )
         self._history_table.verticalHeader().setDefaultSectionSize(36)
+        from ui.table_utils import make_sortable as _ms
+        _ms(self._history_table)
         hl.addWidget(self._history_table, 1)
         root.addWidget(hist_card, 1)
 
@@ -102,6 +104,7 @@ class MigrationPage(QWidget):
         from core.migration import Migrator
         m = Migrator(self.db, self.company_id, self.tree)
         rows = m.history()
+        self._history_table.setSortingEnabled(False)
         self._history_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             self._history_table.setItem(r, 0, QTableWidgetItem(
@@ -129,3 +132,4 @@ class MigrationPage(QWidget):
             self._history_table.setItem(r, 5, QTableWidgetItem(
                 (row.get("error_log") or "")[:120]
             ))
+        self._history_table.setSortingEnabled(True)

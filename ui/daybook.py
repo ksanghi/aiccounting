@@ -13,6 +13,7 @@ from PySide6.QtGui  import QColor, QFont, QKeySequence, QShortcut
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, make_separator, SmartDateEdit
+from ui.table_utils import NumericTableItem, make_sortable, populating
 
 
 _VOUCHER_ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -109,6 +110,7 @@ class DayBookPage(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
+        make_sortable(self.table)
         layout.addWidget(self.table, 1)
 
         # Totals bar
@@ -141,39 +143,44 @@ class DayBookPage(QWidget):
         self._populate_table(vouchers)
 
     def _populate_table(self, vouchers):
-        self.table.setRowCount(len(vouchers))
-        total = 0.0
-        for i, v in enumerate(vouchers):
-            colour = VOUCHER_COLOURS.get(v["voucher_type"], THEME["text_secondary"])
+        with populating(self.table):
+            self.table.setRowCount(len(vouchers))
+            total = 0.0
+            for i, v in enumerate(vouchers):
+                colour = VOUCHER_COLOURS.get(v["voucher_type"], THEME["text_secondary"])
 
-            items = [
-                v["voucher_date"],
-                v["voucher_number"],
-                v["voucher_type"].replace("_", " "),
-                f"₹{v['total_amount']:,.2f}",
-                v["narration"] or "",
-                v["reference"] or "",
-            ]
-            for j, text in enumerate(items):
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter |
-                                      (Qt.AlignmentFlag.AlignRight if j == 3 else Qt.AlignmentFlag.AlignLeft))
-                if j == 0:
-                    # Stash voucher id + cancelled flag on the first column.
-                    item.setData(_VOUCHER_ID_ROLE, int(v["id"]))
-                    item.setData(Qt.ItemDataRole.UserRole + 2,
-                                 bool(v.get("is_cancelled")))
-                if j == 2:   # type column — coloured
-                    item.setForeground(QColor(colour))
-                if v.get("is_cancelled"):
-                    item.setForeground(QColor(THEME["text_dim"]))
-                self.table.setItem(i, j, item)
+                items = [
+                    v["voucher_date"],
+                    v["voucher_number"],
+                    v["voucher_type"].replace("_", " "),
+                    f"₹{v['total_amount']:,.2f}",
+                    v["narration"] or "",
+                    v["reference"] or "",
+                ]
+                for j, text in enumerate(items):
+                    # Amount column sorts by numeric value, not the ₹-formatted string.
+                    if j == 3:
+                        item = NumericTableItem(text, v["total_amount"])
+                    else:
+                        item = QTableWidgetItem(text)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter |
+                                          (Qt.AlignmentFlag.AlignRight if j == 3 else Qt.AlignmentFlag.AlignLeft))
+                    if j == 0:
+                        # Stash voucher id + cancelled flag on the first column.
+                        item.setData(_VOUCHER_ID_ROLE, int(v["id"]))
+                        item.setData(Qt.ItemDataRole.UserRole + 2,
+                                     bool(v.get("is_cancelled")))
+                    if j == 2:   # type column — coloured
+                        item.setForeground(QColor(colour))
+                    if v.get("is_cancelled"):
+                        item.setForeground(QColor(THEME["text_dim"]))
+                    self.table.setItem(i, j, item)
 
-            total += v["total_amount"]
+                total += v["total_amount"]
 
-        self.total_label.setText(
-            f"{len(vouchers)} vouchers  |  Total ₹{total:,.2f}"
-        )
+            self.total_label.setText(
+                f"{len(vouchers)} vouchers  |  Total ₹{total:,.2f}"
+            )
         self._update_action_buttons()
 
     def _filter_table(self, text: str):
@@ -351,6 +358,7 @@ class LedgerBalancePage(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.doubleClicked.connect(self._edit_selected_ledger)
+        make_sortable(self.table)
         layout.addWidget(self.table, 1)
 
         self.summary_label = QLabel("")
@@ -397,29 +405,33 @@ class LedgerBalancePage(QWidget):
             and (not hide_z or d["balance"] > 0)
         ]
 
-        self.table.setRowCount(len(rows))
-        total_dr = total_cr = 0.0
-        for i, d in enumerate(rows):
-            is_dr = d["type"] == "Dr"
-            colour = THEME["accent"] if is_dr else THEME["warning"]
+        with populating(self.table):
+            self.table.setRowCount(len(rows))
+            total_dr = total_cr = 0.0
+            for i, d in enumerate(rows):
+                is_dr = d["type"] == "Dr"
+                colour = THEME["accent"] if is_dr else THEME["warning"]
 
-            items = [d["name"], d["group"], f"₹{d['balance']:,.2f}", d["type"]]
-            for j, text in enumerate(items):
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(
-                    Qt.AlignmentFlag.AlignVCenter |
-                    (Qt.AlignmentFlag.AlignRight if j >= 2 else Qt.AlignmentFlag.AlignLeft)
-                )
-                if j >= 2:
-                    item.setForeground(QColor(colour))
-                if j == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, d["id"])
-                self.table.setItem(i, j, item)
+                items = [d["name"], d["group"], f"₹{d['balance']:,.2f}", d["type"]]
+                for j, text in enumerate(items):
+                    if j == 2:
+                        item = NumericTableItem(text, d["balance"])
+                    else:
+                        item = QTableWidgetItem(text)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignVCenter |
+                        (Qt.AlignmentFlag.AlignRight if j >= 2 else Qt.AlignmentFlag.AlignLeft)
+                    )
+                    if j >= 2:
+                        item.setForeground(QColor(colour))
+                    if j == 0:
+                        item.setData(Qt.ItemDataRole.UserRole, d["id"])
+                    self.table.setItem(i, j, item)
 
-            if is_dr:
-                total_dr += d["balance"]
-            else:
-                total_cr += d["balance"]
+                if is_dr:
+                    total_dr += d["balance"]
+                else:
+                    total_cr += d["balance"]
 
         self.summary_label.setText(
             f"{len(rows)} ledgers  |  "

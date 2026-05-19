@@ -116,6 +116,7 @@ class LedgerReconciliationPage(QWidget):
 
     @staticmethod
     def _make_table(headers, widths):
+        from ui.table_utils import make_sortable
         t = QTableWidget(0, len(headers))
         t.setHorizontalHeaderLabels(headers)
         t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -129,6 +130,7 @@ class LedgerReconciliationPage(QWidget):
             else:
                 hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
                 t.setColumnWidth(i, w)
+        make_sortable(t)
         return t
 
     # ── UI scaffolding ──────────────────────────────────────────────────────
@@ -304,6 +306,8 @@ class LedgerReconciliationPage(QWidget):
             self._imports_table.setColumnWidth(col, w)
         self._imports_table.verticalHeader().setDefaultSectionSize(40)
         self._imports_table.setMinimumHeight(120)
+        from ui.table_utils import make_sortable as _ms
+        _ms(self._imports_table)
         il.addWidget(self._imports_table)
 
         ht_title = QLabel("Past reconciliations")
@@ -324,6 +328,7 @@ class LedgerReconciliationPage(QWidget):
         )
         self._history_table.verticalHeader().setDefaultSectionSize(36)
         self._history_table.setMinimumHeight(100)
+        _ms(self._history_table)
         il.addWidget(self._history_table)
         layout.addWidget(imp_card)
 
@@ -353,9 +358,13 @@ class LedgerReconciliationPage(QWidget):
         self._period_to_edit.setDate(today)
 
     def _refresh_history(self):
+        self._imports_table.setSortingEnabled(False)
+        self._history_table.setSortingEnabled(False)
         self._imports_table.setRowCount(0)
         self._history_table.setRowCount(0)
         if not self._ledger_id:
+            self._imports_table.setSortingEnabled(True)
+            self._history_table.setSortingEnabled(True)
             return
         for r, row in enumerate(self.reconciler.recent_imports(self._ledger_id)):
             self._imports_table.insertRow(r)
@@ -394,6 +403,9 @@ class LedgerReconciliationPage(QWidget):
             self._history_table.setItem(r, 3, QTableWidgetItem(
                 row["finalised_at"][:16]
             ))
+
+        self._imports_table.setSortingEnabled(True)
+        self._history_table.setSortingEnabled(True)
 
     def _on_delete_statement(self, statement_id: int, summary: dict):
         matched = summary.get("matched") or 0
@@ -519,6 +531,12 @@ class LedgerReconciliationPage(QWidget):
         if self._statement_id is None:
             return
 
+        # Disable sort while bulk-populating — each setItem on a sorted
+        # table re-sorts the rows and shifts the indexes we're writing to.
+        for tbl in (self._matched_table, self._unmatched_stmt_table,
+                    self._unmatched_book_table, self._ignored_table):
+            tbl.setSortingEnabled(False)
+
         matched = self.reconciler.matched_lines(self._statement_id)
         self._matched_table.setRowCount(len(matched))
         for r, m in enumerate(matched):
@@ -612,6 +630,10 @@ class LedgerReconciliationPage(QWidget):
             ch.addWidget(restore_btn)
             ch.addStretch()
             self._ignored_table.setCellWidget(r, 6, cell)
+
+        for tbl in (self._matched_table, self._unmatched_stmt_table,
+                    self._unmatched_book_table, self._ignored_table):
+            tbl.setSortingEnabled(True)
 
         self._review_summary.setText(
             f"  ✓ {len(matched)} matched   |   "
@@ -733,6 +755,8 @@ class LedgerReconciliationPage(QWidget):
                 else f"Cr ₹ {c['cr_amount']:,.2f}"
             )
             t.setItem(r, 4, QTableWidgetItem(amt))
+        from ui.table_utils import make_sortable as _ms2
+        _ms2(t)
         dl.addWidget(t)
         btn_row = QHBoxLayout()
         btn_row.addStretch()

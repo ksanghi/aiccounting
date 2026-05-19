@@ -228,6 +228,7 @@ class BackupPage(QWidget):
 
     def _refresh_table(self):
         entries = self._mgr.list_backups()
+        self._table.setSortingEnabled(False)
         self._table.setRowCount(len(entries))
         for row, entry in enumerate(entries):
             try:
@@ -274,6 +275,8 @@ class BackupPage(QWidget):
             self._table.setCellWidget(row, 4, open_btn)
 
         self._table.resizeRowsToContents()
+        from ui.table_utils import make_sortable as _ms
+        _ms(self._table)
 
     def _open_folder(self, folder: str):
         try:
