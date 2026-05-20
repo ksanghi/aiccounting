@@ -907,6 +907,62 @@ class TDSReportPage(_ReportBase):
         exp.tds_report(self._data, self.rpt.get_company(), path)
 
 
+# ── Receivables Aging ────────────────────────────────────────────────────────
+
+class ReceivablesAgingPage(_ReportBase):
+    """How old is each debtor's outstanding. FIFO aging — receipts are
+    applied against the oldest charges; the unpaid remainder is bucketed
+    0-30 / 31-60 / 61-90 / 90+ days from the report date."""
+    TITLE    = "Receivables Aging"
+    SUBTITLE = "Outstanding from each debtor, bucketed by age"
+    AS_OF    = True
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Customer", "0-30 days", "31-60 days", "61-90 days",
+             "90+ days", "Total"],
+            stretch_cols=[0],
+        )
+        self._body.addWidget(self._table, 1)
+
+    def refresh(self):
+        as_of = self._dates()
+        self._data = self.rpt.receivables_aging(as_of)
+        rows = self._data["rows"]
+        t = self._table
+        # No sort wired — the TOTAL row must stay pinned at the bottom;
+        # the engine already returns rows biggest-outstanding-first.
+        t.setRowCount(len(rows) + (1 if rows else 0))
+        for i, d in enumerate(rows):
+            t.setItem(i, 0, _item(d["ledger"]))
+            t.setItem(i, 1, _item(_fmt(d["b0_30"]),  right=True))
+            t.setItem(i, 2, _item(_fmt(d["b31_60"]), right=True))
+            t.setItem(i, 3, _item(_fmt(d["b61_90"]), right=True))
+            t.setItem(i, 4, _item(_fmt(d["b90p"]),   right=True,
+                                  colour=THEME["danger"] if d["b90p"] else None))
+            t.setItem(i, 5, _item(_fmt(d["total"]),  right=True, bold=True))
+        if rows:
+            tot = self._data["totals"]
+            grand = round(sum(tot.values()), 2)
+            i = len(rows)
+            t.setItem(i, 0, _item("TOTAL", bold=True))
+            t.setItem(i, 1, _item(_fmt(tot["b0_30"]),  right=True, bold=True))
+            t.setItem(i, 2, _item(_fmt(tot["b31_60"]), right=True, bold=True))
+            t.setItem(i, 3, _item(_fmt(tot["b61_90"]), right=True, bold=True))
+            t.setItem(i, 4, _item(_fmt(tot["b90p"]),   right=True, bold=True))
+            t.setItem(i, 5, _item(_fmt(grand),         right=True, bold=True))
+        self._status.setText(
+            f"As on {as_of}  |  {len(rows)} debtor(s) with outstanding"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.receivables_aging(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.receivables_aging(self._data, self.rpt.get_company(), path)
+
+
 # ── Ledger Account (per-ledger statement view) ───────────────────────────────
 
 class LedgerAccountPage(_ReportBase):

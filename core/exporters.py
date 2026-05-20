@@ -155,6 +155,21 @@ class ExcelExporter:
         self._set_widths(ws, [12,18,14])
         wb.save(path)
 
+    def receivables_aging(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("Receivables Aging")
+        r = self._header(ws, company,
+                         f"Receivables Aging as on {data['as_of']}")
+        r = self._col_hdrs(ws, r, ["Customer", "0-30 days", "31-60 days",
+                                   "61-90 days", "90+ days", "Total"])
+        for d in data["rows"]:
+            ws.append([d["ledger"], d["b0_30"], d["b31_60"],
+                       d["b61_90"], d["b90p"], d["total"]])
+        t = data["totals"]
+        ws.append(["TOTAL", t["b0_30"], t["b31_60"], t["b61_90"],
+                   t["b90p"], round(sum(t.values()), 2)])
+        self._set_widths(ws, [30,14,14,14,14,16])
+        wb.save(path)
+
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
@@ -348,4 +363,23 @@ class PDFExporter:
         t = self._Table(rows, colWidths=cw)
         t.setStyle(self._tbl_style())
         elems.append(t)
+        doc.build(elems)
+
+    def receivables_aging(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path, wide=True)
+        elems = self._heading(company,
+                              f"Receivables Aging as on {data['as_of']}")
+        rows = [["Customer", "0-30", "31-60", "61-90", "90+", "Total"]]
+        for d in data["rows"]:
+            rows.append([d["ledger"], _fmt(d["b0_30"]), _fmt(d["b31_60"]),
+                         _fmt(d["b61_90"]), _fmt(d["b90p"]), _fmt(d["total"])])
+        t = data["totals"]
+        rows.append(["TOTAL", _fmt(t["b0_30"]), _fmt(t["b31_60"]),
+                     _fmt(t["b61_90"]), _fmt(t["b90p"]),
+                     _fmt(round(sum(t.values()), 2))])
+        cw = [7*cm, 3.4*cm, 3.4*cm, 3.4*cm, 3.4*cm, 3.8*cm]
+        tbl = self._Table(rows, colWidths=cw)
+        tbl.setStyle(self._tbl_style())
+        elems.append(tbl)
         doc.build(elems)

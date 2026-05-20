@@ -72,6 +72,7 @@ ALL_FEATURES_V2 = [
     ("Reports",        "bank_book"),
     ("Reports",        "ledger_account"),
     ("Reports",        "receipts_payments"),
+    ("Reports",        "receivables_aging"),
     ("Output",         "export_excel"),
     ("Output",         "export_pdf"),
     ("Output",         "print"),

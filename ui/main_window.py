@@ -419,13 +419,14 @@ class MainWindow(QMainWindow):
             ("bank_book",         "Bank Book",      "🏛", "BankBookPage"),
             ("ledger_account",    "Ledger Account", "📒", "LedgerAccountPage"),
             ("receipts_payments", "Rcpts & Pmts",   "↕",  "ReceiptsPaymentsPage"),
+            ("receivables_aging", "Receivables Aging", "⏳", "ReceivablesAgingPage"),
         ]
         any_report_unlocked = any(lmgr.has_feature(fid) for fid, *_ in report_specs)
         if any_report_unlocked:
             from ui.reports_page import (
                 TrialBalancePage, ProfitLossPage, BalanceSheetPage,
                 CashBookPage, BankBookPage, ReceiptsPaymentsPage,
-                LedgerAccountPage,
+                LedgerAccountPage, ReceivablesAgingPage,
             )
             rpt = ReportsEngine(self.db, self.company_id)
             page_factories = {
@@ -436,6 +437,7 @@ class MainWindow(QMainWindow):
                 "BankBookPage":         lambda: BankBookPage(rpt),
                 "LedgerAccountPage":    lambda: LedgerAccountPage(rpt, self.tree, self.engine),
                 "ReceiptsPaymentsPage": lambda: ReceiptsPaymentsPage(rpt),
+                "ReceivablesAgingPage": lambda: ReceivablesAgingPage(rpt),
             }
             for fid, label, icon, page_cls in report_specs:
                 if lmgr.has_feature(fid):

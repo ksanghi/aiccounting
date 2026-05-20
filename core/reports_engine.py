@@ -339,6 +339,103 @@ class ReportsEngine:
             "as_of":             as_of,
         }
 
+    # ── Receivables aging (A11) ──────────────────────────────────────────────
+
+    def receivables_aging(self, as_of: str) -> dict:
+        """Age the outstanding balance of every Sundry Debtor ledger.
+
+        AccGenie is balance-based, not open-item, so aging uses FIFO:
+        each debtor's total receipts (Cr) are allocated against its
+        charges (Dr) oldest-first; whatever charge amount stays
+        unallocated is the outstanding, bucketed by the age of that
+        charge (as_of − charge date). A Dr opening balance is treated
+        as the oldest charge of all.
+
+        Returns {as_of, rows:[{ledger, b0_30, b31_60, b61_90, b90p,
+        total}], totals:{...}}.
+        """
+        as_of_d = date.fromisoformat(as_of)
+        debtor_ledgers = self.db.execute(
+            """SELECT l.id, l.name AS ledger,
+                      l.opening_balance, l.opening_type
+                 FROM ledgers l
+                 JOIN account_groups g ON l.group_id = g.id
+                WHERE l.company_id = ? AND l.active = 1
+                  AND g.name = 'Sundry Debtors'
+             ORDER BY l.name""",
+            (self.company_id,),
+        ).fetchall()
+
+        rows: list[dict] = []
+        totals = {"b0_30": 0.0, "b31_60": 0.0, "b61_90": 0.0, "b90p": 0.0}
+        for l in debtor_ledgers:
+            lines = self.db.execute(
+                """SELECT v.voucher_date AS d, vl.dr_amount AS dr,
+                          vl.cr_amount AS cr
+                     FROM voucher_lines vl
+                     JOIN vouchers v ON v.id = vl.voucher_id
+                    WHERE vl.ledger_id = ? AND v.is_cancelled = 0
+                      AND v.company_id = ? AND v.voucher_date <= ?
+                 ORDER BY v.voucher_date, v.id""",
+                (l["id"], self.company_id, as_of),
+            ).fetchall()
+
+            # Charges = Dr postings oldest-first; a Dr opening balance is
+            # the oldest charge (date None). Receipts = all Cr (plus a Cr
+            # opening balance).
+            charges: list[list] = []
+            receipts = 0.0
+            ob = l["opening_balance"] or 0.0
+            if l["opening_type"] == "Dr" and ob > 0:
+                charges.append([None, ob])
+            elif l["opening_type"] == "Cr" and ob > 0:
+                receipts += ob
+            for ln in lines:
+                if (ln["dr"] or 0) > 0:
+                    charges.append([ln["d"], float(ln["dr"])])
+                if (ln["cr"] or 0) > 0:
+                    receipts += float(ln["cr"])
+
+            # FIFO — consume oldest charges with the receipt pool.
+            pool = receipts
+            for ch in charges:
+                if pool <= 0:
+                    break
+                take = min(pool, ch[1])
+                ch[1] -= take
+                pool  -= take
+
+            lb = {"b0_30": 0.0, "b31_60": 0.0, "b61_90": 0.0, "b90p": 0.0}
+            for ch_date, rem in charges:
+                if rem <= 0.01:
+                    continue
+                age = (9999 if ch_date is None
+                       else (as_of_d - date.fromisoformat(ch_date)).days)
+                if   age <= 30: lb["b0_30"]  += rem
+                elif age <= 60: lb["b31_60"] += rem
+                elif age <= 90: lb["b61_90"] += rem
+                else:           lb["b90p"]   += rem
+
+            total = round(sum(lb.values()), 2)
+            if total > 0.01:
+                rows.append({
+                    "ledger": l["ledger"],
+                    "b0_30":  round(lb["b0_30"],  2),
+                    "b31_60": round(lb["b31_60"], 2),
+                    "b61_90": round(lb["b61_90"], 2),
+                    "b90p":   round(lb["b90p"],   2),
+                    "total":  total,
+                })
+                for k in totals:
+                    totals[k] += lb[k]
+
+        rows.sort(key=lambda r: r["total"], reverse=True)
+        return {
+            "as_of":  as_of,
+            "rows":   rows,
+            "totals": {k: round(v, 2) for k, v in totals.items()},
+        }
+
     # ── 4 & 5. Cash Book / Bank Book ─────────────────────────────────────────
 
     def cash_book(self, from_date: str, to_date: str) -> dict:
