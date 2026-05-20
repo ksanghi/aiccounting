@@ -316,12 +316,13 @@ class VoucherNumberer:
         return f"{row['prefix']}/{fy}/{row['last_number']:05d}"
 
     @staticmethod
-    def get_fy(d: str) -> str:
-        """Returns FY string like '2025-26' for a given ISO date."""
-        dt = date.fromisoformat(d)
-        if dt.month >= 4:
-            return f"{dt.year}-{str(dt.year + 1)[2:]}"
-        return f"{dt.year - 1}-{str(dt.year)[2:]}"
+    def get_fy(d: str, fy_start: str = "04-01") -> str:
+        """FY string for an ISO date, per the company's fy_start.
+        '2025-26' for a straddling FY, '2025' for a calendar-year FY.
+        fy_start defaults to '04-01' (Indian April-March) so any
+        context-free caller keeps the historical behaviour."""
+        from core.fy import fy_for_date
+        return fy_for_date(fy_start, date.fromisoformat(d))
 
 
 # ─── Voucher Validators ────────────────────────────────────────────────────────
@@ -605,6 +606,12 @@ class VoucherEngine:
         self.tds = TDSEngine(db, company_id)
         self.numberer = VoucherNumberer(db, company_id)
         self.validator = VoucherValidator(db, company_id)
+        # Per-company FY boundary ('MM-DD'). Drives voucher-number FY
+        # labels + the financial_years rows. '04-01' for Indian books.
+        _c = db.connect().execute(
+            "SELECT fy_start FROM companies WHERE id=?", (company_id,),
+        ).fetchone()
+        self.fy_start = (_c["fy_start"] if _c and _c["fy_start"] else "04-01")
 
     # ── Voucher builders ──────────────────────────────────────────────────────
 
@@ -1016,7 +1023,7 @@ class VoucherEngine:
         `voucher_date` if it's missing. Lets users post into future or past
         years without hitting "no FY row" errors.
         """
-        fy = VoucherNumberer.get_fy(voucher_date)
+        fy = VoucherNumberer.get_fy(voucher_date, self.fy_start)
         conn = self.db.connect()
         existing = conn.execute(
             "SELECT 1 FROM financial_years WHERE company_id=? AND fy=?",
@@ -1024,10 +1031,9 @@ class VoucherEngine:
         ).fetchone()
         if existing:
             return
-        # April-March FY by convention; matches main.py's seed for 2025-26.
-        start_year = int(fy.split("-")[0])
-        start = f"{start_year:04d}-04-01"
-        end   = f"{start_year + 1:04d}-03-31"
+        # FY bounds follow the company's fy_start ('04-01' for Indian books).
+        from core.fy import fy_bounds, start_year_of_label
+        start, end = fy_bounds(self.fy_start, start_year_of_label(fy))
         conn.execute(
             """INSERT OR IGNORE INTO financial_years
                (company_id, fy, start_date, end_date)
@@ -1054,7 +1060,7 @@ class VoucherEngine:
         self._check_period_lock(draft.voucher_date)
 
         conn = self.db.connect()
-        fy = VoucherNumberer.get_fy(draft.voucher_date)
+        fy = VoucherNumberer.get_fy(draft.voucher_date, self.fy_start)
 
         try:
             # Generate voucher number

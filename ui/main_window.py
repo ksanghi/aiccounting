@@ -681,6 +681,9 @@ class MainWindow(QMainWindow):
             options=[("today", "Today"), ("last_used", "Last used date")],
         ))
 
+        # ── Card: Financial year ──────────────────────────────────────────────
+        self._build_fy_card(layout)
+
         # ── Card: Bank reconciliation ─────────────────────────────────────────
         b_card = self._pref_card("Bank reconciliation", layout)
         b_card.addWidget(self._pref_checkbox(
@@ -739,6 +742,66 @@ class MainWindow(QMainWindow):
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
         return page
+
+    # ── Financial-year card (per-company, not a per-machine pref) ─────────────
+
+    # FY presets — value is the 'MM-DD' stored in companies.fy_start.
+    _FY_PRESETS = [
+        ("04-01", "April – March   (India)"),
+        ("01-01", "January – December   (Calendar year)"),
+        ("07-01", "July – June   (Australia, and others)"),
+        ("10-01", "October – September   (US federal)"),
+        ("04-06", "6 April – 5 April   (UK)"),
+    ]
+
+    def _build_fy_card(self, layout: QVBoxLayout) -> None:
+        from PySide6.QtWidgets import QComboBox
+
+        fy_card = self._pref_card("Financial year", layout)
+        hint = QLabel(
+            "The month your accounting year starts. Drives the FY label on "
+            "voucher numbers and the period covered by reports. Set this "
+            "before you post vouchers — changing it later does not relabel "
+            "vouchers that are already posted."
+        )
+        hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        hint.setWordWrap(True)
+        fy_card.addWidget(hint)
+
+        row = self.db.connect().execute(
+            "SELECT fy_start FROM companies WHERE id=?", (self.company_id,),
+        ).fetchone()
+        current = (row["fy_start"] if row and row["fy_start"] else "04-01")
+
+        combo = QComboBox()
+        combo.setFixedHeight(32)
+        for val, lbl in self._FY_PRESETS:
+            combo.addItem(lbl, val)
+        idx = combo.findData(current)
+        if idx < 0:
+            # A company on an unusual fy_start — keep it visible/selectable.
+            combo.addItem(f"Custom  ({current})", current)
+            idx = combo.findData(current)
+        combo.setCurrentIndex(idx)
+        combo.currentIndexChanged.connect(
+            lambda _i: self._save_fy_start(combo.currentData())
+        )
+        fy_card.addWidget(combo)
+
+    def _save_fy_start(self, fy_start: str) -> None:
+        conn = self.db.connect()
+        conn.execute(
+            "UPDATE companies SET fy_start=? WHERE id=?",
+            (fy_start, self.company_id),
+        )
+        self.db.commit()
+        # Make sure financial_years rows for the new scheme exist now,
+        # not just on next launch.
+        try:
+            from core.fy_manager import ensure_current_and_next
+            ensure_current_and_next(self.db, self.company_id)
+        except Exception:
+            pass
 
     # ── Settings-card helpers ─────────────────────────────────────────────────
 

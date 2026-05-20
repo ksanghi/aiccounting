@@ -1,67 +1,68 @@
 """
 Financial-year housekeeping.
 
-The desktop's company seed (`main.py`) inserts a single FY row (2025-26) at
-company creation. That's not enough — once we cross 2026-04-01 the user is
-stuck posting into a year that has no `financial_years` row, which the
-period-lock check needs.
+The desktop's company seed (`main.py`) inserts a single FY row at company
+creation. That's not enough — once the calendar crosses into a new FY the
+user is stuck posting into a year that has no `financial_years` row, which
+the period-lock check needs.
 
-`ensure_current_and_next()` runs at app startup (and from `MainWindow.__init__`
-for each opened company) to:
+`ensure_current_and_next()` runs at app startup (and from
+`MainWindow.__init__` for each opened company) to:
   - insert a row for today's FY if missing, and
   - insert a row for next FY if today is within 60 days of current.end_date.
 
 Idempotent — calling it twice is a no-op the second time.
 
-FY convention here is April → March (Indian standard). The
-`VoucherNumberer.get_fy()` helper is the single source of truth for the
-string format, so we reuse it.
+FY boundaries are per-company: `companies.fy_start` ('MM-DD') drives them,
+so an Indian book runs Apr-Mar, a US book Jan-Dec, etc. The pure
+arithmetic lives in `core.fy`; this module only adds the DB lookup +
+the financial_years upsert.
 """
 from __future__ import annotations
 
 from datetime import date, timedelta
 
-from .voucher_engine import VoucherNumberer
+from core.fy import fy_start_year, fy_label, fy_bounds
 
 
-def _fy_range(fy: str) -> tuple[str, str]:
-    """Given '2025-26', return ('2025-04-01', '2026-03-31')."""
-    start_year = int(fy.split("-")[0])
-    return f"{start_year:04d}-04-01", f"{start_year + 1:04d}-03-31"
-
-
-def _next_fy(fy: str) -> str:
-    """Given '2025-26', return '2026-27'."""
-    start_year = int(fy.split("-")[0]) + 1
-    return f"{start_year}-{str(start_year + 1)[2:]}"
+def company_fy_start(db, company_id: int) -> str:
+    """Read `companies.fy_start` ('MM-DD'). Falls back to '04-01'
+    (Indian April-March) if the row or column is empty."""
+    row = db.connect().execute(
+        "SELECT fy_start FROM companies WHERE id=?", (company_id,),
+    ).fetchone()
+    return (row["fy_start"] if row and row["fy_start"] else "04-01")
 
 
 def ensure_current_and_next(db, company_id: int) -> None:
     """
     Idempotently insert FY rows for `today` and (if within 60 days of
-    current FY's end) for the next FY too. Safe to call on every app start.
+    current FY's end) for the next FY too. FY boundaries follow the
+    company's configured fy_start. Safe to call on every app start.
     """
+    fy_start = company_fy_start(db, company_id)
     today = date.today()
-    current_fy = VoucherNumberer.get_fy(today.isoformat())
-    start, end = _fy_range(current_fy)
+    cur_year  = fy_start_year(fy_start, today)
+    cur_label = fy_label(fy_start, cur_year)
+    start, end = fy_bounds(fy_start, cur_year)
 
     conn = db.connect()
     conn.execute(
         """INSERT OR IGNORE INTO financial_years
            (company_id, fy, start_date, end_date)
            VALUES (?,?,?,?)""",
-        (company_id, current_fy, start, end),
+        (company_id, cur_label, start, end),
     )
 
     end_date = date.fromisoformat(end)
     if (end_date - today) <= timedelta(days=60):
-        nfy = _next_fy(current_fy)
-        nstart, nend = _fy_range(nfy)
+        n_label = fy_label(fy_start, cur_year + 1)
+        n_start, n_end = fy_bounds(fy_start, cur_year + 1)
         conn.execute(
             """INSERT OR IGNORE INTO financial_years
                (company_id, fy, start_date, end_date)
                VALUES (?,?,?,?)""",
-            (company_id, nfy, nstart, nend),
+            (company_id, n_label, n_start, n_end),
         )
 
     db.commit()
