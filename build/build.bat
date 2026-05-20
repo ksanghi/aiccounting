@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=AccGenie
-set VERSION=1.0.13
+set VERSION=1.0.14
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
