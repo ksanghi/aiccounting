@@ -686,6 +686,9 @@ class MainWindow(QMainWindow):
         # ── Card: Financial year ──────────────────────────────────────────────
         self._build_fy_card(layout)
 
+        # ── Card: Tax registration ────────────────────────────────────────────
+        self._build_tax_reg_card(layout)
+
         # ── Card: Bank reconciliation ─────────────────────────────────────────
         b_card = self._pref_card("Bank reconciliation", layout)
         b_card.addWidget(self._pref_checkbox(
@@ -804,6 +807,67 @@ class MainWindow(QMainWindow):
             ensure_current_and_next(self.db, self.company_id)
         except Exception:
             pass
+
+    # ── Tax registration card (per-company: GSTIN + TAN) ──────────────────────
+
+    def _build_tax_reg_card(self, layout: QVBoxLayout) -> None:
+        from PySide6.QtWidgets import QLineEdit
+
+        card = self._pref_card("Tax registration", layout)
+        hint = QLabel(
+            "Your GST and TDS registration numbers. Captured for use on "
+            "invoices and tax reports — leave blank if not registered. "
+            "AccGenie records these; it does not decide when you must "
+            "register."
+        )
+        hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        hint.setWordWrap(True)
+        card.addWidget(hint)
+
+        row = self.db.connect().execute(
+            "SELECT gstin, tan FROM companies WHERE id=?", (self.company_id,),
+        ).fetchone()
+        gstin = (row["gstin"] if row and row["gstin"] else "")
+        tan   = (row["tan"]   if row and row["tan"]   else "")
+
+        g_row = QHBoxLayout()
+        g_lbl = QLabel("GSTIN")
+        g_lbl.setFixedWidth(70)
+        g_row.addWidget(g_lbl)
+        self._gstin_edit = QLineEdit(gstin)
+        self._gstin_edit.setFixedHeight(30)
+        self._gstin_edit.setPlaceholderText("15-character GSTIN, if registered")
+        self._gstin_edit.editingFinished.connect(
+            lambda: self._save_company_field("gstin", self._gstin_edit.text())
+        )
+        g_row.addWidget(self._gstin_edit)
+        card.addLayout(g_row)
+
+        t_row = QHBoxLayout()
+        t_lbl = QLabel("TAN")
+        t_lbl.setFixedWidth(70)
+        t_row.addWidget(t_lbl)
+        self._tan_edit = QLineEdit(tan)
+        self._tan_edit.setFixedHeight(30)
+        self._tan_edit.setPlaceholderText("10-character TAN, if you deduct TDS")
+        self._tan_edit.editingFinished.connect(
+            lambda: self._save_company_field("tan", self._tan_edit.text())
+        )
+        t_row.addWidget(self._tan_edit)
+        card.addLayout(t_row)
+
+    def _save_company_field(self, field: str, value: str) -> None:
+        # `field` is one of a fixed internal set ("gstin" / "tan") — never
+        # user input — so the f-string column name is safe; the value is
+        # parameterised.
+        if field not in ("gstin", "tan"):
+            return
+        conn = self.db.connect()
+        conn.execute(
+            f"UPDATE companies SET {field}=? WHERE id=?",
+            (value.strip(), self.company_id),
+        )
+        self.db.commit()
 
     # ── Settings-card helpers ─────────────────────────────────────────────────
 

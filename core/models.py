@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS companies (
     name        TEXT NOT NULL,
     gstin       TEXT,
     pan         TEXT,
+    tan         TEXT,                          -- Tax Deduction A/c No. (for TDS)
     state_code  TEXT NOT NULL DEFAULT '07',   -- 2-digit GST state code
     address     TEXT,
     fy_start    TEXT NOT NULL DEFAULT '04-01', -- MM-DD
@@ -351,6 +352,7 @@ _ADDITIVE_COLUMNS = [
     ("voucher_lines", "party_cleared_date",            "TEXT"),
     ("voucher_lines", "ledger_statement_line_id",      "INTEGER"),
     ("voucher_lines", "party_cleared_by_user_id",      "INTEGER"),
+    ("companies",     "tan",                           "TEXT"),
 ]
 
 
