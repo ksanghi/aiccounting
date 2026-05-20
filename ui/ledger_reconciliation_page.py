@@ -510,7 +510,11 @@ class LedgerReconciliationPage(QWidget):
         )
         self._unmatched_stmt_table = self._make_table(
             ["Date", "Sign", "Amount", "Narration", "Reference", "Status", ""],
-            [110, 60, 120, 0, 130, 110, 320],
+            [110, 60, 120, 0, 130, 110, 380],
+        )
+        # Multi-row select so a batch of lines can be bulk-ignored.
+        self._unmatched_stmt_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self._unmatched_book_table = self._make_table(
             ["Date", "Voucher #", "Type", "Amount", "Narration", ""],
@@ -520,12 +524,169 @@ class LedgerReconciliationPage(QWidget):
             ["Date", "Sign", "Amount", "Narration", "Reference", "Note", ""],
             [110, 60, 120, 0, 130, 200, 110],
         )
-        self._tabs.addTab(self._matched_table,         "Matched")
-        self._tabs.addTab(self._unmatched_stmt_table,  "Unmatched Statement")
+
+        # Matched tab — thin toolbar with "Undo all auto-matches".
+        matched_wrap = QWidget()
+        mw = QVBoxLayout(matched_wrap)
+        mw.setContentsMargins(0, 0, 0, 0)
+        mw.setSpacing(4)
+        m_bar = QHBoxLayout()
+        m_bar.setContentsMargins(2, 2, 2, 2)
+        m_bar.addStretch(1)
+        self._undo_auto_btn = QPushButton("Undo all auto-matches")
+        self._undo_auto_btn.setFixedHeight(28)
+        self._undo_auto_btn.setToolTip(
+            "Reverts every auto-matched row on this statement back to "
+            "Unmatched. Manual matches and created vouchers are kept."
+        )
+        self._undo_auto_btn.clicked.connect(self._on_undo_auto_matches)
+        m_bar.addWidget(self._undo_auto_btn)
+        mw.addLayout(m_bar)
+        mw.addWidget(self._matched_table)
+
+        # Unmatched Statement tab — filter + select-all + bulk ignore.
+        unmatched_wrap = QWidget()
+        uw = QVBoxLayout(unmatched_wrap)
+        uw.setContentsMargins(0, 0, 0, 0)
+        uw.setSpacing(4)
+        u_bar = QHBoxLayout()
+        u_bar.setContentsMargins(2, 2, 2, 2)
+        u_bar.setSpacing(6)
+        self._stmt_filter = QLineEdit()
+        self._stmt_filter.setPlaceholderText(
+            "🔍 Filter narration / reference…"
+        )
+        self._stmt_filter.setFixedHeight(28)
+        self._stmt_filter.setClearButtonEnabled(True)
+        self._stmt_filter.textChanged.connect(self._apply_stmt_filter)
+        u_bar.addWidget(self._stmt_filter, 3)
+        self._select_all_btn = QPushButton("Select all visible")
+        self._select_all_btn.setFixedHeight(28)
+        self._select_all_btn.clicked.connect(self._select_all_visible_stmt_rows)
+        u_bar.addWidget(self._select_all_btn)
+        self._bulk_label = QLabel("")
+        self._bulk_label.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px;"
+        )
+        u_bar.addWidget(self._bulk_label)
+        self._bulk_ignore_btn = QPushButton("Ignore selected")
+        self._bulk_ignore_btn.setFixedHeight(28)
+        self._bulk_ignore_btn.setVisible(False)
+        self._bulk_ignore_btn.clicked.connect(self._on_bulk_ignore)
+        u_bar.addWidget(self._bulk_ignore_btn)
+        uw.addLayout(u_bar)
+        uw.addWidget(self._unmatched_stmt_table)
+        self._unmatched_stmt_table.itemSelectionChanged.connect(
+            self._refresh_bulk_buttons
+        )
+
+        self._tabs.addTab(matched_wrap,                "Matched")
+        self._tabs.addTab(unmatched_wrap,              "Unmatched Statement")
         self._tabs.addTab(self._unmatched_book_table,  "Unmatched Book")
         self._tabs.addTab(self._ignored_table,         "Ignored")
         layout.addWidget(self._tabs, 1)
         return page
+
+    def _has_feature(self, feature: str) -> bool:
+        try:
+            return bool(self.license_mgr.has_feature(feature))
+        except Exception:
+            return False
+
+    # ── Bulk-action helpers (Unmatched Statement tab) ─────────────────────────
+
+    def _apply_stmt_filter(self, text: str):
+        """Hide unmatched-stmt rows whose narration/reference don't contain
+        the search text (case-insensitive substring). Empty = show all."""
+        needle = (text or "").strip().lower()
+        t = self._unmatched_stmt_table
+        for r in range(t.rowCount()):
+            if not needle:
+                t.setRowHidden(r, False)
+                continue
+            hit = False
+            for c in (3, 4):   # Narration, Reference
+                item = t.item(r, c)
+                if item and needle in (item.text() or "").lower():
+                    hit = True
+                    break
+            t.setRowHidden(r, not hit)
+
+    def _select_all_visible_stmt_rows(self):
+        t = self._unmatched_stmt_table
+        from PySide6.QtCore import QItemSelection, QItemSelectionModel
+        t.clearSelection()
+        sel = QItemSelection()
+        for r in range(t.rowCount()):
+            if t.isRowHidden(r):
+                continue
+            sel.select(t.model().index(r, 0),
+                       t.model().index(r, t.columnCount() - 1))
+        t.selectionModel().select(
+            sel,
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows,
+        )
+
+    def _selected_stmt_line_ids(self) -> list[int]:
+        """statement_line ids for the selected rows — id is carried on
+        column 0 via Qt.UserRole."""
+        ids: list[int] = []
+        t = self._unmatched_stmt_table
+        for r in sorted({i.row() for i in t.selectedItems()}):
+            item = t.item(r, 0)
+            if item is None:
+                continue
+            lid = item.data(Qt.ItemDataRole.UserRole)
+            if lid:
+                ids.append(int(lid))
+        return ids
+
+    def _refresh_bulk_buttons(self):
+        n = len(self._selected_stmt_line_ids())
+        self._bulk_ignore_btn.setVisible(n > 0)
+        self._bulk_label.setText(f"<b>{n}</b> selected" if n else "")
+
+    def _on_bulk_ignore(self):
+        ids = self._selected_stmt_line_ids()
+        if not ids:
+            return
+        note, ok = QInputDialog.getText(
+            self, "Ignore selected lines",
+            f"Optional note applied to all {len(ids)} line(s) "
+            f"(e.g. 'their bank charges'):",
+        )
+        if not ok:
+            return
+        try:
+            n = self.reconciler.bulk_ignore(ids, note=note)
+        except Exception as e:
+            QMessageBox.critical(self, "Bulk ignore failed", str(e))
+            return
+        self._populate_review()
+        QMessageBox.information(self, "Lines ignored",
+                                f"Ignored {n} statement line(s).")
+
+    def _on_undo_auto_matches(self):
+        if self._statement_id is None:
+            return
+        confirm = QMessageBox.question(
+            self, "Undo auto-matches?",
+            "Revert every auto-matched row on this statement back to "
+            "Unmatched? Manual matches and created vouchers are kept.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            n = self.reconciler.unmatch_all_auto(self._statement_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Undo failed", str(e))
+            return
+        self._populate_review()
+        QMessageBox.information(self, "Undo complete",
+                                f"Reverted {n} auto-matched row(s).")
 
     def _populate_review(self):
         if self._statement_id is None:
@@ -560,7 +721,11 @@ class LedgerReconciliationPage(QWidget):
         u_stmt = self.reconciler.unmatched_statement_lines(self._statement_id)
         self._unmatched_stmt_table.setRowCount(len(u_stmt))
         for r, s in enumerate(u_stmt):
-            self._unmatched_stmt_table.setItem(r, 0, QTableWidgetItem(s["txn_date"]))
+            date_item = QTableWidgetItem(s["txn_date"])
+            # Carry the statement_line id on col 0 so bulk selection can
+            # map a row back to its id.
+            date_item.setData(Qt.ItemDataRole.UserRole, s["id"])
+            self._unmatched_stmt_table.setItem(r, 0, date_item)
             self._unmatched_stmt_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
             self._unmatched_stmt_table.setItem(r, 2, QTableWidgetItem(
                 f"₹ {s['amount']:,.2f}"
@@ -576,10 +741,20 @@ class LedgerReconciliationPage(QWidget):
             cv.clicked.connect(lambda _, line=s: self._on_create_voucher(line))
             fc = self._compact_btn("Find candidate")
             fc.clicked.connect(lambda _, line=s: self._on_find_candidate(line))
-            ig = self._compact_btn("Ignore")
-            ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
             ah.addWidget(cv)
             ah.addWidget(fc)
+            # Split match — one stmt line ↔ many book lines summing to it.
+            # Gated like bank reco's split match (STANDARD+ feature).
+            if self._has_feature("ledger_reco_split"):
+                sm = self._compact_btn("Split match")
+                sm.setToolTip(
+                    "Match this statement line to several book entries "
+                    "that together total its amount."
+                )
+                sm.clicked.connect(lambda _, line=s: self._on_split_match(line))
+                ah.addWidget(sm)
+            ig = self._compact_btn("Ignore")
+            ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
             ah.addWidget(ig)
             ah.addStretch()
             self._unmatched_stmt_table.setCellWidget(r, 6, actions)
@@ -641,6 +816,9 @@ class LedgerReconciliationPage(QWidget):
             f"⚠ {len(u_book)} book unmatched   |   "
             f"⊘ {len(ignored)} ignored"
         )
+        # Re-apply any active filter + reset the bulk-action bar.
+        self._apply_stmt_filter(self._stmt_filter.text())
+        self._refresh_bulk_buttons()
 
     def _on_restore_ignored(self, sl_id: int):
         try:
@@ -783,6 +961,116 @@ class LedgerReconciliationPage(QWidget):
         btn_row.addWidget(cancel)
         btn_row.addWidget(ok)
         dl.addLayout(btn_row)
+        dlg.exec()
+
+    def _on_split_match(self, stmt_line: dict):
+        """One statement line ↔ many book entries that sum to it.
+        STANDARD+ (ledger_reco_split feature)."""
+        if not self._has_feature("ledger_reco_split"):
+            return
+        candidates = self.reconciler.candidate_book_lines(
+            self._ledger_id, stmt_line["txn_date"],
+            float(stmt_line["amount"]), stmt_line["sign"],
+            sign_mode=self._sign_mode, split_mode=True,
+        )
+        if not candidates:
+            QMessageBox.information(
+                self, "No candidates",
+                "No uncleared book entries on the matching side within "
+                "the date window.",
+            )
+            return
+        stmt_amount = float(stmt_line["amount"])
+        # Which book column the stmt sign pairs with — same rule the
+        # engine's manual_match_many uses.
+        if self._sign_mode == "MIRROR":
+            use_cr = (stmt_line["sign"] == "DR")
+        else:
+            use_cr = (stmt_line["sign"] == "CR")
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Pick book entries that sum to the statement line")
+        dlg.setMinimumWidth(660)
+        dlg.setMinimumHeight(440)
+        dl = QVBoxLayout(dlg)
+        dl.addWidget(QLabel(
+            f"<b>{len(candidates)}</b> candidate(s). Tick the rows whose "
+            f"amounts together equal <b>₹ {stmt_amount:,.2f}</b> "
+            f"(Ctrl+click for multi-select)."
+        ))
+        t = QTableWidget(len(candidates), 5)
+        t.setHorizontalHeaderLabels(
+            ["Date", "Voucher #", "Type", "Narration", "Amount"]
+        )
+        t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        t.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        row_to_id: dict[int, int] = {}
+        row_to_amt: dict[int, float] = {}
+        for r, c in enumerate(candidates):
+            row_to_id[r] = c["id"]
+            amt_val = float((c["cr_amount"] if use_cr else c["dr_amount"]) or 0)
+            row_to_amt[r] = amt_val
+            t.setItem(r, 0, QTableWidgetItem(c["voucher_date"]))
+            t.setItem(r, 1, QTableWidgetItem(c["voucher_number"] or ""))
+            t.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
+            t.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
+            amt = (
+                f"Dr ₹ {c['dr_amount']:,.2f}" if c["dr_amount"]
+                else f"Cr ₹ {c['cr_amount']:,.2f}"
+            )
+            t.setItem(r, 4, QTableWidgetItem(amt))
+        dl.addWidget(t)
+
+        total_lbl = QLabel("")
+        dl.addWidget(total_lbl)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dlg.reject)
+        ok = QPushButton("Match Selected")
+        ok.setObjectName("btn_primary")
+        ok.setEnabled(False)
+        btn_row.addWidget(cancel)
+        btn_row.addWidget(ok)
+        dl.addLayout(btn_row)
+
+        TOL = 1.0
+
+        def _refresh_total():
+            rows = t.selectionModel().selectedRows()
+            picked = sum(row_to_amt[r.row()] for r in rows)
+            diff = picked - stmt_amount
+            within = bool(rows) and abs(diff) <= TOL
+            status = ("matches ✓" if within else
+                      (f"short by ₹ {-diff:,.2f}" if diff < 0
+                       else f"over by ₹ {diff:,.2f}"))
+            total_lbl.setText(
+                f"Selected {len(rows)} row(s) · sum ₹ {picked:,.2f} "
+                f"vs ₹ {stmt_amount:,.2f} — {status}"
+            )
+            total_lbl.setStyleSheet(
+                f"color:{THEME['success'] if within else THEME['danger']}; "
+                f"font-size:12px; font-weight:bold; padding:6px 0;"
+            )
+            ok.setEnabled(within)
+
+        t.itemSelectionChanged.connect(_refresh_total)
+        _refresh_total()
+
+        def _ok():
+            vl_ids = [row_to_id[r.row()]
+                      for r in t.selectionModel().selectedRows()]
+            try:
+                self.reconciler.manual_match_many(stmt_line["id"], vl_ids)
+            except Exception as e:
+                QMessageBox.critical(dlg, "Match failed", str(e))
+                return
+            dlg.accept()
+            self._populate_review()
+
+        ok.clicked.connect(_ok)
         dlg.exec()
 
     def _on_ignore(self, stmt_line: dict):

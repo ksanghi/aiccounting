@@ -56,6 +56,7 @@ class AutoMatchResult:
     matched: int
     unmatched_stmt: int
     unmatched_book: int
+    ambiguous_skipped: int = 0
 
 
 # ── Engine ────────────────────────────────────────────────────────────────────
@@ -186,14 +187,28 @@ class LedgerReconciler:
                     key = (r["voucher_date"], round(book_amount, 2), stmt_sign)
                     index.setdefault(key, []).append(r["id"])
 
+        # Conservative — same rule as bank reco: a (date, amount, sign)
+        # triple is auto-matched ONLY when exactly one book line and one
+        # stmt line carry it. Ambiguous triples are left for the user so
+        # the engine never arbitrarily pairs two same-day same-amount
+        # entries.
+        stmt_key_count: dict[tuple, int] = {}
+        for sl in stmt_lines:
+            key = (sl["txn_date"], round(sl["amount"], 2), sl["sign"])
+            stmt_key_count[key] = stmt_key_count.get(key, 0) + 1
+
         matched = 0
+        ambiguous = 0
         with self.db:
             for sl in stmt_lines:
                 key = (sl["txn_date"], round(sl["amount"], 2), sl["sign"])
                 bucket = index.get(key)
                 if not bucket:
                     continue
-                vl_id = bucket.pop(0)
+                if len(bucket) > 1 or stmt_key_count[key] > 1:
+                    ambiguous += 1
+                    continue
+                vl_id = bucket[0]
                 self.db.execute(
                     "UPDATE ledger_statement_lines "
                     "   SET match_status='AUTO_MATCHED', "
@@ -231,7 +246,8 @@ class LedgerReconciler:
             (ledger_id, self.company_id, period_from, period_to),
         ).fetchone()["c"]
 
-        return AutoMatchResult(matched, unmatched_stmt, unmatched_book)
+        return AutoMatchResult(matched, unmatched_stmt, unmatched_book,
+                               ambiguous)
 
     @staticmethod
     def _book_keys(row, sign_mode: str):
@@ -333,17 +349,29 @@ class LedgerReconciler:
         sign_mode: str = "MIRROR",
         days: int = 7,
         amount_tolerance: float = 1.0,
+        split_mode: bool = False,
     ) -> list[dict]:
-        """For 'Find Candidate' on an unmatched stmt line."""
+        """For 'Find Candidate' on an unmatched stmt line.
+
+        split_mode=True widens the window and drops the per-line amount
+        lower bound — the caller intends to pick several lines that
+        *sum* to the statement amount (settlement scenario). Mirrors
+        bank reco's split-match candidate query."""
         from datetime import date as _date, timedelta
         try:
             d = _date.fromisoformat(around_date)
         except ValueError:
             return []
+        if split_mode:
+            days = max(days, 14)
         lo = (d - timedelta(days=days)).isoformat()
         hi = (d + timedelta(days=days)).isoformat()
-        amt_lo = max(0.0, amount - amount_tolerance)
-        amt_hi = amount + amount_tolerance
+        if split_mode:
+            amt_lo = 0.0
+            amt_hi = amount + amount_tolerance
+        else:
+            amt_lo = max(0.0, amount - amount_tolerance)
+            amt_hi = amount + amount_tolerance
 
         # Decide which book column the user-friendly candidate matches against.
         if sign_mode == "MIRROR":
@@ -401,15 +429,18 @@ class LedgerReconciler:
     def unmatch(
         self, statement_line_id: int, user_id: int | None = None,
     ) -> None:
+        # Clears the match on BOTH sides. A split match (manual_match_many)
+        # leaves N voucher_lines pointing back via
+        # voucher_lines.ledger_statement_line_id — clear by that reverse
+        # link, not just matched_voucher_line_id, or split matches would
+        # leave stragglers still cleared after an unmatch.
         with self.db:
             row = self.db.execute(
-                "SELECT matched_voucher_line_id "
-                "  FROM ledger_statement_lines WHERE id=?",
+                "SELECT id FROM ledger_statement_lines WHERE id=?",
                 (statement_line_id,),
             ).fetchone()
             if not row:
                 return
-            vl_id = row["matched_voucher_line_id"]
             self.db.execute(
                 "UPDATE ledger_statement_lines "
                 "   SET match_status='UNMATCHED', "
@@ -419,15 +450,145 @@ class LedgerReconciler:
                 " WHERE id=?",
                 (statement_line_id,),
             )
-            if vl_id:
-                self.db.execute(
-                    "UPDATE voucher_lines "
-                    "   SET party_cleared_date=NULL, "
-                    "       ledger_statement_line_id=NULL, "
-                    "       party_cleared_by_user_id=NULL "
-                    " WHERE id=?",
-                    (vl_id,),
+            self.db.execute(
+                "UPDATE voucher_lines "
+                "   SET party_cleared_date=NULL, "
+                "       ledger_statement_line_id=NULL, "
+                "       party_cleared_by_user_id=NULL "
+                " WHERE ledger_statement_line_id=?",
+                (statement_line_id,),
+            )
+
+    def manual_match_many(
+        self,
+        statement_line_id: int,
+        voucher_line_ids: list[int],
+        user_id: int | None = None,
+        tolerance: float = 1.0,
+    ) -> None:
+        """Link ONE statement line to MANY voucher lines (split match) —
+        a settlement where one party-statement line bundles several of
+        your vouchers. The selected lines, summed on the side the stmt
+        sign matches against, must equal the statement amount within
+        `tolerance`. Mirrors bank reco's manual_match_many; the matching
+        side depends on the statement's sign_mode."""
+        if not voucher_line_ids:
+            raise ValueError("Pick at least one ledger entry to match.")
+
+        with self.db:
+            sl = self.db.execute(
+                "SELECT lsl.txn_date, lsl.amount, lsl.sign, ls.sign_mode "
+                "  FROM ledger_statement_lines lsl "
+                "  JOIN ledger_statements ls ON ls.id = lsl.statement_id "
+                " WHERE lsl.id=?",
+                (statement_line_id,),
+            ).fetchone()
+            if not sl:
+                raise ValueError("Statement line not found.")
+            sign_mode = sl["sign_mode"] or "MIRROR"
+
+            placeholders = ",".join("?" * len(voucher_line_ids))
+            rows = self.db.execute(
+                f"SELECT id, dr_amount, cr_amount, ledger_statement_line_id "
+                f"  FROM voucher_lines WHERE id IN ({placeholders})",
+                voucher_line_ids,
+            ).fetchall()
+            if len(rows) != len(voucher_line_ids):
+                raise ValueError("One or more ledger entries could not be loaded.")
+            for r in rows:
+                if r["ledger_statement_line_id"] and \
+                   r["ledger_statement_line_id"] != statement_line_id:
+                    raise ValueError(
+                        "One of the chosen ledger entries is already matched "
+                        "to a different statement line."
+                    )
+
+            # Which book column the stmt sign pairs with — same rule as
+            # candidate_book_lines / _book_keys.
+            if sign_mode == "MIRROR":
+                use_cr = (sl["sign"] == "DR")
+            else:
+                use_cr = (sl["sign"] == "CR")
+            total = sum(
+                float((r["cr_amount"] if use_cr else r["dr_amount"]) or 0)
+                for r in rows
+            )
+            stmt_amount = float(sl["amount"])
+            if abs(total - stmt_amount) > tolerance:
+                raise ValueError(
+                    f"Selected entries total Rs.{total:,.2f}, but the "
+                    f"statement line is Rs.{stmt_amount:,.2f}. Pick entries "
+                    f"whose total matches (within Rs.{tolerance:.2f})."
                 )
+
+            primary_vl_id = voucher_line_ids[0]
+            self.db.execute(
+                "UPDATE ledger_statement_lines "
+                "   SET match_status='MANUAL_MATCHED', "
+                "       matched_voucher_line_id=?, "
+                "       resolved_at=datetime('now'), "
+                "       resolved_by_user_id=? "
+                " WHERE id=?",
+                (primary_vl_id, user_id, statement_line_id),
+            )
+            self.db.execute(
+                f"UPDATE voucher_lines "
+                f"   SET party_cleared_date=?, "
+                f"       ledger_statement_line_id=?, "
+                f"       party_cleared_by_user_id=? "
+                f" WHERE id IN ({placeholders})",
+                [sl["txn_date"], statement_line_id, user_id, *voucher_line_ids],
+            )
+
+    def unmatch_all_auto(self, statement_id: int) -> int:
+        """Revert every AUTO_MATCHED stmt line on this statement back to
+        UNMATCHED, clearing party_cleared_date on the linked voucher
+        lines. Leaves MANUAL_MATCHED / VOUCHER_CREATED / IGNORED /
+        FLAGGED alone. Returns the count reset. Mirrors bank reco."""
+        with self.db:
+            self.db.execute(
+                """UPDATE voucher_lines
+                      SET party_cleared_date=NULL,
+                          ledger_statement_line_id=NULL,
+                          party_cleared_by_user_id=NULL
+                    WHERE ledger_statement_line_id IN (
+                        SELECT id FROM ledger_statement_lines
+                         WHERE statement_id=? AND match_status='AUTO_MATCHED'
+                    )""",
+                (statement_id,),
+            )
+            cur = self.db.execute(
+                "UPDATE ledger_statement_lines "
+                "   SET match_status='UNMATCHED', "
+                "       matched_voucher_line_id=NULL, "
+                "       resolved_at=NULL, "
+                "       resolved_by_user_id=NULL "
+                " WHERE statement_id=? AND match_status='AUTO_MATCHED'",
+                (statement_id,),
+            )
+            return cur.rowcount or 0
+
+    def bulk_ignore(
+        self, statement_line_ids: list[int], note: str = "",
+        user_id: int | None = None,
+    ) -> int:
+        """Mark many statement lines IGNORED in one go. Returns the
+        count updated. Mirrors bank reco's bulk_ignore."""
+        if not statement_line_ids:
+            return 0
+        placeholders = ",".join("?" * len(statement_line_ids))
+        with self.db:
+            cur = self.db.execute(
+                f"UPDATE ledger_statement_lines "
+                f"   SET match_status='IGNORED', "
+                f"       resolved_at=datetime('now'), "
+                f"       resolved_by_user_id=?, "
+                f"       notes=? "
+                f" WHERE id IN ({placeholders}) "
+                f"   AND match_status IN ('UNMATCHED','FLAGGED')",
+                [user_id, note or None, *statement_line_ids],
+            )
+            return cur.rowcount or 0
 
     def create_voucher_for_line(
         self,
