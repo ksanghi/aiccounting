@@ -1,8 +1,20 @@
 """
 Reports Engine — queries DB and returns structured data for all reports.
 No UI code here.
+
+FY-awareness (A9): Trial Balance and Balance Sheet are "as on a date"
+reports. Real accounts (asset/liability/equity) carry forward
+continuously — opening balance + every voucher up to the date. Nominal
+accounts (income/expense) must NOT: each financial year stands alone, so
+the report shows only the *current* FY's income/expense and folds every
+prior FY's net profit into Retained Earnings. The FY boundary comes from
+`companies.fy_start`. For a single-FY book the prior-year figures are
+all zero, so the output is identical to the pre-A9 behaviour.
 """
+from datetime import date
+
 from .models import Database
+from core.fy import fy_start_year, fy_bounds
 
 
 class ReportsEngine:
@@ -10,6 +22,36 @@ class ReportsEngine:
     def __init__(self, db: Database, company_id: int):
         self.db = db
         self.company_id = company_id
+        _c = db.connect().execute(
+            "SELECT fy_start FROM companies WHERE id=?", (company_id,),
+        ).fetchone()
+        self.fy_start = (_c["fy_start"] if _c and _c["fy_start"] else "04-01")
+
+    def _fy_open(self, as_of: str) -> str:
+        """ISO start date of the financial year that contains `as_of`."""
+        sy = fy_start_year(self.fy_start, date.fromisoformat(as_of))
+        start, _ = fy_bounds(self.fy_start, sy)
+        return start
+
+    def _prior_fy_pnl(self, fy_open: str) -> float:
+        """Net profit of every FY *before* the one starting on `fy_open`
+        — income (cr−dr) minus expense (dr−cr) for vouchers dated
+        strictly before fy_open. Positive = accumulated retained profit."""
+        row = self.db.execute(
+            """SELECT
+                 COALESCE(SUM(CASE WHEN g.nature='INCOME'
+                              THEN vl.cr_amount - vl.dr_amount ELSE 0 END), 0) AS inc,
+                 COALESCE(SUM(CASE WHEN g.nature='EXPENSE'
+                              THEN vl.dr_amount - vl.cr_amount ELSE 0 END), 0) AS exp
+               FROM voucher_lines vl
+               JOIN vouchers v       ON vl.voucher_id = v.id
+               JOIN ledgers  l       ON vl.ledger_id  = l.id
+               JOIN account_groups g ON l.group_id    = g.id
+              WHERE v.company_id = ? AND v.is_cancelled = 0
+                AND v.voucher_date < ?""",
+            (self.company_id, fy_open),
+        ).fetchone()
+        return round((row["inc"] or 0.0) - (row["exp"] or 0.0), 2)
 
     def get_company(self) -> dict:
         row = self.db.execute(
@@ -23,6 +65,14 @@ class ReportsEngine:
         # Single aggregation query — was N+1 (one query per ledger). On a
         # 115-ledger book this turned every Trial Balance refresh into
         # 116 SQLite round-trips, blocking the UI.
+        #
+        # `prior_dr` / `prior_cr` capture txns dated BEFORE the current
+        # FY opened. For income/expense ledgers we subtract that portion
+        # so each ledger shows only the current FY's activity; the
+        # removed net becomes a synthetic "Retained Earnings (b/f)" line
+        # so the TB still balances.
+        fy_open = self._fy_open(as_of)
+        cid = self.company_id
         ledger_rows = self.db.execute(
             """SELECT l.id, l.name AS ledger, g.name AS grp, g.nature,
                       l.opening_balance, l.opening_type,
@@ -37,7 +87,19 @@ class ReportsEngine:
                               AND v.voucher_date <= ?
                               AND v.company_id = ?
                              THEN vl.cr_amount ELSE 0 END
-                      ), 0) AS txn_cr
+                      ), 0) AS txn_cr,
+                      COALESCE(SUM(
+                        CASE WHEN v.is_cancelled = 0
+                              AND v.voucher_date < ?
+                              AND v.company_id = ?
+                             THEN vl.dr_amount ELSE 0 END
+                      ), 0) AS prior_dr,
+                      COALESCE(SUM(
+                        CASE WHEN v.is_cancelled = 0
+                              AND v.voucher_date < ?
+                              AND v.company_id = ?
+                             THEN vl.cr_amount ELSE 0 END
+                      ), 0) AS prior_cr
                  FROM ledgers l
                  JOIN account_groups g ON l.group_id = g.id
             LEFT JOIN voucher_lines  vl ON vl.ledger_id  = l.id
@@ -45,10 +107,11 @@ class ReportsEngine:
                 WHERE l.company_id = ? AND l.active = 1
              GROUP BY l.id
              ORDER BY g.nature, g.name, l.name""",
-            (as_of, self.company_id, as_of, self.company_id, self.company_id),
+            (as_of, cid, as_of, cid, fy_open, cid, fy_open, cid, cid),
         ).fetchall()
 
         rows: list[dict] = []
+        prior_pnl = 0.0   # net profit of all FYs before the current one
         for l in ledger_rows:
             ob = l["opening_balance"] or 0.0
             ot = l["opening_type"]
@@ -56,6 +119,17 @@ class ReportsEngine:
             ob_cr  = ob if ot == "Cr" else 0.0
             txn_dr = l["txn_dr"] or 0.0
             txn_cr = l["txn_cr"] or 0.0
+
+            if l["nature"] in ("INCOME", "EXPENSE"):
+                # Strip the pre-FY portion — that profit belongs to a
+                # closed year, not this one. (cr−dr) accumulates into
+                # prior_pnl: income adds, expense subtracts.
+                p_dr = l["prior_dr"] or 0.0
+                p_cr = l["prior_cr"] or 0.0
+                prior_pnl += (p_cr - p_dr)
+                txn_dr -= p_dr
+                txn_cr -= p_cr
+
             net    = (ob_dr + txn_dr) - (ob_cr + txn_cr)
             cl_dr  = round(net, 2)  if net >= 0 else 0.0
             cl_cr  = round(-net, 2) if net  < 0 else 0.0
@@ -72,6 +146,24 @@ class ReportsEngine:
                     "closing_dr": cl_dr,
                     "closing_cr": cl_cr,
                 })
+
+        # Synthetic line carrying prior FYs' accumulated profit. Profit
+        # sits as a Cr (retained earnings); a prior loss as a Dr. Without
+        # this the TB would be out of balance by exactly the nominal
+        # activity we stripped above. Skipped when there is no prior FY.
+        prior_pnl = round(prior_pnl, 2)
+        if abs(prior_pnl) > 0.001:
+            rows.append({
+                "ledger":     "Retained Earnings (b/f)",
+                "group":      "Reserves & Surplus",
+                "nature":     "LIABILITY",
+                "opening_dr": 0.0,
+                "opening_cr": 0.0,
+                "txn_dr":     0.0,
+                "txn_cr":     0.0,
+                "closing_dr": prior_pnl * -1 if prior_pnl < 0 else 0.0,
+                "closing_cr": prior_pnl if prior_pnl > 0 else 0.0,
+            })
         return rows
 
     # ── 2. Profit & Loss ──────────────────────────────────────────────────────
@@ -123,20 +215,38 @@ class ReportsEngine:
         # Single aggregation per nature — was N+1 (one query per ledger
         # × four natures). On a 115-ledger book that was 115+ round-trips
         # per BS refresh.
-        def get_balances(nature: str) -> list[dict]:
+        #
+        # `from_date` scopes the txn sums to a FY window. Real accounts
+        # (asset/liability) pass None → continuous, opening + everything
+        # up to `as_of`. Nominal accounts (income/expense) pass the FY
+        # open date so the period P&L is the CURRENT year only; prior
+        # years' profit is added separately as a Retained Earnings line.
+        fy_open = self._fy_open(as_of)
+
+        def get_balances(nature: str, from_date: str | None = None) -> list[dict]:
+            lo_clause = "AND v.voucher_date >= ?" if from_date else ""
+            params = [as_of, self.company_id]
+            if from_date:
+                params.append(from_date)
+            params += [as_of, self.company_id]
+            if from_date:
+                params.append(from_date)
+            params += [self.company_id, nature]
             rows = self.db.execute(
-                """SELECT l.id, l.name AS ledger, g.name AS grp,
+                f"""SELECT l.id, l.name AS ledger, g.name AS grp,
                           l.opening_balance, l.opening_type,
                           COALESCE(SUM(
                             CASE WHEN v.is_cancelled = 0
                                   AND v.voucher_date <= ?
                                   AND v.company_id = ?
+                                  {lo_clause}
                                  THEN vl.dr_amount ELSE 0 END
                           ), 0) AS txn_dr,
                           COALESCE(SUM(
                             CASE WHEN v.is_cancelled = 0
                                   AND v.voucher_date <= ?
                                   AND v.company_id = ?
+                                  {lo_clause}
                                  THEN vl.cr_amount ELSE 0 END
                           ), 0) AS txn_cr
                      FROM ledgers l
@@ -146,8 +256,7 @@ class ReportsEngine:
                     WHERE l.company_id = ? AND g.nature = ? AND l.active = 1
                  GROUP BY l.id
                  ORDER BY g.name, l.name""",
-                (as_of, self.company_id, as_of, self.company_id,
-                 self.company_id, nature),
+                params,
             ).fetchall()
             result = []
             for l in rows:
@@ -168,10 +277,12 @@ class ReportsEngine:
                     })
             return result
 
+        # Real accounts carry forward continuously; nominal accounts are
+        # scoped to the current FY so the period P&L is this year only.
         assets      = get_balances("ASSET")
         liabilities = get_balances("LIABILITY")
-        incomes     = get_balances("INCOME")
-        expenses    = get_balances("EXPENSE")
+        incomes     = get_balances("INCOME",  from_date=fy_open)
+        expenses    = get_balances("EXPENSE", from_date=fy_open)
 
         # A ledger whose balance lands on the side opposite its group's
         # natural side (e.g. a bank overdraft → Asset nature with Cr balance,
@@ -202,12 +313,27 @@ class ReportsEngine:
                 "side":    "Cr" if period_pnl >= 0 else "Dr",
             })
 
+        # Prior FYs' accumulated net profit — retained earnings brought
+        # forward. Sits on the liabilities/equity side. Together with the
+        # current-FY "Profit/Loss for the period" line above this equals
+        # the lifetime profit the pre-A9 single-line version showed, so
+        # the sheet still balances. Zero (and omitted) for a single-FY book.
+        prior_pnl = self._prior_fy_pnl(fy_open)
+        if abs(prior_pnl) > 0.001:
+            liabilities.append({
+                "ledger":  "Retained Earnings (earlier years)",
+                "group":   "Reserves & Surplus",
+                "balance": abs(prior_pnl),
+                "side":    "Cr" if prior_pnl >= 0 else "Dr",
+            })
+
         return {
             "assets":            assets,
             "liabilities":       liabilities,
             "total_assets":      round(signed_total(assets,      "Dr"), 2),
             "total_liabilities": round(signed_total(liabilities, "Cr"), 2),
             "period_pnl":        period_pnl,
+            "prior_pnl":         prior_pnl,
             "total_income":      round(total_income,  2),
             "total_expense":     round(total_expense, 2),
             "as_of":             as_of,
