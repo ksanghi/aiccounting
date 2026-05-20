@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QFrame, QDateEdit, QComboBox, QLineEdit,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QTabWidget, QSizePolicy, QDialog,
-    QFormLayout, QInputDialog, QMenu, QPlainTextEdit,
+    QFormLayout, QInputDialog, QMenu, QPlainTextEdit, QScrollArea,
 )
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 from PySide6.QtGui  import QColor
@@ -824,7 +824,19 @@ class BankReconciliationPage(QWidget):
         layout.addWidget(hist_card)
 
         layout.addStretch()
-        return page
+
+        # Wrap in a scroll area — the setup page stacks four cards
+        # (bank+period, file drop, imported statements, past
+        # reconciliations). On a shorter window the QStackedWidget
+        # squeezed the lower cards below their minimum and the imports +
+        # history tables collapsed to just their headers. A scroll area
+        # gives every card its full height and scrolls instead.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setWidget(page)
+        return scroll
 
     def _on_bank_picked(self, ledger_id, name, _row):
         # Reset the auto-prompt guard so changing ledger re-checks for an

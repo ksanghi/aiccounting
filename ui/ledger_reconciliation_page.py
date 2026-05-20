@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QTabWidget, QDialog,
     QFormLayout, QInputDialog, QPlainTextEdit, QButtonGroup,
-    QRadioButton,
+    QRadioButton, QScrollArea,
 )
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 
@@ -332,7 +332,15 @@ class LedgerReconciliationPage(QWidget):
         il.addWidget(self._history_table)
         layout.addWidget(imp_card)
 
-        return page
+        # Wrap in a scroll area — without it the QStackedWidget squeezed
+        # the imported-statements + past-reconciliations tables down to
+        # just their headers on shorter windows.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setWidget(page)
+        return scroll
 
     def _on_ledger_picked(self, ledger_id, name, _row):
         self._ledger_id   = ledger_id
