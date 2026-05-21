@@ -48,9 +48,24 @@ _DEFAULT_LOCALE = "IN"
 
 
 def display_locale() -> str:
-    """Active locale code. Reads `display_locale` pref; falls back to IN."""
-    code = (prefs.get("display_locale") or _DEFAULT_LOCALE).strip().upper()
-    return code if code in _LOCALE_FORMATS else _DEFAULT_LOCALE
+    """Active locale code.
+
+    The licensed country is authoritative (A13): its CountryProfile
+    carries the locale. The `display_locale` user pref remains as an
+    explicit override for the rare case an operator wants a different
+    display locale than the licence country. Either way, falls back
+    to IN."""
+    override = (prefs.get("display_locale") or "").strip().upper()
+    if override in _LOCALE_FORMATS:
+        return override
+    try:
+        from core import country
+        code = country.active_profile().locale_code.strip().upper()
+        if code in _LOCALE_FORMATS:
+            return code
+    except Exception:
+        pass
+    return _DEFAULT_LOCALE
 
 
 def currency_symbol(locale: Optional[str] = None) -> str:

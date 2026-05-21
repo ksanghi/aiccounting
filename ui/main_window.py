@@ -396,6 +396,12 @@ class MainWindow(QMainWindow):
 
         lmgr = self.license_mgr
 
+        # Country pack (A13): the licensed country selects which tax
+        # screens exist. India ships "gst"/"tds"; a non-India pack omits
+        # them. Tier (lmgr.has_feature) still gates access independently.
+        from core import country as _country
+        _profile = _country.active_profile()
+
         voucher_page = VoucherEntryPage(self.engine, self.tree, self.calculator)
         voucher_page.voucher_posted.connect(self._on_voucher_posted)
         self.register_page("Post Voucher", "✏", voucher_page)
@@ -491,29 +497,31 @@ class MainWindow(QMainWindow):
                 ),
             )
 
-        # ── GST — PRO+ ──
-        if lmgr.has_feature("gst"):
-            from ui.reports_page import GSTSummaryPage
-            rpt_gst = ReportsEngine(self.db, self.company_id)
-            self.register_page("GST Returns", "🧾", GSTSummaryPage(rpt_gst),
-                                section_above="TAX")
-        else:
-            self.register_page(
-                "GST Returns", "🧾",
-                self._locked_page("gst", "PRO", "GST Returns"),
-                section_above="TAX",
-            )
+        # ── GST — PRO+ ── (India-only screen; see country pack A13)
+        if "gst" in _profile.tax_screens:
+            if lmgr.has_feature("gst"):
+                from ui.reports_page import GSTSummaryPage
+                rpt_gst = ReportsEngine(self.db, self.company_id)
+                self.register_page("GST Returns", "🧾", GSTSummaryPage(rpt_gst),
+                                    section_above="TAX")
+            else:
+                self.register_page(
+                    "GST Returns", "🧾",
+                    self._locked_page("gst", "PRO", "GST Returns"),
+                    section_above="TAX",
+                )
 
-        # ── TDS — PRO+ ──
-        if lmgr.has_feature("tds"):
-            from ui.reports_page import TDSReportPage
-            rpt_tds = ReportsEngine(self.db, self.company_id)
-            self.register_page("TDS Reports", "📑", TDSReportPage(rpt_tds))
-        else:
-            self.register_page(
-                "TDS Reports", "📑",
-                self._locked_page("tds", "PRO", "TDS Reports"),
-            )
+        # ── TDS — PRO+ ── (India-only screen; see country pack A13)
+        if "tds" in _profile.tax_screens:
+            if lmgr.has_feature("tds"):
+                from ui.reports_page import TDSReportPage
+                rpt_tds = ReportsEngine(self.db, self.company_id)
+                self.register_page("TDS Reports", "📑", TDSReportPage(rpt_tds))
+            else:
+                self.register_page(
+                    "TDS Reports", "📑",
+                    self._locked_page("tds", "PRO", "TDS Reports"),
+                )
 
         # ── AI Doc Reader — PRO+ ──
         if lmgr.has_feature("ai_document_reader"):

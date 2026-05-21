@@ -88,6 +88,7 @@ class ValidateResponse(BaseModel):
     flats_limit:     Optional[int]  = None   # RWAGenie only; None = unlimited or not RWA
     expires_at:      Optional[str]  = None
     company_name:    Optional[str]  = None
+    country_code:    Optional[str]  = None   # ISO-2; selects the active CountryProfile
     error:           Optional[str]  = None
 
 
@@ -542,6 +543,7 @@ def validate(
         flats_limit=(flats_limit_for(lic.plan) if product == "rwagenie" else None),
         expires_at=lic.expires_at.isoformat(),
         company_name=lic.company_name,
+        country_code=(lic.country_code or "IN").upper(),
     )
 
 

@@ -91,6 +91,7 @@ class LicenseManager:
             "seats_used":      0,
             "expires_at":      "2099-12-31",
             "company_name":    "",
+            "country_code":    "IN",
             "validated_at":    datetime.now().isoformat(),
             "offline_until":   (datetime.now() + timedelta(days=7)).isoformat(),
             "overage_count":   0,
@@ -194,6 +195,13 @@ class LicenseManager:
     @property
     def company_name(self) -> str:
         return self._data.get("company_name", "")
+
+    @property
+    def country(self) -> str:
+        """ISO-2 country code the license was issued for. Selects the
+        active CountryProfile (tax rules / screens / locale). Legacy
+        licenses cached before A13 have no country_code — default IN."""
+        return (self._data.get("country_code") or "IN").strip().upper()
 
     @property
     def txn_percent(self) -> float:
@@ -341,6 +349,7 @@ class LicenseManager:
                 "seats_used":    0,
                 "expires_at":    "2099-12-31",
                 "company_name":  "Developer",
+                "country_code":  "IN",
                 "validated_at":  datetime.now().isoformat(),
                 "offline_until": (datetime.now() + timedelta(days=3650)).isoformat(),
                 "overage_count": 0,
@@ -387,12 +396,20 @@ class LicenseManager:
                 "seats_used":    data.get("seats_used") or 0,
                 "expires_at":    data.get("expires_at", "2026-12-31"),
                 "company_name":  data.get("company_name", ""),
+                "country_code":  (data.get("country_code") or "IN").upper(),
                 "validated_at":  datetime.now().isoformat(),
                 "offline_until": (datetime.now() + timedelta(days=7)).isoformat(),
                 # overage_count is also a local tally — don't reset it.
                 "overage_count": self._data.get("overage_count", 0),
             })
             self._save_local()
+            # The licence country may have changed — drop the cached
+            # CountryProfile so the next lookup re-reads it (A13).
+            try:
+                from core import country
+                country.reset_active()
+            except Exception:
+                pass
             return True, "License activated!"
 
         except urllib.error.URLError:
