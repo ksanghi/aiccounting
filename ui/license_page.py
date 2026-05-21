@@ -16,6 +16,7 @@ from core.license_manager import (
     LicenseManager, PLAN_PRICES, PLAN_LIMITS,
     PLAN_FEATURES
 )
+from core import pricing
 
 # Upgrade flow points at the real checkout once accgenie.in is live.
 # Override locally with the ACCGENIE_UPGRADE_URL env var if needed
@@ -468,20 +469,27 @@ class LicensePage(QWidget):
         pc2.setContentsMargins(20, 16, 20, 16)
         pc2.setSpacing(10)
 
-        plan_defs = [
-            ("FREE",     "Rs.0 / year",
-             "5,000 transactions",
-             "Basic ledger, day book"),
-            ("STANDARD", "Rs.1,999 / year",
-             "20,000 transactions",
-             "Reports, export, backup, 2 users"),
-            ("PRO",      "Rs.4,999 / year",
-             "50,000 transactions",
-             "GST, TDS, AI reader, 5 users"),
-            ("PREMIUM",  "Rs.9,999 / year",
-             "Unlimited transactions",
-             "All features, WhatsApp, audit"),
-        ]
+        # Plan cards are built from the baked pricing config (pricing.xlsx
+        # → core/_baked_config.py), the same source the checkout charges
+        # against — so the prices shown here can never drift from what a
+        # customer is actually billed. DEMO is the trial tier and isn't
+        # sold, so it's skipped. Adding a tier to pricing.xlsx makes it
+        # appear here automatically.
+        plan_defs = []
+        for tier in pricing.list_tiers():
+            code = (tier.get("code") or "").upper()
+            if code == "DEMO":
+                continue
+            inr = pricing.get_tier_price("IN", code)
+            if inr is None:
+                inr = tier.get("plan_price_INR") or 0
+            limit = tier.get("txn_limit") or 0
+            plan_defs.append((
+                code,
+                f"Rs.{int(inr):,} / year",
+                f"{int(limit):,} transactions",
+                tier.get("notes") or "",
+            ))
 
         for plan_key, price, txns, desc in plan_defs:
             is_current = (plan_key == self._mgr.plan)
