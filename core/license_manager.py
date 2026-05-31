@@ -21,7 +21,7 @@ BASE_DIR     = Path(__file__).parent.parent
 LICENSE_FILE = _license_file_path()
 SERVER_URL   = os.environ.get(
     "ACCGENIE_LICENSE_SERVER",
-    "https://license.accgenie.in/api/v1",
+    "https://license.ai-consultants.in/api/v1",
 )
 
 DEV_KEY = "ACCG-DEV-FULL"
@@ -298,14 +298,51 @@ class LicenseManager:
             cost,
         )
 
-    def record_voucher_posted(self):
-        """Call after every successful voucher post."""
+    def record_transaction_posted(
+        self, kind: str = "single_voucher", count: int = 1,
+    ) -> int:
+        """Count `count` posted transactions of type `kind` toward
+        `txn_used`. The per-transaction increment is the weight
+        assigned to `kind` in `core/txn_weights.py` (baked from
+        `config/pricing.xlsx` per release).
+
+        Every code path that creates / edits / cancels a billable unit
+        MUST call this — single voucher post, multi-party Payment /
+        Receipt, bank-reco bulk post, ledger-reco, AI doc reader,
+        edit, cancel. No bypasses.
+
+        Bulk paths (bank reco, AI doc reader) should pass
+        `count=N` instead of calling N times — saves N-1 disk writes.
+
+        Returns the total delta applied. A zero-weight kind (e.g.
+        'edit', 'cancel' in v1) returns 0 and doesn't touch
+        `txn_used`. A negative weight would refund — supported but
+        not used today.
+        """
+        from core.txn_weights import weight_for
+        if count <= 0:
+            return 0
+        delta = weight_for(kind) * count
+        if delta == 0:
+            return 0
         # Sync first so concurrent increments from other instances aren't lost.
         self._sync_local_counters()
-        self._data["txn_used"] = self._data.get("txn_used", 0) + 1
+        self._data["txn_used"] = self._data.get("txn_used", 0) + delta
         if self.txn_used > self.txn_limit:
-            self._data["overage_count"] = self._data.get("overage_count", 0) + 1
+            self._data["overage_count"] = (
+                self._data.get("overage_count", 0) + max(0, delta)
+            )
         self._save_local()
+        return delta
+
+    def record_voucher_posted(self) -> int:
+        """Back-compat alias for record_transaction_posted('single_voucher').
+
+        Existing call sites used this name. New callers should use
+        `record_transaction_posted(kind)` with the right kind string
+        from `core.txn_weights.Kind`.
+        """
+        return self.record_transaction_posted("single_voucher")
 
     def upgrade_savings(self) -> dict | None:
         """Calculate if upgrading would save money. Returns suggestion dict or None."""

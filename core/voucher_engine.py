@@ -1304,6 +1304,16 @@ class VoucherEngine:
             ),
         )
         self.db.commit()
+        # Count toward the license txn counter — cancellation. Weight
+        # defaults to 0 in v1 ("you used the slot when you posted"),
+        # so this is a no-op until pricing.xlsx changes it. Wiring the
+        # call site now means future weight changes don't need a
+        # code change here.
+        try:
+            from core.license_manager import LicenseManager
+            LicenseManager().record_transaction_posted("cancel")
+        except Exception:
+            pass
 
     # ── Queries ───────────────────────────────────────────────────────────────
 

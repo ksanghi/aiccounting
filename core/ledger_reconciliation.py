@@ -599,6 +599,12 @@ class LedgerReconciler:
     ) -> PostedVoucher:
         engine = VoucherEngine(self.db, self.company_id, user_id=user_id)
         posted = engine.post(draft)
+        # Count toward the license txn counter — ledger-reco voucher.
+        try:
+            from core.license_manager import LicenseManager
+            LicenseManager().record_transaction_posted("ledger_reco")
+        except Exception:
+            pass
         vl_row = self.db.execute(
             "SELECT id FROM voucher_lines "
             " WHERE voucher_id=? AND ledger_id=? "

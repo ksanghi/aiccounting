@@ -729,6 +729,18 @@ class DocumentReaderPage(QWidget):
                 errors.append(f"Row {r+1}: {e}")
                 skipped += 1
 
+        # Count AI-extracted vouchers toward the license txn counter
+        # in one disk write (record_transaction_posted handles the
+        # multiplier internally).
+        if posted > 0:
+            try:
+                from core.license_manager import LicenseManager
+                LicenseManager().record_transaction_posted(
+                    "ai_voucher", count=posted,
+                )
+            except Exception:
+                pass
+
         msg = f"Posted: {posted} voucher(s)\nSkipped: {skipped} voucher(s)"
         if errors:
             msg += "\n\nIssues:\n" + "\n".join(errors[:10])

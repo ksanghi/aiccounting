@@ -344,7 +344,7 @@ class _MultiPartyVoucherDialog(QDialog):
 
         try:
             from core.license_manager import LicenseManager
-            LicenseManager().record_voucher_posted()
+            LicenseManager().record_transaction_posted("multi_party")
         except Exception:
             pass
 
@@ -1329,6 +1329,15 @@ class VoucherEntryPage(QWidget):
             if self._edit_voucher_id:
                 # EDIT mode — replace the existing voucher in place
                 posted = self.engine.update_voucher(self._edit_voucher_id, draft)
+                # Count the edit. Weight defaults to 0 in v1 so edits
+                # are free, but the call site is wired so any future
+                # pricing change in core/txn_weights.py automatically
+                # applies without needing a code change here.
+                try:
+                    from core.license_manager import LicenseManager
+                    LicenseManager().record_transaction_posted("edit")
+                except Exception:
+                    pass
                 self.voucher_posted.emit(
                     posted.voucher_number, vtype, posted.total_amount
                 )
@@ -1351,7 +1360,7 @@ class VoucherEntryPage(QWidget):
             # Record transaction for license counter
             try:
                 from core.license_manager import LicenseManager
-                LicenseManager().record_voucher_posted()
+                LicenseManager().record_transaction_posted("single_voucher")
             except Exception:
                 pass
 

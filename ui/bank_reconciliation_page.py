@@ -569,6 +569,16 @@ class _BulkCreateVoucherDialog(QDialog):
             return
         posted = result.get("posted", 0)
         errors = result.get("errors", [])
+        # Count each bulk-posted voucher toward the license txn counter.
+        # One disk write — record_transaction_posted handles the multiplier.
+        if posted > 0:
+            try:
+                from core.license_manager import LicenseManager
+                LicenseManager().record_transaction_posted(
+                    "bank_reco", count=posted,
+                )
+            except Exception:
+                pass
         msg = f"Posted {posted} voucher(s)."
         if errors:
             msg += f"\n\n{len(errors)} line(s) failed:\n  • " + "\n  • ".join(errors[:8])
