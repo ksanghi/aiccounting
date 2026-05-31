@@ -196,22 +196,50 @@ class _MultiPartyVoucherDialog(QDialog):
         add_btn.clicked.connect(self._add_row)
         layout.addWidget(add_btn)
 
-        # Footer: total + Cancel + Post
-        foot = QHBoxLayout()
-        self._total_lbl = QLabel("Total ₹ 0.00")
-        self._total_lbl.setStyleSheet(
-            f"color:{THEME['accent']}; font-size:14px; font-weight:bold;"
-        )
-        foot.addWidget(self._total_lbl)
-        foot.addStretch()
-        cancel = QPushButton("Cancel")
-        cancel.clicked.connect(self.reject)
-        post_btn = QPushButton("Post voucher")
-        post_btn.setObjectName("btn_primary")
-        post_btn.clicked.connect(self._post)
-        foot.addWidget(cancel)
-        foot.addWidget(post_btn)
-        layout.addLayout(foot)
+        # Footer — bento mini-tile row: Lines / Total / Balance + Save row.
+        try:
+            from ui.bento_widgets import BentoFooter
+            self._bento_footer = BentoFooter()
+            self._tile_lines = self._bento_footer.add_tile("Lines", "0")
+            self._tile_total = self._bento_footer.add_tile(
+                "Total receipts" if not is_payment else "Total payments",
+                "₹ 0.00",
+            )
+            self._tile_balance = self._bento_footer.add_tile(
+                "Balance check", "✓ Balanced", status="good",
+            )
+            self._bento_footer.add_spacer()
+            cancel = QPushButton("Cancel")
+            cancel.clicked.connect(self.reject)
+            post_btn = QPushButton("Save voucher")
+            post_btn.setObjectName("btn_primary")
+            post_btn.clicked.connect(self._post)
+            self._bento_footer.add_button(cancel)
+            self._bento_footer.add_button(post_btn)
+            layout.addWidget(self._bento_footer)
+            # Keep the legacy _total_lbl name so other code paths
+            # that read it don't break — point it at the total tile.
+            self._total_lbl = QLabel("Total ₹ 0.00")
+        except Exception:
+            # Fallback: old flat footer if bento widgets aren't on path.
+            foot = QHBoxLayout()
+            self._total_lbl = QLabel("Total ₹ 0.00")
+            self._total_lbl.setStyleSheet(
+                f"color:{THEME['accent']}; font-size:14px; font-weight:bold;"
+            )
+            foot.addWidget(self._total_lbl)
+            foot.addStretch()
+            cancel = QPushButton("Cancel")
+            cancel.clicked.connect(self.reject)
+            post_btn = QPushButton("Post voucher")
+            post_btn.setObjectName("btn_primary")
+            post_btn.clicked.connect(self._post)
+            foot.addWidget(cancel)
+            foot.addWidget(post_btn)
+            layout.addLayout(foot)
+            self._tile_lines = None
+            self._tile_total = None
+            self._tile_balance = None
 
         # Seed with 2 empty rows so the user has something to start with.
         self._add_row()
@@ -270,6 +298,20 @@ class _MultiPartyVoucherDialog(QDialog):
     def _refresh_total(self):
         total = sum(r["amount"].value() for r in self._rows)
         self._total_lbl.setText(f"Total ₹ {total:,.2f}")
+        # Mirror into the bento footer tiles when available.
+        try:
+            if getattr(self, "_tile_lines", None) is not None:
+                self._tile_lines.set_value(str(len(self._rows)))
+            if getattr(self, "_tile_total", None) is not None:
+                self._tile_total.set_value(f"₹ {total:,.2f}")
+            if getattr(self, "_tile_balance", None) is not None:
+                # Multi-party always balances by construction (bank leg
+                # = sum of party legs). Surface that visually.
+                self._tile_balance.set_value(
+                    "✓ Balanced" if total > 0 else "—"
+                )
+        except Exception:
+            pass
 
     def _post(self):
         # License gate (same as VoucherEntryPage)

@@ -239,6 +239,17 @@ def main():
     app.setWindowIcon(QIcon(LOGO_PATH))
     app.setStyle("Fusion")
 
+    # Apply the user's saved bento theme mode (light/dark) globally.
+    # Per-widget `setStyleSheet(get_stylesheet())` calls scattered through
+    # the app remain working — they pick up the same THEME at call time.
+    try:
+        from core.config import current_theme_mode
+        from ui.theme import set_theme_mode, get_stylesheet
+        set_theme_mode(current_theme_mode())
+        app.setStyleSheet(get_stylesheet())
+    except Exception:
+        pass
+
     # Anonymous install heartbeat — fire-and-forget on a background thread.
     try:
         from core.telemetry import send_install_heartbeat

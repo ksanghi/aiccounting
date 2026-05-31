@@ -1233,7 +1233,32 @@ class BankReconciliationPage(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
+
+        # ── Bento KPI strip — at-a-glance reco state ─────────────────
+        # Replaces the cramped one-line "  ✓ 47 matched | ⚠ 23 ..."
+        # summary with 4 status-coloured tiles. Heights tuned so the
+        # tables below still get most of the vertical real estate on
+        # a 750-line statement.
+        try:
+            from ui.bento_widgets import KPITile
+            kpi_row = QHBoxLayout()
+            kpi_row.setSpacing(12)
+            self._kpi_matched   = KPITile("Matched", "0", "", status="good")
+            self._kpi_unmatched = KPITile("Unmatched · stmt", "0", "", status="warn")
+            self._kpi_book      = KPITile("Unmatched · book", "0", "", status="warn")
+            self._kpi_ignored   = KPITile("Ignored", "0", "", status="")
+            for t in (self._kpi_matched, self._kpi_unmatched,
+                      self._kpi_book, self._kpi_ignored):
+                t.setMaximumHeight(82)
+                kpi_row.addWidget(t, 1)
+            layout.addLayout(kpi_row)
+        except Exception:
+            # Fallback: skip the bento row if widgets aren't on path.
+            self._kpi_matched = None
+            self._kpi_unmatched = None
+            self._kpi_book = None
+            self._kpi_ignored = None
 
         # Compact top bar — 26px tall so the tables get the rest of the
         # window. On a 750-line statement every pixel of vertical space
@@ -1628,6 +1653,26 @@ class BankReconciliationPage(QWidget):
             f"⚠ {len(u_book)} book unmatched   |   "
             f"⊘ {len(ignored)} ignored"
         )
+
+        # Update the bento KPI strip with the same numbers + colour
+        # the status by load (more unmatched = more amber/red).
+        try:
+            if self._kpi_matched is not None:
+                self._kpi_matched.set_value(str(len(matched)))
+                self._kpi_matched.set_delta(
+                    f"{round(100*len(matched)/max(1, len(matched)+len(u_stmt)+len(u_book)))}% of all lines"
+                )
+            if self._kpi_unmatched is not None:
+                self._kpi_unmatched.set_value(str(len(u_stmt)))
+                self._kpi_unmatched.set_delta("need a voucher or match")
+            if self._kpi_book is not None:
+                self._kpi_book.set_value(str(len(u_book)))
+                self._kpi_book.set_delta("vouchers w/o a bank line")
+            if self._kpi_ignored is not None:
+                self._kpi_ignored.set_value(str(len(ignored)))
+                self._kpi_ignored.set_delta("intentionally skipped")
+        except Exception:
+            pass
 
     def _on_unignore(self, statement_line_id: int):
         """Move an ignored line back to UNMATCHED so the user can act on it."""

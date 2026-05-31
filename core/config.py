@@ -50,3 +50,23 @@ def get_cr_label(short: bool = True) -> str:
 
 def current_style() -> str:
     return prefs.get("label_style", DEFAULT_STYLE)
+
+
+# ── Theme mode (bento light / dark) ────────────────────────────────────────
+
+DEFAULT_THEME_MODE = "light"
+_VALID_THEME_MODES = ("light", "dark")
+
+
+def set_theme_mode(mode: str) -> None:
+    """Persist the theme mode preference. The app shell must apply
+    `ui.theme.set_theme_mode(mode)` + re-set the QApplication
+    stylesheet to take effect immediately; otherwise the new mode
+    activates on the next launch."""
+    m = (mode or DEFAULT_THEME_MODE).lower()
+    if m in _VALID_THEME_MODES:
+        prefs.set("theme_mode", m)
+
+
+def current_theme_mode() -> str:
+    return prefs.get("theme_mode", DEFAULT_THEME_MODE)
