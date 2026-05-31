@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Checkout — AccGenie / RWAGenie</title>
+<title>Checkout — Accounts HQ / RWA HQ</title>
 <meta name="description" content="Pick a plan, pay via UPI / card / NetBanking, get your licence key in your inbox.">
 
 <!-- Razorpay Checkout JS — loads their hosted payment modal -->
@@ -122,7 +122,7 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 <div class="wrap">
 
   <div class="brand">
-    <div class="brand-name"><span class="grad">AccGenie</span> &nbsp;<span style="color:#94A3B8;">/</span>&nbsp; <span class="grad">RWAGenie</span></div>
+    <div class="brand-name"><span class="grad">Accounts HQ</span> &nbsp;<span style="color:#94A3B8;">/</span>&nbsp; <span class="grad">RWA HQ</span></div>
     <div class="brand-sub">Secure checkout · UPI · Cards · NetBanking</div>
   </div>
 
@@ -131,11 +131,9 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
     <h1>Choose a plan</h1>
     <div class="subtitle">Prices in INR, billed annually. Get your licence key by email within seconds of payment.</div>
 
-    <!-- Product toggle -->
-    <div class="product-toggle" role="tablist">
-      <button id="prod-acc" class="active" onclick="selectProduct('accgenie')">AccGenie · Accounting</button>
-      <button id="prod-rwa"             onclick="selectProduct('rwagenie')">RWAGenie · For Societies</button>
-    </div>
+    <!-- Product toggle — buttons rendered from CATALOG so adding a new
+         product is just one entry, no markup change required. -->
+    <div class="product-toggle" role="tablist" id="prod-toggle"></div>
 
     <!-- Plans grid (populated by JS based on selected product) -->
     <div class="plans" id="plans"></div>
@@ -193,31 +191,50 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 
 <script>
 // ── Config ──────────────────────────────────────────────────────────────────
-// Point this at wherever the AccGenie license server is reachable.
-// In production: https://license.accgenie.in
+// Point this at wherever the Accounts HQ license server is reachable.
+// In production: https://license.ai-consultants.in
 // For local dev:  http://localhost:8000
-const API_BASE = "https://license.accgenie.in";
+const API_BASE = "https://license.ai-consultants.in";
 
-// Mirrors license_server/_baked_config.py (AG) and plans.py (RWA).
-// Keep in sync — when AG pricing.xlsx changes, update these too.
-// (Or refactor to fetch from a /api/v1/pricing endpoint — TBD.)
+// Catalog of all products + their plan tiers. To add a new product:
+// 1. Append an entry below (display = button label, plans = tier list).
+// 2. Ensure the server has matching `plans.py` rows for the product
+//    code so /api/v1/checkout/create-order accepts it.
+// Mirrors license_server/_baked_config.py (AG) and plans.py.
+// (Future: fetch from a /api/v1/pricing endpoint — TBD.)
 const CATALOG = {
-  accgenie: [
-    { code: "STANDARD", inr: 1999, name: "Standard",
-      desc: "20,000 transactions, 2 users, reports, exports" },
-    { code: "PRO",      inr: 4999, name: "Pro",
-      desc: "50,000 transactions, 5 users, GST + TDS, AI document reader" },
-    { code: "PREMIUM",  inr: 9999, name: "Premium",
-      desc: "100,000 transactions, 10 users, WhatsApp, audit export, API" },
-  ],
-  rwagenie: [
-    { code: "STANDARD", inr: 2999, name: "Standard",
-      desc: "Up to 1,000 flats, auto-billing, late fees, facilities booking" },
-    { code: "PRO",      inr: 5999, name: "Pro",
-      desc: "Up to 2,500 flats + WhatsApp reminders, vendor mgmt, document storage" },
-    { code: "PREMIUM",  inr: 14999, name: "Premium",
-      desc: "Unlimited flats, all premium features" },
-  ],
+  accgenie: {
+    display: "Accounts HQ · Accounting",
+    razorpayName: "Accounts HQ",
+    plans: [
+      { code: "STANDARD", inr: 1999, name: "Standard",
+        desc: "20,000 transactions, 2 users, reports, exports" },
+      { code: "PRO",      inr: 4999, name: "Pro",
+        desc: "50,000 transactions, 5 users, GST + TDS, AI document reader" },
+      { code: "PREMIUM",  inr: 9999, name: "Premium",
+        desc: "100,000 transactions, 10 users, WhatsApp, audit export, API" },
+    ],
+  },
+  rwagenie: {
+    display: "RWA HQ · For Societies",
+    razorpayName: "RWA HQ",
+    plans: [
+      { code: "STANDARD", inr: 2999, name: "Standard",
+        desc: "Up to 1,000 flats, auto-billing, late fees, facilities booking" },
+      { code: "PRO",      inr: 5999, name: "Pro",
+        desc: "Up to 2,500 flats + WhatsApp reminders, vendor mgmt, document storage" },
+      { code: "PREMIUM",  inr: 14999, name: "Premium",
+        desc: "Unlimited flats, all premium features" },
+    ],
+  },
+};
+
+// Aliases — URL slugs that should map to the canonical product key.
+// Keeps marketing/CTA URLs decoupled from internal product codes so we
+// can rebrand without breaking links.
+const PRODUCT_ALIASES = {
+  rwahq:       "rwagenie",
+  accountshq:  "accgenie",
 };
 
 let state = {
@@ -226,21 +243,31 @@ let state = {
 };
 
 // ── URL → preselection ──────────────────────────────────────────────────────
-// Marketing site links can pre-select:  checkout.html?product=rwagenie&plan=PRO
+// Marketing site links can pre-select:
+//   checkout.html?product=rwahq&plan=PRO
+//   checkout.html?product=rwagenie&plan=PREMIUM
 (function applyQueryString() {
   const q = new URLSearchParams(window.location.search);
-  const p = (q.get("product") || "").toLowerCase();
-  if (p === "accgenie" || p === "rwagenie") state.product = p;
+  let p = (q.get("product") || "").toLowerCase();
+  if (PRODUCT_ALIASES[p]) p = PRODUCT_ALIASES[p];
+  if (CATALOG[p]) state.product = p;
   const pl = (q.get("plan") || "").toUpperCase();
   if (["STANDARD", "PRO", "PREMIUM"].includes(pl)) state.plan = pl;
 })();
 
 // ── Rendering ───────────────────────────────────────────────────────────────
+function renderToggle() {
+  const toggle = document.getElementById("prod-toggle");
+  toggle.innerHTML = Object.entries(CATALOG).map(([key, p]) => `
+    <button class="${state.product === key ? 'active' : ''}"
+            onclick="selectProduct('${key}')">${p.display}</button>
+  `).join("");
+}
+
 function selectProduct(prod) {
   state.product = prod;
-  // Don't reset plan — it's the same code across both catalogs.
-  document.getElementById("prod-acc").classList.toggle("active", prod === "accgenie");
-  document.getElementById("prod-rwa").classList.toggle("active", prod === "rwagenie");
+  // Don't reset plan — it's the same code (STANDARD/PRO/PREMIUM) across catalogs.
+  renderToggle();
   renderPlans();
 }
 
@@ -251,8 +278,8 @@ function selectPlan(code) {
 
 function renderPlans() {
   const container = document.getElementById("plans");
-  const catalog = CATALOG[state.product];
-  container.innerHTML = catalog.map(p => `
+  const plans = CATALOG[state.product].plans;
+  container.innerHTML = plans.map(p => `
     <div class="plan-card ${state.plan === p.code ? "selected" : ""}"
          onclick="selectPlan('${p.code}')">
       <div class="plan-name">${p.name}</div>
@@ -325,7 +352,7 @@ async function startCheckout() {
     order_id:  body.order_id,
     amount:    body.amount_paise,
     currency:  body.currency,
-    name:      state.product === "rwagenie" ? "RWAGenie" : "AccGenie",
+    name:      CATALOG[state.product].razorpayName,
     description: `${body.plan_name || state.plan} licence · 1 year`,
     prefill:   {
       name:    name,
@@ -358,7 +385,8 @@ async function startCheckout() {
   rzp.open();
 }
 
-// Initial render
+// Initial render — toggle first so the active button matches state.product
+renderToggle();
 renderPlans();
 </script>
 </body>

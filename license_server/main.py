@@ -24,6 +24,9 @@ from datetime import date, datetime
 from typing import Optional
 
 from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -65,6 +68,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Marketing pages (Accounts HQ landing, RWA HQ SPA, downloads) live at
+# https://apps.ai-consultants.in/ . The API + webhooks stay at
+# https://license.ai-consultants.in/ — so checkout.html and any other
+# marketing page that POSTs to /api/v1/* hits CORS preflight. Permit the
+# marketing origin (and the legacy same-origin license.* so cached pages
+# keep working), plus localhost for dev. Desktop clients don't send an
+# Origin header, so this doesn't affect them.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://apps.ai-consultants.in",
+        "https://license.ai-consultants.in",
+        "http://localhost:8000",
+        "http://localhost:5173",
+    ],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    max_age=600,
+)
+
 
 # ── Schemas ───────────────────────────────────────────────────────────────
 
@@ -77,8 +100,8 @@ class ValidateRequest(BaseModel):
 class ValidateResponse(BaseModel):
     valid:           bool
     plan:            Optional[str]  = None
-    product:         Optional[str]  = None   # 'accgenie' or 'rwagenie'
-    features:        Optional[list] = None   # merged AG + RWA when product=rwagenie
+    product:         Optional[str]  = None   # 'accgenie' / 'rwagenie' / 'tradehq'
+    features:        Optional[list] = None   # merged AG + RWA when product=rwagenie, THQ only for tradehq
     txn_limit:       Optional[int]  = None
     txn_used:        Optional[int]  = None
     user_limit:      Optional[int]  = None
@@ -98,7 +121,7 @@ class MintRequest(BaseModel):
     # pass product. New AG mints can omit; RWAGenie mints must set
     # product='rwagenie' explicitly.
     product:        str = Field(default="accgenie",
-                                pattern="^(accgenie|rwagenie)$")
+                                pattern="^(accgenie|rwagenie|tradehq)$")
     customer_email: str = ""
     company_name:   str = ""
     expires_at:     date
@@ -184,7 +207,7 @@ class HeartbeatResponse(BaseModel):
 class CheckoutCreateRequest(BaseModel):
     plan:           str    = Field(..., min_length=2, max_length=16)
     product:        str    = Field(default="accgenie",
-                                   pattern="^(accgenie|rwagenie)$")
+                                   pattern="^(accgenie|rwagenie|tradehq)$")
     country_code:   str    = Field(default="IN", min_length=2, max_length=4)
     customer_email: str    = Field(..., min_length=3, max_length=256)
     customer_name:  str    = Field(default="", max_length=256)
@@ -227,7 +250,7 @@ class WalletDebitRequest(BaseModel):
     machine_id:      str    = Field(default="", max_length=64)
     amount_paise:    int    = Field(..., ge=1, le=10_000_000)
     kind:            str    = Field(default="sms_broadcast",
-                                    pattern="^(sms_otp|sms_broadcast)$")
+                                    pattern="^(sms_otp|sms_broadcast|visitor_pass_wa|visitor_pass_sms)$")
     recipient_phone: str    = Field(default="", max_length=32)
     ref:             str    = Field(default="", max_length=128)
 
@@ -362,28 +385,6 @@ def _maybe_alert_seat_release_abuse(
 
 
 # ── Public endpoints ──────────────────────────────────────────────────────
-
-@app.get("/", include_in_schema=False)
-def root():
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(
-        "<!doctype html><meta charset=utf-8>"
-        "<title>AccGenie License Server</title>"
-        "<style>body{font-family:system-ui,sans-serif;max-width:560px;"
-        "margin:80px auto;padding:0 20px;color:#222;line-height:1.5}"
-        "a{color:#0a66c2}</style>"
-        "<h1>AccGenie License Server</h1>"
-        "<p>This is the API endpoint for the AccGenie desktop app. "
-        "It has no browsable home page.</p>"
-        "<ul>"
-        "<li><a href=\"/api/v1/health\">/api/v1/health</a> — health check</li>"
-        "<li><a href=\"/docs\">/docs</a> — interactive API documentation</li>"
-        "</ul>"
-        "<p style=\"color:#666;font-size:13px\">"
-        "Need a license key? Visit "
-        "<a href=\"https://accgenie.in\">accgenie.in</a>.</p>"
-    )
-
 
 @app.get("/api/v1/health")
 def health():
@@ -543,7 +544,7 @@ def validate(
         flats_limit=(flats_limit_for(lic.plan) if product == "rwagenie" else None),
         expires_at=lic.expires_at.isoformat(),
         company_name=lic.company_name,
-        country_code=(lic.country_code or "IN").upper(),
+        country_code=(getattr(lic, "country_code", None) or "IN").upper(),
     )
 
 
@@ -1191,24 +1192,26 @@ def checkout_create_order(
 
     # ── Pricing ──
     # AG uses the baked pricing.xlsx via resolve_price().
-    # RWAGenie uses the inline PLAN_PRICES_RWA_INR table (no xlsx yet).
-    # Both produce the same {amount_paise, currency, plan_code, ...} dict
-    # so the rest of this handler stays product-agnostic.
+    # RWAGenie + tradeHQ use the inline price_for() tables in plans.py
+    # (no sister xlsx files yet). All three branches produce the same
+    # {amount_paise, currency, plan_code, ...} dict so the rest of this
+    # handler stays product-agnostic.
     from license_server.plans import price_for
-    if product == "rwagenie":
-        rwa_inr = price_for(product, plan, country)
-        if not rwa_inr:
+    if product in ("rwagenie", "tradehq"):
+        inr = price_for(product, plan, country)
+        if not inr:
+            product_label = "tradeHQ" if product == "tradehq" else "RWAGenie"
             return CheckoutCreateResponse(
                 ok=False,
-                error=(f"RWAGenie {plan} is not priced for sale "
+                error=(f"{product_label} {plan} is not priced for sale "
                        f"in {country} yet."),
             )
         price = {
             "plan_code":      plan,
             "plan_name":      plan.title(),
             "currency":       "INR",
-            "amount_paise":   int(rwa_inr * 100),
-            "amount_display": f"Rs. {rwa_inr:,.2f}",
+            "amount_paise":   int(inr * 100),
+            "amount_display": f"Rs. {inr:,.2f}",
             "country_code":   country,
         }
     else:
@@ -1220,7 +1223,10 @@ def checkout_create_order(
     # Create the Razorpay order. The 'notes' field gets stored alongside
     # the order and echoed back in the webhook payload — useful for
     # cross-checking which Order row to update.
-    receipt_prefix = "rwag" if product == "rwagenie" else "accg"
+    receipt_prefix = {
+        "rwagenie": "rwag",
+        "tradehq":  "thq",
+    }.get(product, "accg")
     try:
         rp_order = razorpay_client.create_order(
             amount_paise=price["amount_paise"],
@@ -1414,9 +1420,26 @@ async def razorpay_webhook(
             expires_at=lic.expires_at.isoformat(),
             customer_name=order.customer_name,
             amount_paid_str=f"{order.currency} {order.amount_paise/100:,.2f}",
+            product=order.product or "accgenie",
         )
     except Exception:
         # Already logged inside email_service; swallow here.
         pass
 
     return {"ok": True, "status": "paid", "license_id": lic.id}
+
+
+# ── Marketing site (static files) ────────────────────────────────────────
+# Serves the public website (index.html, pricing.html, privacy.html, etc.)
+# from the marketing/ folder. Mount happens AFTER all API routes so
+# /api/v1/*, /admin/*, /webhooks/* and FastAPI's own /docs, /openapi.json
+# still match their route handlers first; only unmatched paths fall
+# through to StaticFiles.
+#
+# Razorpay activation needs a public website at the registered KYC
+# business name. Hosting the static pages from the same Fly app avoids
+# spinning up a separate host. See project-marketing-site memory.
+_marketing_dir = Path(__file__).resolve().parent.parent / "marketing"
+if _marketing_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_marketing_dir), html=True),
+              name="marketing")

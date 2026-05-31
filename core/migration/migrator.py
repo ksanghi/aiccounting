@@ -1,18 +1,23 @@
 """
 Migration engine — applies a normalized MigrationPayload to a target company.
 
-v1 scope:
+Scope:
     • Groups: insert non-existing groups (skip-on-name-match).
     • Ledger master: insert each ledger with all available fields
       (GSTIN/PAN/state/bank/IFSC/TDS), opening balance + Dr/Cr.
     • Company metadata: fill empty company.gstin / state_code / fy_start
       from the payload only — never overwrite.
-    • NO voucher migration. The book starts fresh; opening balances
-      reflect the prior-period closing.
+    • Vouchers (via apply_vouchers — separate entry from apply()): direct
+      INSERT preserving the source voucher number + date verbatim, with
+      source='MIGRATION'. Re-running is naturally idempotent thanks to
+      the (company_id, voucher_type, voucher_number) unique constraint.
 
-Target rules: target company must not have any vouchers. The user can
-create a fresh empty company OR import into an empty existing one.
-Refuses otherwise.
+Target rules:
+    • apply() — refuses if the target already has vouchers (only allowed
+      on an empty book to avoid CoA drift).
+    • apply_vouchers() — allowed any time; dedupes per the unique
+      constraint above. Skips vouchers that reference unknown ledgers
+      or fail to balance.
 
 Audit: every run is logged in migration_runs (DRY_RUN / COMPLETED /
 FAILED) with counts JSON.
@@ -26,7 +31,7 @@ from pathlib import Path
 
 from core.models import Database
 from core.account_tree import AccountTree
-from .payload import MigrationPayload, GroupSpec, LedgerSpec
+from .payload import MigrationPayload, GroupSpec, LedgerSpec, VoucherSpec
 
 
 # ── Public exception type ────────────────────────────────────────────────────
@@ -353,6 +358,222 @@ class Migrator:
                                 "groups_added": groups_added,
                                 "ledgers_added": ledgers_added,
                             },
+                            error_log=str(e))
+            raise
+
+    # ── Voucher validation + apply (writes to DB) ────────────────────────────
+
+    def validate_vouchers(self, payload: MigrationPayload) -> ValidationResult:
+        """Dry-run check for the voucher portion of a payload. Returns
+        warnings + counts but writes nothing. Used by the wizard's
+        preview step."""
+        warnings: list[str] = []
+
+        if not payload.vouchers:
+            return ValidationResult(ok=True, counts={"vouchers": 0})
+
+        # Ledgers known after running apply(): existing + those the payload
+        # will add. Caller may invoke this before or after apply().
+        existing_ledgers = {
+            r["name"] for r in self.db.execute(
+                "SELECT name FROM ledgers WHERE company_id=?",
+                (self.company_id,),
+            ).fetchall()
+        }
+        pending_ledgers = {ld.name for ld in payload.ledgers if ld.name}
+        known = existing_ledgers | pending_ledgers
+
+        missing_refs: dict[str, int] = {}
+        unbalanced_count = 0
+        no_lines_count = 0
+        by_type: dict[str, int] = {}
+        earliest = ""
+        latest = ""
+
+        seen_keys: set[tuple[str, str]] = set()
+        duplicate_in_payload = 0
+
+        for v in payload.vouchers:
+            by_type[v.voucher_type] = by_type.get(v.voucher_type, 0) + 1
+            if v.date:
+                if not earliest or v.date < earliest:
+                    earliest = v.date
+                if not latest or v.date > latest:
+                    latest = v.date
+            key = (v.voucher_type, v.voucher_number)
+            if key in seen_keys:
+                duplicate_in_payload += 1
+            seen_keys.add(key)
+            if not v.lines:
+                no_lines_count += 1
+                continue
+            for ln in v.lines:
+                if ln.ledger_name not in known:
+                    missing_refs[ln.ledger_name] = missing_refs.get(ln.ledger_name, 0) + 1
+            total_dr = sum(ln.amount for ln in v.lines if ln.dr_cr == "Dr")
+            total_cr = sum(ln.amount for ln in v.lines if ln.dr_cr == "Cr")
+            if abs(total_dr - total_cr) > 0.01:
+                unbalanced_count += 1
+
+        if missing_refs:
+            top = sorted(missing_refs.items(), key=lambda kv: -kv[1])[:6]
+            warnings.append(
+                f"{len(missing_refs)} ledger name(s) referenced by vouchers "
+                f"are not in the target or in the ledger master being "
+                f"imported — vouchers using them will be skipped: "
+                + ", ".join(f"'{n}' ({c}x)" for n, c in top)
+            )
+        if unbalanced_count:
+            warnings.append(
+                f"{unbalanced_count} voucher(s) don't balance "
+                f"(Dr != Cr) and will be skipped."
+            )
+        if no_lines_count:
+            warnings.append(
+                f"{no_lines_count} voucher(s) have no accounting lines "
+                f"and will be skipped."
+            )
+        if duplicate_in_payload:
+            warnings.append(
+                f"{duplicate_in_payload} duplicate (voucher_type, "
+                f"voucher_number) pair(s) within the payload — first wins."
+            )
+
+        counts = {
+            "vouchers":             len(payload.vouchers),
+            "by_type":              by_type,
+            "date_range":           [earliest, latest],
+            "missing_ledger_refs":  len(missing_refs),
+            "unbalanced":           unbalanced_count,
+            "no_lines":             no_lines_count,
+        }
+        return ValidationResult(ok=True, warnings=warnings, counts=counts)
+
+    def apply_vouchers(self, payload: MigrationPayload) -> ApplyResult:
+        """Apply payload.vouchers to the target company. Preserves the
+        source voucher number + date verbatim, marks source='MIGRATION'.
+        Idempotent on re-run via the (company_id, voucher_type,
+        voucher_number) unique constraint.
+
+        Bypasses VoucherEngine.post() deliberately: post() reassigns
+        voucher numbers and re-applies GST/TDS rules, both of which would
+        break migration intent. Tally's own validation produced these
+        vouchers; we trust them and only check that the lines balance and
+        that referenced ledgers exist.
+        """
+        if not payload.vouchers:
+            return ApplyResult(
+                run_id=0,
+                counts={"vouchers_in_payload": 0, "vouchers_added": 0,
+                        "duplicate": 0, "skipped": []},
+                errors=[],
+            )
+
+        run_id = self._open_run(payload, status="IN_PROGRESS")
+
+        added = 0
+        duplicate = 0
+        skipped: list[str] = []
+        errors: list[str] = []
+
+        try:
+            ledger_map = {
+                r["name"]: r["id"] for r in self.db.execute(
+                    "SELECT id, name FROM ledgers WHERE company_id=?",
+                    (self.company_id,),
+                ).fetchall()
+            }
+            seen_in_run: set[tuple[str, str]] = set()
+
+            with self.db:
+                for v in payload.vouchers:
+                    tag = f"{v.voucher_type} {v.voucher_number} ({v.date})"
+
+                    if not v.lines:
+                        skipped.append(f"{tag}: no lines")
+                        continue
+
+                    missing = [
+                        ln.ledger_name for ln in v.lines
+                        if ln.ledger_name not in ledger_map
+                    ]
+                    if missing:
+                        seen_missing = ", ".join(sorted(set(missing))[:3])
+                        skipped.append(f"{tag}: unknown ledger(s) {seen_missing}")
+                        continue
+
+                    total_dr = round(sum(ln.amount for ln in v.lines if ln.dr_cr == "Dr"), 2)
+                    total_cr = round(sum(ln.amount for ln in v.lines if ln.dr_cr == "Cr"), 2)
+                    if abs(total_dr - total_cr) > 0.01:
+                        skipped.append(
+                            f"{tag}: unbalanced Dr {total_dr:.2f} != Cr {total_cr:.2f}"
+                        )
+                        continue
+
+                    key = (v.voucher_type, v.voucher_number)
+                    if key in seen_in_run:
+                        duplicate += 1
+                        continue
+                    seen_in_run.add(key)
+
+                    cur = self.db.execute(
+                        """INSERT OR IGNORE INTO vouchers
+                           (company_id, voucher_type, voucher_number, voucher_date,
+                            narration, reference, total_amount, source)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (
+                            self.company_id, v.voucher_type, v.voucher_number,
+                            v.date, v.narration, v.reference_number or "",
+                            total_dr,        # total_amount = Dr side, per VoucherEngine convention
+                            "MIGRATION",
+                        ),
+                    )
+                    if cur.rowcount == 0:
+                        # Already in DB from an earlier migration run.
+                        duplicate += 1
+                        continue
+                    voucher_id = cur.lastrowid
+
+                    line_rows = []
+                    for ln in v.lines:
+                        dr = ln.amount if ln.dr_cr == "Dr" else 0.0
+                        cr = ln.amount if ln.dr_cr == "Cr" else 0.0
+                        is_tax = bool(ln.gst_type or ln.tds_section)
+                        tax_type = ln.gst_type or ("TDS" if ln.tds_section else "")
+                        tax_rate = ln.gst_rate if ln.gst_type else (ln.tds_rate or 0.0)
+                        line_rows.append((
+                            voucher_id,
+                            ledger_map[ln.ledger_name],
+                            dr, cr,
+                            "",                      # cost_centre — not migrated in v1
+                            "",                      # bill_ref — not migrated in v1
+                            int(is_tax),
+                            tax_type,
+                            tax_rate or 0.0,
+                            ln.narration or "",
+                        ))
+                    self.db.executemany(
+                        """INSERT INTO voucher_lines
+                           (voucher_id, ledger_id, dr_amount, cr_amount,
+                            cost_centre, bill_ref, is_tax_line, tax_type,
+                            tax_rate, line_narration)
+                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        line_rows,
+                    )
+                    added += 1
+
+            counts = {
+                "vouchers_in_payload": len(payload.vouchers),
+                "vouchers_added":      added,
+                "duplicate":           duplicate,
+                "skipped":             skipped,
+            }
+            self._close_run(run_id, status="COMPLETED",
+                            counts=counts, error_log="\n".join(errors))
+            return ApplyResult(run_id=run_id, counts=counts, errors=errors)
+        except Exception as e:
+            self._close_run(run_id, status="FAILED",
+                            counts={"vouchers_added": added, "duplicate": duplicate},
                             error_log=str(e))
             raise
 

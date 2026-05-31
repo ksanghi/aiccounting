@@ -1,7 +1,7 @@
 """
 Normalized payload shape that every source parser produces and the
-Migrator consumes. v1 is groups + ledger master + optional company
-metadata — no transactions.
+Migrator consumes. Carries groups + ledger master + optional company
+metadata + optional voucher transactions.
 """
 from __future__ import annotations
 
@@ -62,15 +62,49 @@ class CompanySpec:
 
 
 @dataclass
+class VoucherLineSpec:
+    """One Dr or Cr line within a voucher."""
+    ledger_name: str                       # must match a LedgerSpec.name or pre-existing ledger
+    amount: float                          # positive number
+    dr_cr: str                             # 'Dr' or 'Cr'
+    narration: Optional[str] = None        # line-level narration (rarely set)
+
+    # GST line metadata (when this line is a GST ledger split)
+    gst_type: Optional[str] = None         # CGST / SGST / IGST / CESS
+    gst_rate: Optional[float] = None
+
+    # TDS line metadata
+    tds_section: Optional[str] = None
+    tds_rate: Optional[float] = None
+
+
+@dataclass
+class VoucherSpec:
+    """One voucher row to be posted via Migrator.apply_vouchers().
+    De-dupe key is (voucher_number, fy) — already a unique index on the
+    vouchers table."""
+    voucher_type: str                      # PAYMENT|RECEIPT|JOURNAL|CONTRA|SALES|PURCHASE|DEBIT_NOTE|CREDIT_NOTE
+    voucher_number: str                    # source system's number; series-prefixed OK
+    date: str                              # 'YYYY-MM-DD'
+    fy: str                                # 'YYYY-YY' e.g. '2025-26'; dedupe key half
+    narration: str = ""
+    party_ledger: Optional[str] = None     # the dominant party (debtor/creditor) if applicable
+    reference_number: Optional[str] = None # cheque/invoice number
+    reference_date: Optional[str] = None   # 'YYYY-MM-DD'
+    lines: list[VoucherLineSpec] = field(default_factory=list)
+
+
+@dataclass
 class MigrationPayload:
     """What every source parser returns."""
-    source_type: str                       # 'TALLY_XML' | 'EXCEL_COA' | 'CLOUD_CSV'
+    source_type: str                       # 'TALLY_XML' | 'EXCEL_COA' | 'CLOUD_CSV' | 'TALLY_HTTP'
     source_label: str = ""                 # e.g. 'Tally Prime export'
     file_name: str = ""
     file_hash: str = ""
     company: CompanySpec = field(default_factory=CompanySpec)
     groups: list[GroupSpec] = field(default_factory=list)
     ledgers: list[LedgerSpec] = field(default_factory=list)
+    vouchers: list[VoucherSpec] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)   # parser warnings
 
     def as_dict(self) -> dict:

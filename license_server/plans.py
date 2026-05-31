@@ -11,20 +11,23 @@ The license_server side intentionally does NOT include the DEMO tier —
 DEMO is a desktop-only "no key yet" trial. Server-issued keys are FREE
 through PREMIUM.
 
-Multi-product (added 2026-05-15)
-================================
-AccGenie (the accounting product) and RWAGenie (the RWA-vertical product
-that bundles AccGenie underneath) share this server. A license carries
-`product` ∈ {'accgenie', 'rwagenie'} alongside the existing plan code.
+Multi-product (added 2026-05-15, extended 2026-05-25)
+=====================================================
+Three products share this server:
+  • accgenie — the accounting product
+  • rwagenie — the RWA-vertical that bundles AccGenie underneath
+  • tradehq  — the broker-consolidation cockpit (Phase 1 single-tier)
 
-Per the operator's spec, an RWAGenie tier *inherits* the matching AG
-tier's accounting features and adds RWA-specific features on top. The
-feature lookup `features_for(product, plan)` returns the merged list.
-This file is the single place that knows that mapping.
+A license carries `product` ∈ VALID_PRODUCTS. For AG the feature list
+is just AG. For RWAGenie an RWA tier inherits the matching AG tier and
+adds RWA-specific features on top. For tradeHQ — single STANDARD tier,
+no features gated in code yet (the desktop client doesn't call
+has_feature on anything), so the feature list is empty. The licence
+still binds machine seats and enforces expiry.
 
-Pricing source: pricing.xlsx still drives AG; RWA-specific pricing is
-inlined below for now (no pricing_rwa.xlsx yet). Move to a sister xlsx
-once RWAGenie pricing is firm.
+Pricing source: pricing.xlsx drives AG; RWA-specific pricing is
+inlined below; tradeHQ pricing is TBD (still finalising). Move to
+sister xlsx files once both are firm.
 """
 from license_server._baked_config import (
     PLANS as _ALL_PLANS,
@@ -120,7 +123,31 @@ PLAN_PRICES_RWA_INR: dict[str, int] = {
     "PREMIUM": 14999,
 }
 
-VALID_PRODUCTS = ("accgenie", "rwagenie")
+# ── tradeHQ-specific features per tier ───────────────────────────────────────
+#
+# Phase 1 ships single-tier (STANDARD) with NO features gated in code —
+# the desktop license_manager.has_feature() check is dormant. Keep the
+# table here anyway so when tradeHQ adds metered/gated features (e.g.
+# the AG-bridge ledger cleaning, broker count caps), they have a home.
+PLAN_FEATURES_THQ: dict[str, list[str]] = {
+    "FREE":     [],
+    "STANDARD": [],
+    "PRO":      [],
+    "PREMIUM":  [],
+}
+
+# tradeHQ-specific INR yearly prices. Decided 2026-05-25 — small
+# family head price point of Rs.200/month → Rs.2400/year. Single
+# STANDARD tier covers the whole app for now.
+PLAN_PRICES_THQ_INR: dict[str, int | None] = {
+    "FREE":     0,
+    "STANDARD": 2400,
+    "PRO":      None,
+    "PREMIUM":  None,
+}
+
+
+VALID_PRODUCTS = ("accgenie", "rwagenie", "tradehq")
 
 
 def features_for(product: str, plan: str) -> list[str]:
@@ -131,12 +158,16 @@ def features_for(product: str, plan: str) -> list[str]:
     For product='accgenie': returns AG's features for the plan.
     For product='rwagenie': returns AG features (the accounting bundle
         the RWA tier inherits) ∪ RWA-specific features for the plan.
+    For product='tradehq':  returns tradeHQ features only — tradeHQ is
+        standalone (does NOT inherit AG accounting features).
 
     Unknown product or plan → empty list. Caller should treat that as
     "no features" rather than crash.
     """
     plan = (plan or "").upper()
     product = (product or "accgenie").lower()
+    if product == "tradehq":
+        return list(PLAN_FEATURES_THQ.get(plan, []))
     ag = PLAN_FEATURES.get(plan, [])
     if product == "rwagenie":
         rwa = PLAN_FEATURES_RWA.get(plan, [])
@@ -160,17 +191,20 @@ def flats_limit_for(plan: str) -> int | None:
 def price_for(product: str, plan: str, country: str = "IN") -> int | None:
     """INR price for (product, plan). Used to size Razorpay orders.
     Returns None for FREE plans (skip checkout entirely) or unknown
-    combinations. Non-INR pricing for RWA isn't wired yet — falls back
-    to None and the caller surfaces a friendly error."""
+    combinations. Non-INR pricing for RWA / tradeHQ isn't wired yet —
+    falls back to None and the caller surfaces a friendly error."""
     plan = (plan or "").upper()
     product = (product or "accgenie").lower()
     if (country or "IN").upper() != "IN":
-        # AG already has multi-country pricing in pricing.xlsx; RWA
-        # currently INR-only.
-        if product == "rwagenie":
+        # AG already has multi-country pricing in pricing.xlsx; RWA and
+        # tradeHQ are currently INR-only.
+        if product in ("rwagenie", "tradehq"):
             return None
     if product == "rwagenie":
         amt = PLAN_PRICES_RWA_INR.get(plan)
+        return amt if amt and amt > 0 else None
+    if product == "tradehq":
+        amt = PLAN_PRICES_THQ_INR.get(plan)
         return amt if amt and amt > 0 else None
     # AG pricing is handled by services.pricing_lookup.resolve_price
     # which reads pricing.xlsx — this function returns None so callers

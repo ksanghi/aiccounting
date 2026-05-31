@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>LIVE Rs 1 test — tradeHQ STANDARD</title>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+         max-width: 560px; margin: 50px auto; padding: 24px; color: #0F172A; }
+  .row { margin: 8px 0; color: #475569; font-size: 14px; }
+  .row b { color: #0F172A; }
+  .live-banner { background:#FEE2E2; color:#991B1B; padding:12px 18px;
+                 border-radius:8px; border:1px solid #FCA5A5;
+                 font-weight:600; margin-bottom:18px; }
+  button { background: #635BFF; color: white; border: 0; border-radius: 8px;
+           padding: 14px 28px; font-size: 16px; font-weight: 600; cursor: pointer;
+           margin-top: 16px; }
+  button:hover { background: #4f46e5; }
+  pre { background: #F8FAFC; padding: 12px; border-radius: 6px; font-size: 12px;
+        overflow-x: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <div class="live-banner">⚠️ LIVE MODE — this charges real money (Rs. 1.00).</div>
+
+  <h2>End-to-end LIVE Razorpay test</h2>
+  <div class="row"><b>Product:</b> tradeHQ</div>
+  <div class="row"><b>Plan:</b> STANDARD (temp Rs 1)</div>
+  <div class="row"><b>Amount:</b> Rs. 1.00</div>
+  <div class="row"><b>Order ID:</b> order_SuEOhQ8OIKtLf3</div>
+  <div class="row"><b>Key:</b> rzp_live_Su4goF2YLgFWoC</div>
+  <div class="row"><b>Email:</b> info@ai-consultants.in</div>
+
+  <button onclick="pay()">Pay Rs 1 (LIVE)</button>
+
+  <h3 style="margin-top:32px">Result</h3>
+  <pre id="result">Waiting for payment...</pre>
+
+<script>
+function pay() {
+  var options = {
+    key:      "rzp_live_Su4goF2YLgFWoC",
+    amount:   100,
+    currency: "INR",
+    name:     "Aashray Sanghi",
+    description: "tradeHQ STANDARD - LIVE test purchase",
+    order_id: "order_SuEOhQ8OIKtLf3",
+    prefill: {
+      email: "info@ai-consultants.in",
+      name:  "Aashray Sanghi"
+    },
+    handler: function(response) {
+      document.getElementById("result").textContent =
+        "PAYMENT SUCCESS (frontend):\n" +
+        JSON.stringify(response, null, 2) +
+        "\n\nWebhook will fire next; check server logs.";
+    },
+    modal: {
+      ondismiss: function() {
+        document.getElementById("result").textContent = "Payment modal closed without paying.";
+      }
+    }
+  };
+  var rzp = new Razorpay(options);
+  rzp.on("payment.failed", function(resp) {
+    document.getElementById("result").textContent =
+      "PAYMENT FAILED:\n" + JSON.stringify(resp.error, null, 2);
+  });
+  rzp.open();
+}
+</script>
+</body>
+</html>

@@ -45,8 +45,16 @@ def user_data_dir() -> Path:
     """
     Per-user writable root. All app-specific data lives under here.
     Auto-creates if missing.
+
+    Override via env var `ACCGENIE_DATA_DIR` — applies in both dev and
+    packaged mode. Useful when running RWA HQ against a separate dataset
+    (e.g. `set ACCGENIE_DATA_DIR=D:\\rwahq`) without touching the
+    default `%APPDATA%\\AccGenie` companies AG/RWA HQ normally share.
     """
-    if is_packaged():
+    override = os.environ.get("ACCGENIE_DATA_DIR")
+    if override:
+        root = Path(override)
+    elif is_packaged():
         if sys.platform == "win32":
             base = Path(os.environ.get("APPDATA")
                         or os.environ.get("USERPROFILE", ""))
