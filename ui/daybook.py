@@ -44,6 +44,26 @@ class DayBookPage(QWidget):
         sub.setObjectName("page_subtitle")
         layout.addWidget(sub)
 
+        # ── Bento KPI strip ── populated in refresh().
+        try:
+            from ui.bento_widgets import KPITile
+            kpi_row = QHBoxLayout()
+            kpi_row.setSpacing(12)
+            self._kpi_count    = KPITile("Vouchers in range", "0", "")
+            self._kpi_receipts = KPITile("Total receipts", "₹ 0", "", status="good")
+            self._kpi_payments = KPITile("Total payments", "₹ 0", "", status="warn")
+            self._kpi_net      = KPITile("Net (Rcpts − Pmts)", "₹ 0", "")
+            for t in (self._kpi_count, self._kpi_receipts,
+                      self._kpi_payments, self._kpi_net):
+                t.setMaximumHeight(96)
+                kpi_row.addWidget(t, 1)
+            layout.addLayout(kpi_row)
+        except Exception:
+            self._kpi_count = None
+            self._kpi_receipts = None
+            self._kpi_payments = None
+            self._kpi_net = None
+
         # Filter bar
         fbar = QFrame()
         fbar.setObjectName("card")
@@ -182,6 +202,29 @@ class DayBookPage(QWidget):
             self.total_label.setText(
                 f"{len(vouchers)} vouchers  |  Total {format_currency(total)}"
             )
+
+            # Bento KPI strip — separate receipts / payments / net.
+            try:
+                rec = sum(v["total_amount"] for v in vouchers
+                          if (v.get("voucher_type") or "") in ("RECEIPT", "SALES", "CREDIT_NOTE"))
+                pay = sum(v["total_amount"] for v in vouchers
+                          if (v.get("voucher_type") or "") in ("PAYMENT", "PURCHASE", "DEBIT_NOTE"))
+                if self._kpi_count is not None:
+                    self._kpi_count.set_value(str(len(vouchers)))
+                    self._kpi_count.set_delta("in selected range")
+                if self._kpi_receipts is not None:
+                    self._kpi_receipts.set_value(format_currency(rec))
+                    self._kpi_receipts.set_delta("Receipts + Sales + CN")
+                if self._kpi_payments is not None:
+                    self._kpi_payments.set_value(format_currency(pay))
+                    self._kpi_payments.set_delta("Payments + Purchases + DN")
+                if self._kpi_net is not None:
+                    self._kpi_net.set_value(format_currency(rec - pay))
+                    self._kpi_net.set_delta(
+                        "positive = net inflow" if rec >= pay else "negative = net outflow"
+                    )
+            except Exception:
+                pass
         self._update_action_buttons()
 
     def _filter_table(self, text: str):

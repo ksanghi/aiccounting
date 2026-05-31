@@ -177,29 +177,32 @@ class LicensePage(QWidget):
 
         sc.addWidget(divider())
 
-        # Stats row — 4 cards
+        # Stats row — 6 bento KPI cards.
         stats_row = QHBoxLayout()
-        stats_row.setSpacing(10)
+        stats_row.setSpacing(12)
 
         def make_stat(label: str) -> QLabel:
+            """Build a single bento KPI card and return its value label
+            so the refresh code can keep calling .setText() on it."""
             card = QFrame()
+            card.setObjectName("bento_tile")
             card.setStyleSheet(f"""
-                QFrame {{
-                    background: {THEME['bg_input']};
+                QFrame#bento_tile {{
+                    background: {THEME['bg_card']};
                     border: 1px solid {THEME['border']};
-                    border-radius: 8px;
+                    border-radius: 14px;
                 }}
             """)
             cl = QVBoxLayout(card)
-            cl.setContentsMargins(14, 12, 14, 12)
-            cl.setSpacing(6)
+            cl.setContentsMargins(16, 14, 16, 14)
+            cl.setSpacing(2)
 
-            lbl = QLabel(label)
+            lbl = QLabel(label.upper())
             lbl.setStyleSheet(f"""
                 color: {THEME['text_secondary']};
-                font-size: 10px;
-                font-weight: bold;
-                letter-spacing: 0.8px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.08em;
                 background: transparent;
                 border: none;
                 padding: 0px;
@@ -208,8 +211,9 @@ class LicensePage(QWidget):
             val = QLabel("—")
             val.setStyleSheet(f"""
                 color: {THEME['text_primary']};
-                font-size: 20px;
-                font-weight: 500;
+                font-size: 26px;
+                font-weight: 700;
+                letter-spacing: -0.02em;
                 background: transparent;
                 border: none;
                 padding: 0px;
