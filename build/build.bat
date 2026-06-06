@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=Accounts HQ
-set VERSION=1.0.18
+set VERSION=1.0.19
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
@@ -42,7 +42,7 @@ python -m nuitka ^
     --include-package=ui ^
     --include-package=ai ^
     --include-package=core.migration ^
-    --include-data-files="ui/AccGenie final logo.png=ui/AccGenie final logo.png" ^
+    --include-data-files="ui/accountshq-logo.png=ui/accountshq-logo.png" ^
     --windows-console-mode=disable ^
     --output-dir=%OUTPUT_DIR% ^
     --output-filename="%APP_NAME%.exe" ^

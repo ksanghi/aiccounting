@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui  import QFont, QPixmap, QIcon
 
-LOGO_PATH = os.path.join(BASE_DIR, "ui", "AccGenie final logo.png")
+from core import branding
+LOGO_PATH = branding.logo_path()
 
 from core.models        import Database
 from core.account_tree  import AccountTree

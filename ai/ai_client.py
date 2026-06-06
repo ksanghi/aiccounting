@@ -89,7 +89,7 @@ def call_messages(feature: str, payload: dict, timeout: float = 120.0) -> dict:
     mgr = LicenseManager()
     if mgr.license_key in ("DEMO", "FREE-DEMO", "", None):
         raise AIRouteError(
-            "AI features on Accounts HQ credits need an activated paid "
+            "AI features on pooled credits need an activated paid "
             "licence. Activate your licence on the License page, or add "
             "your own Anthropic key in Settings → AI / Anthropic Key."
         )
@@ -113,7 +113,7 @@ def call_messages(feature: str, payload: dict, timeout: float = 120.0) -> dict:
         #   401 → licence / machine binding not valid
         if e.code == 402:
             raise AIRouteError(
-                "Out of AI credits — top up your Accounts HQ wallet to continue."
+                "Out of AI credits — top up your wallet to continue."
             ) from e
         if e.code == 503:
             raise AIServiceUnavailable(

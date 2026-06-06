@@ -1,0 +1,38 @@
+
+=== [1/2]  Compiling with Nuitka  (this takes 5-15 minutes) ===
+
+Nuitka-Options: Used command line options:
+Nuitka-Options:   --standalone --enable-plugin=pyside6 --include-package=core --include-package=ui --include-package=ai --include-package=core.migration --include-data-files="ui/AccGenie final logo.png=ui/AccGenie final logo.png" --windows-console-mode=disable --output-dir=build\output --output-filename="Accounts HQ.exe" --remove-output --assume-yes-for-downloads main.py
+Nuitka:WARNING: The Python version '3.14' is only experimentally supported by Nuitka '4.1.2', but an upcoming release will change that. In the mean time use Python version '3.13' instead or newer Nuitka.
+Nuitka: Starting Python compilation with:
+Nuitka:   Version '4.1.2' on Python 3.14 (flavor 'CPython Official') commercial grade 'not installed'.
+Nuitka-Plugins:pyside6: Unwanted import of 'PyQt6' that conflicts with 'PySide6' encountered, preventing its inclusion. As a result an "ImportError" might be given at run time. Uninstall the module it for fully compatible behavior with the uncompiled code.
+Nuitka-Plugins:WARNING: anti-bloat: Undesirable import of 'unittest' in 'pdfminer.ccitt' (at '~\AppData\Roaming\Python\Python314\site-packages\pdfminer\ccitt.py:572') encountered. It may slow down compilation.
+Nuitka-Plugins:WARNING:     Complex topic! More information can be found at [94mhttps://nuitka.net/info/unwanted-module.html
+Nuitka-Plugins:anti-bloat: Not including 'PIL.ImageTk' automatically in order to avoid bloat, but this may cause: PIL will not be able to create Tk image objects.
+Nuitka-Plugins:pyside6: Including Qt plugins 'iconengines,imageformats,platforms,styles,tls' below 'PySide6\qt-plugins'.
+Nuitka-Plugins:dll-files: Found 1 file DLLs from pypdfium2_raw installation.
+Nuitka-Plugins:dll-files: Found 4 files DLLs from shiboken6 installation.
+Nuitka-Inclusion: Including Windows Runtime DLLs, which increases distribution size. Use '--include-windows-runtime-dlls=no' to disable, or make explicit with '--include-windows-runtime-dlls=yes'.
+Nuitka: Completed Python level compilation and optimization.
+Nuitka: Generating source code for C backend compiler.
+Nuitka: Running data composer tool for optimal constant value handling.
+Nuitka: Running C compilation via Scons.
+Nuitka-Scons: Backend C compiler: cl (cl 14.5).
+Nuitka-Scons: Backend C linking with 832 files (no progress information available for this stage).
+Nuitka-Scons: Compiled 832 C files using clcache with 824 cache hits and 8 cache misses.
+Nuitka-Options: Included data file 'ui\AccGenie final logo.png' due to specified data file 'ui/AccGenie final logo.png=ui/AccGenie final logo.png' on command line.
+Nuitka-Plugins:data-files: Included data file 'certifi\cacert.pem' due to package data for 'certifi'.
+Nuitka-Plugins:data-files: Included 23 data files due to package data directory 'templates' for 'docx'.
+Nuitka-Plugins:data-files: Included 149 data files due to package data directory 'cmap' for 'pdfminer'.
+Nuitka-Plugins:data-files: Included data file 'pypdfium2\version.json' due to package data for 'pypdfium2'.
+Nuitka-Plugins:data-files: Included data file 'pypdfium2_raw\version.json' due to package data for 'pypdfium2_raw'.
+Nuitka: Removing build directory 'build\output\main.build'.
+Nuitka: Successfully created '~\eclipse-workspace\Aiccounting\build\output\main.dist\Accounts HQ.exe'.
+
+=== [2/2]  Building installer with Inno Setup ===
+
+
+Preprocessing
+=== Done. Installer at:  build\dist\Accounts HQ-Setup-1.0.18.exe ===
+

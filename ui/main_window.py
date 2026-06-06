@@ -17,10 +17,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore  import Qt, QTimer, Signal, QSize
 from PySide6.QtGui   import QFont, QIcon, QPixmap, QKeySequence, QShortcut
 
-LOGO_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "ui", "AccGenie final logo.png",
-)
+from core import branding
+LOGO_PATH = branding.logo_path()
 
 from ui.theme              import THEME, get_stylesheet
 from ui.widgets            import CalculatorWidget
@@ -152,7 +150,7 @@ class MainWindow(QMainWindow):
         self._company_name = row["name"] if row else "Company"
         self._company_gstin = row["gstin"] if row else ""
 
-        self.setWindowTitle(f"Accounts HQ — {self._company_name}")
+        self.setWindowTitle(f"{branding.PRODUCT_NAME} — {self._company_name}")
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
         self.setStyleSheet(get_stylesheet())
@@ -327,6 +325,7 @@ class MainWindow(QMainWindow):
         import traceback
         try:
             self._build_pages_inner()
+            self._finalize_sidebar()
         except Exception:
             tb = traceback.format_exc()
             print("STARTUP CRASH in _build_pages:\n" + tb)
@@ -335,6 +334,17 @@ class MainWindow(QMainWindow):
                 "Failed to build app pages:\n\n" + tb
             )
             raise
+
+    def _finalize_sidebar(self) -> None:
+        """Group the flat sidebar into collapsible sections. Best-effort — the
+        flat sidebar still works if this fails. RWAGenie overrides this to a
+        no-op and groups with its own RWA section map after adding its pages."""
+        try:
+            from ui.sidebar_sections import regroup_into_sections
+            regroup_into_sections(self)
+        except Exception:
+            import traceback
+            print("sidebar grouping skipped:\n" + traceback.format_exc())
 
     def _locked_page(self, feature: str, required_plan: str,
                      feature_label: str) -> QWidget:
@@ -772,7 +782,7 @@ class MainWindow(QMainWindow):
         b_card = self._pref_card("Bank reconciliation", layout)
         b_card.addWidget(self._pref_checkbox(
             "Ask for a comment when ignoring a statement line",
-            "When you 'Ignore' a bank-statement line, Accounts HQ can ask why "
+            f"When you 'Ignore' a bank-statement line, {branding.PRODUCT_NAME} can ask why "
             "(e.g. 'duplicate', 'bank fee already booked'). Untick to ignore silently.",
             key="bank_reco_comment_on_ignore", default=True,
         ))
@@ -781,7 +791,7 @@ class MainWindow(QMainWindow):
         bk_card = self._pref_card("Backups", layout)
         bk_card.addWidget(self._pref_choice(
             "Backup reminder interval",
-            "How often Accounts HQ should nudge you to back up the current "
+            f"How often {branding.PRODUCT_NAME} should nudge you to back up the current "
             "company. The reminder fires when the app opens.",
             key="backup_reminder_days", default=7,
             options=[(1, "Every day"), (3, "Every 3 days"),
@@ -896,7 +906,7 @@ class MainWindow(QMainWindow):
         hint = QLabel(
             "Your GST and TDS registration numbers. Captured for use on "
             "invoices and tax reports — leave blank if not registered. "
-            "Accounts HQ records these; it does not decide when you must "
+            f"{branding.PRODUCT_NAME} records these; it does not decide when you must "
             "register."
         )
         hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
@@ -1072,8 +1082,8 @@ class MainWindow(QMainWindow):
         explain = QLabel(
             "Some AI features (like the AI Document Reader) need your own "
             "Anthropic key — they run on your Anthropic account, not "
-            "Accounts HQ credits. Lighter AI features (bank-statement parsing, "
-            "AI-fill on vouchers) run on Accounts HQ credits if you have no "
+            f"{branding.PRODUCT_NAME} credits. Lighter AI features (bank-statement parsing, "
+            f"AI-fill on vouchers) run on {branding.PRODUCT_NAME} credits if you have no "
             "key. Add your key here to unlock everything."
         )
         explain.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
@@ -1151,7 +1161,7 @@ class MainWindow(QMainWindow):
             self._ai_key_status.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
         else:
             self._ai_key_status.setText(
-                "Key cleared. Lighter AI features will use Accounts HQ credits; "
+                f"Key cleared. Lighter AI features will use {branding.PRODUCT_NAME} credits; "
                 "the AI Document Reader is locked until you add a key."
             )
             self._ai_key_status.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
