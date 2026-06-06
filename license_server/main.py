@@ -694,6 +694,89 @@ def _to_keyout(lic: License, db: Session) -> KeyOut:
     )
 
 
+_MINT_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mint a license key</title>
+<style>
+ body{font-family:system-ui,Segoe UI,Roboto,sans-serif;max-width:640px;margin:24px auto;padding:0 16px;color:#1a1a1a}
+ h1{font-size:20px;margin-bottom:2px} small{color:#666}
+ label{display:block;margin:12px 0 4px;font-weight:600;font-size:13px}
+ input,select{width:100%;padding:9px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box}
+ .row{display:flex;gap:12px} .row>div{flex:1}
+ button{margin-top:16px;background:#0a7a55;color:#fff;border:0;border-radius:8px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer}
+ button.sec{background:#eee;color:#333}
+ #key{margin-top:16px;padding:14px;border-radius:8px;background:#e7f7ee;display:none;word-break:break-all}
+ #key b{font-size:20px;letter-spacing:1px} #err{color:#c00;margin-top:12px;display:none}
+ #recent{margin-top:24px;font-size:13px} table{border-collapse:collapse;width:100%} td,th{border-bottom:1px solid #eee;padding:6px;text-align:left;font-size:12px}
+</style></head><body>
+<h1>Mint a license key</h1>
+<small>For friends &amp; beta testers. Enter your admin token once (saved in this browser only).</small>
+<label>Admin token</label>
+<input id="tok" type="password" placeholder="server ADMIN_TOKEN">
+<div class="row">
+ <div><label>Product</label><select id="product">
+   <option value="accgenie">Accounts HQ</option>
+   <option value="rwagenie">RWA HQ</option>
+   <option value="tradehq">tradeHQ</option>
+ </select></div>
+ <div><label>Plan</label><select id="plan">
+   <option>PREMIUM</option><option selected>PRO</option><option>STANDARD</option><option>FREE</option>
+ </select></div>
+</div>
+<div class="row">
+ <div><label>Email</label><input id="email" type="email" placeholder="friend@example.com"></div>
+ <div><label>Name / company</label><input id="company" placeholder="optional"></div>
+</div>
+<div class="row">
+ <div><label>Expires on</label><input id="expiry" type="date"></div>
+ <div><label>Seats (optional)</label><input id="seats" type="number" min="0" placeholder="plan default"></div>
+</div>
+<label>Notes (optional)</label><input id="notes" placeholder="e.g. beta tester">
+<button onclick="mint()">Mint key</button>
+<button class="sec" onclick="listKeys()">Show recent keys</button>
+<div id="key"></div><div id="err"></div><div id="recent"></div>
+<script>
+var TK='lic_admin_token';
+document.getElementById('tok').value = localStorage.getItem(TK) || '';
+(function(){var d=new Date(); d.setFullYear(d.getFullYear()+1); document.getElementById('expiry').value=d.toISOString().slice(0,10);})();
+function tok(){var t=document.getElementById('tok').value.trim(); localStorage.setItem(TK,t); return t;}
+function show(el,msg){var e=document.getElementById(el); e.style.display='block'; e.innerHTML=msg;}
+function hide(el){document.getElementById(el).style.display='none';}
+async function mint(){
+  hide('key'); hide('err');
+  var t=tok(); if(!t){show('err','Enter the admin token.');return;}
+  var body={product:document.getElementById('product').value, plan:document.getElementById('plan').value,
+    customer_email:document.getElementById('email').value.trim(), company_name:document.getElementById('company').value.trim(),
+    expires_at:document.getElementById('expiry').value, notes:document.getElementById('notes').value.trim()};
+  var s=document.getElementById('seats').value.trim(); if(s) body.seats_allowed=parseInt(s,10);
+  try{
+    var r=await fetch('/admin/keys',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify(body)});
+    var j=await r.json();
+    if(r.status===201){show('key','License key (\\u2713 give this to your tester):<br><b>'+j.license_key+'</b><br><small>'+j.product+' / '+j.plan+' \\u00b7 expires '+(j.expires_at||'')+'</small>');}
+    else{show('err','Error: '+(j.detail||JSON.stringify(j)));}
+  }catch(e){show('err','Failed: '+e);}
+}
+async function listKeys(){
+  hide('err'); var t=tok(); if(!t){show('err','Enter the admin token.');return;}
+  try{
+    var r=await fetch('/admin/keys',{headers:{'Authorization':'Bearer '+t}});
+    var j=await r.json();
+    if(!Array.isArray(j)){show('err','Error: '+(j.detail||JSON.stringify(j)));return;}
+    var rows=j.slice(-15).reverse().map(function(k){return '<tr><td>'+k.license_key+'</td><td>'+k.product+'</td><td>'+k.plan+'</td><td>'+(k.customer_email||'')+'</td><td>'+(k.expires_at||'')+'</td></tr>';}).join('');
+    document.getElementById('recent').innerHTML='<h3>Recent keys</h3><table><tr><th>Key</th><th>Product</th><th>Plan</th><th>Email</th><th>Expires</th></tr>'+rows+'</table>';
+  }catch(e){show('err','Failed: '+e);}
+}
+</script></body></html>"""
+
+
+@app.get("/admin/mint", include_in_schema=False)
+def mint_page():
+    """Browser minting console: a form that POSTs to /admin/keys with the
+    admin token (entered once, kept in the browser). No CLI needed."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(_MINT_HTML)
+
+
 @app.post("/admin/keys", response_model=KeyOut, status_code=201,
           dependencies=[Depends(require_admin)])
 def mint_key(body: MintRequest, db: Session = Depends(get_db)):
