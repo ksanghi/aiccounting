@@ -36,8 +36,8 @@ UPGRADE_URL = _os.environ.get(
 # now that we ship a default).
 UPGRADE_FALLBACK_EMAIL = (
     "mailto:info@ai-consultants.in"
-    "?subject=AccGenie%20upgrade%20request"
-    "&body=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20AccGenie%20plan."
+    "?subject=Accounts%20HQ%20upgrade%20request"
+    "&body=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20Accounts%20HQ%20plan."
     "%20My%20current%20plan%20is%3A%20"
 )
 

@@ -39,7 +39,7 @@ from ui.theme           import THEME, get_stylesheet
 class CompanyDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AccGenie — Open Company")
+        self.setWindowTitle("Accounts HQ — Open Company")
         self.setMinimumWidth(460)
         self.setMinimumHeight(320)
         self.setStyleSheet(get_stylesheet())
@@ -239,9 +239,26 @@ class CompanyDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("AccGenie")
+    app.setApplicationName("Accounts HQ")
     app.setWindowIcon(QIcon(LOGO_PATH))
     app.setStyle("Fusion")
+
+    # Splash screen while the app warms up — a Nuitka standalone cold-start
+    # takes a few seconds, and before this there was no feedback at all
+    # ("no flash screen"). Show the logo so the user knows it's launching.
+    splash = None
+    try:
+        from PySide6.QtWidgets import QSplashScreen
+        from PySide6.QtCore import Qt
+        _pix = QPixmap(LOGO_PATH)
+        if not _pix.isNull():
+            _pix = _pix.scaledToWidth(
+                440, Qt.TransformationMode.SmoothTransformation)
+            splash = QSplashScreen(_pix, Qt.WindowType.WindowStaysOnTopHint)
+            splash.show()
+            app.processEvents()
+    except Exception:
+        splash = None
 
     # Apply the user's saved bento theme mode (light/dark) globally.
     # Per-widget `setStyleSheet(get_stylesheet())` calls scattered through
@@ -276,6 +293,8 @@ def main():
 
     # Show company selector
     dlg = CompanyDialog()
+    if splash is not None:
+        splash.finish(dlg)
     if dlg.exec() != QDialog.DialogCode.Accepted:
         sys.exit(0)
 

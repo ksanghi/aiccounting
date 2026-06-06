@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         self._company_name = row["name"] if row else "Company"
         self._company_gstin = row["gstin"] if row else ""
 
-        self.setWindowTitle(f"AccGenie — {self._company_name}")
+        self.setWindowTitle(f"Accounts HQ — {self._company_name}")
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
         self.setStyleSheet(get_stylesheet())
@@ -772,7 +772,7 @@ class MainWindow(QMainWindow):
         b_card = self._pref_card("Bank reconciliation", layout)
         b_card.addWidget(self._pref_checkbox(
             "Ask for a comment when ignoring a statement line",
-            "When you 'Ignore' a bank-statement line, AccGenie can ask why "
+            "When you 'Ignore' a bank-statement line, Accounts HQ can ask why "
             "(e.g. 'duplicate', 'bank fee already booked'). Untick to ignore silently.",
             key="bank_reco_comment_on_ignore", default=True,
         ))
@@ -781,7 +781,7 @@ class MainWindow(QMainWindow):
         bk_card = self._pref_card("Backups", layout)
         bk_card.addWidget(self._pref_choice(
             "Backup reminder interval",
-            "How often AccGenie should nudge you to back up the current "
+            "How often Accounts HQ should nudge you to back up the current "
             "company. The reminder fires when the app opens.",
             key="backup_reminder_days", default=7,
             options=[(1, "Every day"), (3, "Every 3 days"),
@@ -896,7 +896,7 @@ class MainWindow(QMainWindow):
         hint = QLabel(
             "Your GST and TDS registration numbers. Captured for use on "
             "invoices and tax reports — leave blank if not registered. "
-            "AccGenie records these; it does not decide when you must "
+            "Accounts HQ records these; it does not decide when you must "
             "register."
         )
         hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
@@ -1072,8 +1072,8 @@ class MainWindow(QMainWindow):
         explain = QLabel(
             "Some AI features (like the AI Document Reader) need your own "
             "Anthropic key — they run on your Anthropic account, not "
-            "AccGenie credits. Lighter AI features (bank-statement parsing, "
-            "AI-fill on vouchers) run on AccGenie credits if you have no "
+            "Accounts HQ credits. Lighter AI features (bank-statement parsing, "
+            "AI-fill on vouchers) run on Accounts HQ credits if you have no "
             "key. Add your key here to unlock everything."
         )
         explain.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
@@ -1151,7 +1151,7 @@ class MainWindow(QMainWindow):
             self._ai_key_status.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
         else:
             self._ai_key_status.setText(
-                "Key cleared. Lighter AI features will use AccGenie credits; "
+                "Key cleared. Lighter AI features will use Accounts HQ credits; "
                 "the AI Document Reader is locked until you add a key."
             )
             self._ai_key_status.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")

@@ -7,7 +7,7 @@ route is decided automatically by `core.ai_routing.RoutingConfig.resolve`
 
   "customer" — POST to api.anthropic.com with the customer's own key.
   "wallet"   — POST to the license-server /ai/proxy with the licence key;
-               the server forwards to Anthropic on AccGenie's key and
+               the server forwards to Anthropic on Accounts HQ's key and
                meters the customer's credit wallet.
   "locked"   — a `byok` feature, customer has no key → raise
                `FeatureNeedsOwnKey` so the calling UI can prompt them to
@@ -84,12 +84,12 @@ def call_messages(feature: str, payload: dict, timeout: float = 120.0) -> dict:
             timeout=timeout,
         )
 
-    # ROUTE_WALLET — proxy through the licence server on AccGenie's key.
+    # ROUTE_WALLET — proxy through the licence server on Accounts HQ's key.
     from core.license_manager import LicenseManager, SERVER_URL
     mgr = LicenseManager()
     if mgr.license_key in ("DEMO", "FREE-DEMO", "", None):
         raise AIRouteError(
-            "AI features on AccGenie credits need an activated paid "
+            "AI features on Accounts HQ credits need an activated paid "
             "licence. Activate your licence on the License page, or add "
             "your own Anthropic key in Settings → AI / Anthropic Key."
         )
@@ -113,7 +113,7 @@ def call_messages(feature: str, payload: dict, timeout: float = 120.0) -> dict:
         #   401 → licence / machine binding not valid
         if e.code == 402:
             raise AIRouteError(
-                "Out of AI credits — top up your AccGenie wallet to continue."
+                "Out of AI credits — top up your Accounts HQ wallet to continue."
             ) from e
         if e.code == 503:
             raise AIServiceUnavailable(

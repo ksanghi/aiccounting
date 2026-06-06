@@ -18,8 +18,8 @@
 #ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
-#define AppPublisher "Aiccounting"
-#define AppExeName  "AccGenie.exe"
+#define AppPublisher "AI Consultants"
+#define AppExeName  AppName + ".exe"
 
 [Setup]
 AppId={{A1CC5E22-1234-4E78-9ABC-AICCOUNTING001}
@@ -39,6 +39,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName} {#AppVersion}
 UninstallDisplayIcon={app}\{#AppExeName}
 DisableProgramGroupPage=yes
+; Always show the "Select Destination Location" page so the user can choose
+; the install folder (was being skipped).
+DisableDirPage=no
 ShowLanguageDialog=no
 
 ; Upgrade behaviour: if AccGenie is running, ask to close it; never auto-

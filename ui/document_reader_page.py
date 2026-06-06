@@ -479,7 +479,7 @@ class DocumentReaderPage(QWidget):
         box.setText(
             "The AI Document Reader needs your own Anthropic API key.\n\n"
             "It processes whole documents, so it runs on your own Anthropic "
-            "account rather than AccGenie credits. Add your key in "
+            "account rather than Accounts HQ credits. Add your key in "
             "Settings → AI / Anthropic Key, then come back here."
         )
         open_btn = box.addButton("Open Settings", QMessageBox.ButtonRole.AcceptRole)

@@ -18,8 +18,8 @@ REM      build\build.bat
 REM ──────────────────────────────────────────────────────────────────────────
 setlocal enabledelayedexpansion
 
-set APP_NAME=AccGenie
-set VERSION=1.0.17
+set APP_NAME=Accounts HQ
+set VERSION=1.0.18
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
@@ -45,7 +45,7 @@ python -m nuitka ^
     --include-data-files="ui/AccGenie final logo.png=ui/AccGenie final logo.png" ^
     --windows-console-mode=disable ^
     --output-dir=%OUTPUT_DIR% ^
-    --output-filename=%APP_NAME%.exe ^
+    --output-filename="%APP_NAME%.exe" ^
     --remove-output ^
     --assume-yes-for-downloads ^
     main.py
