@@ -229,6 +229,32 @@ class MainWindow(QMainWindow):
         self._nav_scroll.setWidget(nav_host)
         sidebar_layout.addWidget(self._nav_scroll, 1)
 
+        # Dark / light theme toggle (shared base → RHQ inherits it)
+        theme_btn = QPushButton(self._theme_btn_label())
+        theme_btn.setObjectName("theme_toggle")
+        theme_btn.setFixedHeight(36)
+        theme_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 7px;
+                padding: 0px 14px;
+                text-align: left;
+                font-size: 12px;
+                color: {THEME['text_secondary']};
+                height: 36px;
+                min-height: 36px;
+                max-height: 36px;
+            }}
+            QPushButton:hover {{
+                background-color: {THEME['bg_hover']};
+                color: {THEME['text_primary']};
+            }}
+        """)
+        theme_btn.clicked.connect(self._toggle_theme)
+        sidebar_layout.addWidget(theme_btn)
+        self._theme_btn = theme_btn
+
         # Switch company button (just above calc)
         switch_btn = QPushButton("  🔄   Switch Company…")
         switch_btn.setFixedHeight(36)
@@ -299,6 +325,27 @@ class MainWindow(QMainWindow):
         self.status.addPermanentWidget(self._all_co_label)
         self._refresh_all_co_total()
         self.status.showMessage(f"  {self._company_name}  |  Ready")
+
+    # ── Theme toggle ───────────────────────────────────────────────────────────
+
+    def _theme_btn_label(self) -> str:
+        from ui.theme import get_theme_mode
+        return "  ☀   Light Mode" if get_theme_mode() == "dark" else "  🌙   Dark Mode"
+
+    def _toggle_theme(self) -> None:
+        """Flip light/dark, persist the choice, and re-skin the running app.
+        Shared base method → RHQ inherits the same switch."""
+        from ui.theme import get_theme_mode, set_theme_mode, get_stylesheet
+        from core.config import set_theme_mode as persist_theme_mode
+        new = "light" if get_theme_mode() == "dark" else "dark"
+        set_theme_mode(new)          # update live THEME dict
+        persist_theme_mode(new)      # remember across restarts
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(get_stylesheet())
+        self.setStyleSheet(get_stylesheet())
+        if hasattr(self, "_theme_btn"):
+            self._theme_btn.setText(self._theme_btn_label())
 
     # ── Page registration ─────────────────────────────────────────────────────
 
