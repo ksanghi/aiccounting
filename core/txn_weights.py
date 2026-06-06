@@ -46,6 +46,10 @@ TXN_WEIGHTS: dict[str, int] = {
     "bank_reco":      1,   # Bank-reconciliation auto-posted vouchers
     "ledger_reco":    1,   # Ledger-reconciliation auto-posted vouchers
     "ai_voucher":     1,   # AI doc-reader extracted vouchers (source=AI_DOC)
+    "collect":        1,   # RWA HQ in-app payment collection claim (Road A).
+                           #   Counted on the desktop when the claim is pulled
+                           #   down — separate from, and on top of, the receipt
+                           #   voucher that bank-reco later posts.
     "edit":           0,   # Editing an existing voucher (no recharge)
     "cancel":         0,   # Cancellation (no refund — see module docstring)
 }
@@ -60,6 +64,7 @@ class Kind:
     BANK_RECO      = "bank_reco"
     LEDGER_RECO    = "ledger_reco"
     AI_VOUCHER     = "ai_voucher"
+    COLLECT        = "collect"
     EDIT           = "edit"
     CANCEL         = "cancel"
 

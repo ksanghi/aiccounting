@@ -94,6 +94,14 @@ _PRODUCT_DISPLAY_IN = {
 }
 
 
+# Public installer URL per product. Only RWA HQ has a real installer in
+# marketing/downloads/ today; the others fall through to a "write to info@"
+# nudge until their installers land.
+_INSTALLER_URL = {
+    "rwagenie": "https://apps.ai-consultants.in/downloads/RWAHQ-Setup.exe",
+}
+
+
 def send_license_email(
     to_email:    str,
     license_key: str,
@@ -112,13 +120,43 @@ def send_license_email(
     product_name = _PRODUCT_DISPLAY_IN.get(
         (product or "accgenie").lower(), "the software"
     )
+    # Sign with whoever the SMTP envelope is from, so the signature
+    # tracks brand changes without a code edit. Defaults gracefully
+    # when SMTP_FROM_NAME isn't set.
+    signer = (settings.smtp_from_name or "").strip() or "AI Consultants"
+    is_free = (plan or "").upper() == "FREE"
+
     greeting = f"Hi {customer_name}," if customer_name else "Hi,"
     receipt_line = (f"Payment received: {amount_paid_str}\n"
                     if amount_paid_str else "")
+    thanks_line = (
+        f"Thank you for trying {product_name}." if is_free
+        else f"Thank you for your {product_name} purchase."
+    )
+    installer_url = _INSTALLER_URL.get((product or "").lower(), "")
+    if installer_url:
+        installer_line_text = (
+            f"If you don't have {product_name} installed yet, download "
+            f"it here:\n  {installer_url}\n\n"
+        )
+        installer_line_html = (
+            f'<p>If you don\'t have {product_name} installed yet, '
+            f'<a href="{installer_url}">download the installer</a>.</p>'
+        )
+    else:
+        installer_line_text = (
+            f"If you don't have {product_name} installed yet, write to "
+            f"info@ai-consultants.in for the latest installer.\n\n"
+        )
+        installer_line_html = (
+            f'<p>If you don\'t have {product_name} installed yet, write to '
+            f'<a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a> '
+            f'for the latest installer.</p>'
+        )
 
     body_text = (
         f"{greeting}\n\n"
-        f"Thank you for your {product_name} purchase.\n\n"
+        f"{thanks_line}\n\n"
         f"{receipt_line}"
         f"Plan:        {plan}\n"
         f"Expires:     {expires_at}\n"
@@ -128,11 +166,10 @@ def send_license_email(
         f"  2. Go to the License page in the left sidebar.\n"
         f"  3. Paste the key above into 'Enter license key' and click "
         f"Activate.\n\n"
-        f"If you don't have {product_name} installed yet, write to "
-        f"info@ai-consultants.in for the latest installer.\n\n"
+        f"{installer_line_text}"
         f"Need help? Reply to this email or write to "
         f"info@ai-consultants.in.\n\n"
-        f"— Aashray Sanghi\n"
+        f"— {signer}\n"
     )
 
     body_html = f"""<!DOCTYPE html>
@@ -140,7 +177,7 @@ def send_license_email(
                    color: #0F172A; max-width: 560px; margin: 0 auto;
                    padding: 24px; line-height: 1.55;">
   <p>{greeting}</p>
-  <p>Thank you for your {product_name} purchase.</p>
+  <p>{thanks_line}</p>
   {f'<p style="color:#475569;">{receipt_line.strip()}</p>' if receipt_line else ''}
   <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px;
               padding: 20px; margin: 22px 0;">
@@ -160,12 +197,10 @@ def send_license_email(
     <li>Paste the key above into <i>Enter license key</i> and click
       <b>Activate</b>.</li>
   </ol>
-  <p>If you don't have {product_name} installed yet, write to
-    <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a>
-    for the latest installer.</p>
+  {installer_line_html}
   <p style="color: #475569;">Need help? Just reply to this email or
     write to <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a>.</p>
-  <p style="color: #94A3B8; font-size: 12px; margin-top: 32px;">— Aashray Sanghi</p>
+  <p style="color: #94A3B8; font-size: 12px; margin-top: 32px;">— {signer}</p>
 </body></html>"""
 
     return send_email(

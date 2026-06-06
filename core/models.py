@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS companies (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
     gstin       TEXT,
+    gst_username TEXT,                         -- GST portal login username (for GSTR-2B auto-pull)
     pan         TEXT,
     tan         TEXT,                          -- Tax Deduction A/c No. (for TDS)
     state_code  TEXT NOT NULL DEFAULT '07',   -- 2-digit GST state code
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS ledgers (
     gstin           TEXT,
     pan             TEXT,
     state_code      TEXT,
+    hsn_code        TEXT,               -- default HSN/SAC for this ledger (GSTR-1 HSN summary)
     is_tds_applicable INTEGER NOT NULL DEFAULT 0,
     tds_section     TEXT,               -- 194C, 194H, 194I, 194J ...
     tds_rate        REAL,
@@ -320,7 +322,40 @@ CREATE TABLE IF NOT EXISTS migration_runs (
     notes         TEXT
 );
 
+-- ── Document Inbox (AI document processing) ──────────────────────────
+-- One row per document that arrives via email / ADF scan / manual drop.
+-- One watched folder is the hub; this table is the review-and-process
+-- queue the accountant works through. See ai/doc_classifier.py (the
+-- classify step) and core/doc_inbox.py (the store).
+CREATE TABLE IF NOT EXISTS inbox_documents (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id        INTEGER NOT NULL REFERENCES companies(id),
+    source            TEXT NOT NULL DEFAULT 'MANUAL',  -- EMAIL | SCAN | MANUAL
+    orig_name         TEXT,                            -- filename as it arrived
+    stored_name       TEXT NOT NULL,                   -- nice local name on disk
+    stored_path       TEXT NOT NULL,                   -- absolute path in the store
+    file_hash         TEXT NOT NULL,                   -- sha256, dedup
+    email_meta        TEXT,                            -- JSON: from/subject/date (EMAIL only)
+    arrived_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    status            TEXT NOT NULL DEFAULT 'PENDING',
+                                                       -- PENDING | CLASSIFIED | APPROVED |
+                                                       -- POSTED | REJECTED | ERROR
+    doc_type          TEXT,                            -- purchase_invoice | sales_invoice |
+                                                       -- debit_note | credit_note |
+                                                       -- bank_statement | other
+    ai_confidence     REAL,                            -- classifier confidence 0..1
+    ai_meta           TEXT,                            -- JSON: classifier reason + extracted summary
+    voucher_id        INTEGER REFERENCES vouchers(id), -- set when posted as a voucher
+    bank_statement_id INTEGER REFERENCES bank_statements(id),  -- set when routed to bank reco
+    error             TEXT,                            -- non-empty if status=ERROR
+    reviewed_by_user_id INTEGER REFERENCES users(id),
+    reviewed_at       TEXT,
+    notes             TEXT,
+    UNIQUE(company_id, file_hash)
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_inbox_status      ON inbox_documents(company_id, status);
 CREATE INDEX IF NOT EXISTS idx_vouchers_date     ON vouchers(company_id, voucher_date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_type     ON vouchers(company_id, voucher_type);
 CREATE INDEX IF NOT EXISTS idx_vlines_ledger     ON voucher_lines(ledger_id);
@@ -353,6 +388,8 @@ _ADDITIVE_COLUMNS = [
     ("voucher_lines", "ledger_statement_line_id",      "INTEGER"),
     ("voucher_lines", "party_cleared_by_user_id",      "INTEGER"),
     ("companies",     "tan",                           "TEXT"),
+    ("companies",     "gst_username",                  "TEXT"),
+    ("ledgers",       "hsn_code",                      "TEXT"),
 ]
 
 

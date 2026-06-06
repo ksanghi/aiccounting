@@ -13,7 +13,7 @@
 :root {
   --bg:#FFFFFF; --bg-soft:#F8FAFC; --bg-card:#FFFFFF;
   --ink:#0F172A; --ink-mute:#475569; --ink-dim:#94A3B8;
-  --line:#E2E8F0; --accent:#635BFF; --accent-2:#00D4AA;
+  --line:#E2E8F0; --accent:#0EA5A5; --accent-2:#00D4AA;
   --danger:#EF4444; --success:#059669;
 }
 * { box-sizing:border-box; margin:0; padding:0; }
@@ -50,7 +50,7 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 }
 .plan-card:hover { border-color:var(--accent); }
 .plan-card.selected {
-  border-color:var(--accent); background:rgba(99,91,255,0.06);
+  border-color:var(--accent); background:rgba(14,165,165,0.06);
 }
 .plan-card.selected::after {
   content:"✓"; position:absolute; top:10px; right:14px;
@@ -67,13 +67,14 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
   border-radius:8px; padding:3px; margin-bottom:24px;
 }
 .product-toggle button {
-  flex:1; padding:8px 14px; border:none; background:transparent;
+  flex:1; padding:9px 14px; border:1.5px solid transparent; background:transparent;
   font-size:13px; font-weight:600; color:var(--ink-mute); cursor:pointer;
-  border-radius:6px; transition:background .15s, color .15s;
+  border-radius:6px; transition:background .15s, color .15s, border-color .15s;
 }
+.product-toggle button:hover { color:var(--ink); }
 .product-toggle button.active {
-  background:var(--bg-card); color:var(--ink);
-  box-shadow:0 1px 3px rgba(0,0,0,0.06);
+  background:var(--accent); color:white; border-color:var(--accent);
+  box-shadow:0 2px 6px rgba(14,165,165,0.35);
 }
 
 /* Form */
@@ -93,7 +94,7 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
   border:none; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer;
   margin-top:8px; transition:background .15s, transform .06s;
 }
-.btn-pay:hover { background:#4F46E5; }
+.btn-pay:hover { background:#0B8585; }
 .btn-pay:active { transform:translateY(1px); }
 .btn-pay:disabled { background:var(--ink-dim); cursor:not-allowed; }
 
@@ -122,7 +123,7 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 <div class="wrap">
 
   <div class="brand">
-    <div class="brand-name"><span class="grad">Accounts HQ</span> &nbsp;<span style="color:#94A3B8;">/</span>&nbsp; <span class="grad">RWA HQ</span></div>
+    <div class="brand-name"><span class="grad">Accounts HQ</span> &nbsp;<span style="color:#94A3B8;">/</span>&nbsp; <span class="grad">RWA HQ</span> &nbsp;<span style="color:#94A3B8;">/</span>&nbsp; <span class="grad">tradeHQ</span></div>
     <div class="brand-sub">Secure checkout · UPI · Cards · NetBanking</div>
   </div>
 
@@ -165,7 +166,8 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 
     <div class="note">
       Payments processed by Razorpay. Your card / UPI details never touch our servers.<br>
-      Need help? Email <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a>.
+      Need help? Email <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a>.<br>
+      <span style="color:#94A3B8;font-size:11px;">Operated by <b>Analysis and Ideas Consultants</b>.</span>
     </div>
   </div>
 
@@ -180,7 +182,7 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
     <div style="background:var(--bg-soft); padding:16px; border-radius:10px; margin-top:24px; text-align:left; font-size:13px; line-height:1.6;">
       <strong>How to activate</strong>
       <ol style="margin:10px 0 0 22px;">
-        <li>Open the desktop app (download from <a href="/download">accgenie.in/download</a> if you haven't already).</li>
+        <li>Open the desktop app (<a id="success-download" href="#">download the installer</a> if you haven't already).</li>
         <li>Click <strong>License</strong> in the sidebar.</li>
         <li>Paste the key from your email and click <strong>Activate</strong>.</li>
       </ol>
@@ -207,8 +209,10 @@ const CATALOG = {
     display: "Accounts HQ · Accounting",
     razorpayName: "Accounts HQ",
     plans: [
+      { code: "FREE",     inr: 0,    name: "Free",
+        desc: "100 transactions / month, single user — no card needed" },
       { code: "STANDARD", inr: 1999, name: "Standard",
-        desc: "20,000 transactions, 2 users, reports, exports" },
+        desc: "20,000 transactions, 2 users, reports, exports, reconciliation" },
       { code: "PRO",      inr: 4999, name: "Pro",
         desc: "50,000 transactions, 5 users, GST + TDS, AI document reader" },
       { code: "PREMIUM",  inr: 9999, name: "Premium",
@@ -219,12 +223,24 @@ const CATALOG = {
     display: "RWA HQ · For Societies",
     razorpayName: "RWA HQ",
     plans: [
-      { code: "STANDARD", inr: 2999, name: "Standard",
-        desc: "Up to 1,000 flats, auto-billing, late fees, facilities booking" },
-      { code: "PRO",      inr: 5999, name: "Pro",
-        desc: "Up to 2,500 flats + WhatsApp reminders, vendor mgmt, document storage" },
+      { code: "FREE",     inr: 0,     name: "Free",
+        desc: "Up to 300 flats, flat ledger, notices, polls, visitor pass — no card needed" },
+      { code: "STANDARD", inr: 2999,  name: "Standard",
+        desc: "Up to 1,000 flats, auto-billing & late fees, facilities booking, asset register" },
+      { code: "PRO",      inr: 5999,  name: "Pro",
+        desc: "Up to 2,500 flats + WhatsApp invoices, document storage, vendor management" },
       { code: "PREMIUM",  inr: 14999, name: "Premium",
-        desc: "Unlimited flats, all premium features" },
+        desc: "Unlimited flats, multi-block / phase, priority email support" },
+    ],
+  },
+  tradehq: {
+    display: "tradeHQ · Wealth cockpit",
+    razorpayName: "tradeHQ",
+    plans: [
+      { code: "FREE",     inr: 0,    name: "Free",
+        desc: "Single broker, manual ledger upload — no card needed" },
+      { code: "STANDARD", inr: 2400, name: "Standard",
+        desc: "All brokers auto-pull (TOTP), full family wealth view, AI news, up to 6 family members" },
     ],
   },
 };
@@ -283,10 +299,39 @@ function renderPlans() {
     <div class="plan-card ${state.plan === p.code ? "selected" : ""}"
          onclick="selectPlan('${p.code}')">
       <div class="plan-name">${p.name}</div>
-      <div class="plan-price">₹${p.inr.toLocaleString("en-IN")} <span class="per">/ year</span></div>
+      <div class="plan-price">${
+        p.inr === 0
+          ? "Free <span class=\"per\">forever</span>"
+          : "₹" + p.inr.toLocaleString("en-IN") + " <span class=\"per\">/ year</span>"
+      }</div>
       <div class="plan-desc">${p.desc}</div>
     </div>
   `).join("");
+  // Pay button reflects whether this plan needs Razorpay.
+  const cur = (plans.find(p => p.code === state.plan) || plans[0]);
+  const btn = document.getElementById("pay-btn");
+  if (btn) {
+    btn.textContent = cur.inr === 0 ? "Get free key →" : "Pay with Razorpay →";
+  }
+}
+
+// Public installer URL per product. Only RWA HQ has a real installer in
+// marketing/downloads/ today; others fall through to the marketing-site
+// downloads index. Keep in sync with email_service.py _INSTALLER_URL.
+const INSTALLER_URLS = {
+  rwagenie: "https://apps.ai-consultants.in/downloads/RWAHQ-Setup.exe",
+};
+
+function setDownloadLink() {
+  const a = document.getElementById("success-download");
+  if (!a) return;
+  const url = INSTALLER_URLS[state.product] || "mailto:info@ai-consultants.in";
+  a.href = url;
+  // For products we don't have an installer for yet, surface the
+  // "email us" path explicitly so the click doesn't look broken.
+  if (!INSTALLER_URLS[state.product]) {
+    a.textContent = "ask info@ai-consultants.in";
+  }
 }
 
 // ── Submit → /api/v1/checkout/create-order → Razorpay Checkout JS ──────────
@@ -341,8 +386,21 @@ async function startCheckout() {
   }
 
   if (!body.ok) {
-    btn.disabled = false; btn.textContent = "Pay with Razorpay →";
+    btn.disabled = false;
+    btn.textContent = state.plan === "FREE" ? "Get free key →" : "Pay with Razorpay →";
     showAlert("error", body.error || "Couldn't create the order. Please try again.");
+    return;
+  }
+
+  // ── Free-tier branch ──────────────────────────────────────────────
+  // Server already minted + emailed the key — no Razorpay round-trip.
+  // Show the same success screen the paid flow shows so the UX stays
+  // consistent.
+  if (body.free) {
+    document.getElementById("checkout-form").style.display = "none";
+    document.getElementById("success-screen").style.display = "block";
+    document.getElementById("success-email").textContent = email;
+    setDownloadLink();
     return;
   }
 
@@ -363,7 +421,7 @@ async function startCheckout() {
       product: state.product,
       plan:    state.plan,
     },
-    theme: { color: "#635BFF" },
+    theme: { color: "#0EA5A5" },
     handler: function (resp) {
       // Payment-success client callback. The license key gets minted
       // server-side via the /webhooks/razorpay endpoint — we just show
@@ -371,6 +429,7 @@ async function startCheckout() {
       document.getElementById("checkout-form").style.display = "none";
       document.getElementById("success-screen").style.display = "block";
       document.getElementById("success-email").textContent = email;
+      setDownloadLink();
     },
     modal: {
       ondismiss: function () {

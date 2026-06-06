@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RWA HQ — run your society, and end the anonymous building · AI Consultants</title>
+<meta name="description" content="RWA HQ runs your apartment or plot society — dues, billing, complaints, visitor passes — and brings the building together with a free resident app. By AI Consultants.">
+<style>
+  :root { --bg:#0B1220; --bg-soft:#F8FAFC; --ink:#0F172A; --ink-mute:#475569; --line:#E2E8F0; --accent:#4F46E5; --accent-2:#6366F1; --navy:#0f1629; --gold:#fcd34d; --white:#FFFFFF; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; color:var(--ink); -webkit-font-smoothing:antialiased; }
+  body { background:var(--white); line-height:1.6; }
+  a { color:inherit; text-decoration:none; }
+  img { max-width:100%; display:block; }
+
+  .nav { position:sticky; top:0; z-index:50; background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  .nav-inner { max-width:1080px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; padding:14px 24px; }
+  .brand { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; color:var(--ink); }
+  .brand-dot { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,#0EA5A5,#00D4AA); }
+  .crumb { color:var(--ink-mute); font-weight:500; }
+  .nav-links { display:flex; gap:26px; font-size:14px; color:var(--ink-mute); }
+  .nav-links a:hover { color:var(--ink); }
+  .nav-cta { background:var(--accent); color:white; padding:8px 16px; border-radius:8px; font-size:14px; font-weight:600; }
+  .nav-cta:hover { background:#4338CA; }
+
+  /* Hero — logo + the one line */
+  .hero { background:linear-gradient(180deg,#0B1220 0%,#15182E 100%); padding:46px 24px 44px; text-align:center; color:white; }
+  .hero img.logo { height:46px; width:auto; margin:0 auto 18px; }
+  .hero h1 { font-size:clamp(30px,4.4vw,50px); line-height:1.1; letter-spacing:-0.03em; font-weight:800; max-width:840px; margin:0 auto; }
+  .hero h1 .grad { color:var(--gold); }
+  .hero-note { margin-top:16px; color:#94A3B8; font-size:13px; }
+
+  .section { max-width:1080px; margin:0 auto; padding:72px 24px; }
+  .section-head { text-align:center; max-width:700px; margin:0 auto 44px; }
+  .section-head .kicker { font-weight:700; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:12px; color:var(--accent); }
+  .section-head h2 { font-size:clamp(27px,3.4vw,42px); letter-spacing:-0.02em; font-weight:800; line-height:1.12; }
+  .section-head h2 .hl { color:var(--accent); }
+  .section-head p { color:var(--ink-mute); font-size:17px; margin-top:14px; }
+
+  /* Community carousel */
+  .community { background:#0B1220; color:#fff; padding:74px 0 80px; }
+  .community .head { max-width:780px; margin:0 auto 40px; text-align:center; padding:0 24px; }
+  .community .head .kicker { color:var(--gold); font-weight:700; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:12px; }
+  .community .head h2 { font-size:clamp(28px,3.8vw,46px); font-weight:800; letter-spacing:-0.02em; line-height:1.1; }
+  .community .head h2 .hl { color:var(--gold); }
+  .community .head p { color:#94A3B8; font-size:17px; margin-top:14px; }
+  .carousel { max-width:980px; margin:0 auto; padding:0 24px; position:relative; }
+  .slides { position:relative; border-radius:18px; overflow:hidden; box-shadow:0 30px 70px -30px rgba(0,0,0,0.7); aspect-ratio:16/9; background:#0f1629; }
+  .slide { position:absolute; inset:0; opacity:0; transition:opacity .6s ease; display:flex; flex-direction:column; justify-content:flex-end; padding:36px; background-size:cover; background-position:center; }
+  .slide.active { opacity:1; }
+  .slide::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(11,18,32,0.10) 0%, rgba(11,18,32,0.82) 100%); }
+  .slide .cap { position:relative; z-index:1; }
+  .slide .cap .em { font-size:30px; display:block; margin-bottom:8px; }
+  .slide .cap h3 { font-size:clamp(20px,2.6vw,30px); font-weight:800; letter-spacing:-0.01em; }
+  .slide .cap p { color:#CBD5E1; font-size:15px; margin-top:6px; max-width:540px; }
+  .dots { display:flex; gap:9px; justify-content:center; margin-top:20px; }
+  .dot { width:9px; height:9px; border-radius:999px; background:rgba(255,255,255,0.25); border:none; cursor:pointer; padding:0; transition:background .2s, width .2s; }
+  .dot.active { background:var(--gold); width:26px; }
+  .cbtn { position:absolute; top:calc(50% - 22px); width:44px; height:44px; border-radius:999px; background:rgba(15,22,41,0.7); border:1px solid rgba(255,255,255,0.15); color:#fff; font-size:22px; line-height:1; cursor:pointer; z-index:2; }
+  .cbtn:hover { background:rgba(15,22,41,0.95); }
+  .cbtn.prev { left:38px; } .cbtn.next { right:38px; }
+  .safe-note { text-align:center; color:#64748B; font-size:13.5px; margin-top:26px; padding:0 24px; }
+  .safe-note b { color:#CBD5E1; }
+
+  /* Differentiators */
+  .edge { background:var(--bg-soft); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .edges { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  .ecard { background:var(--white); border:1px solid var(--line); border-radius:16px; padding:26px 24px; }
+  .ecard .ic { font-size:25px; margin-bottom:13px; }
+  .ecard h3 { font-size:19px; font-weight:800; letter-spacing:-0.01em; margin-bottom:8px; }
+  .ecard p { color:var(--ink-mute); font-size:14.5px; }
+  .ecard b { color:var(--ink); }
+
+  /* Collapsible feature table */
+  .acc { max-width:780px; margin:0 auto; }
+  .acc-item { border:1px solid var(--line); border-radius:12px; margin-bottom:12px; overflow:hidden; background:#fff; }
+  .acc-head { width:100%; text-align:left; background:none; border:none; padding:18px 20px; font-size:17px; font-weight:700; color:var(--ink); cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .acc-head:hover { background:var(--bg-soft); }
+  .acc-head .n { color:var(--ink-mute); font-weight:600; font-size:13px; }
+  .acc-head .chev { color:var(--accent); font-size:24px; font-weight:400; line-height:1; transition:transform .2s; }
+  .acc-item.open .acc-head .chev { transform:rotate(45deg); }
+  .acc-body { max-height:0; overflow:hidden; transition:max-height .28s ease; }
+  .acc-item.open .acc-body { max-height:720px; }
+  .acc-body ul { list-style:none; padding:0 20px 16px; }
+  .acc-body li { color:var(--ink-mute); font-size:15px; padding:9px 0 9px 26px; position:relative; border-top:1px solid var(--line); }
+  .acc-body li::before { content:"✓"; position:absolute; left:0; top:9px; color:var(--accent); font-weight:800; }
+
+  footer { background:var(--bg); color:#94A3B8; padding:40px 24px 96px; text-align:center; font-size:13px; border-top:1px solid rgba(255,255,255,0.06); }
+  footer a { color:#CBD5E1; } footer a:hover { color:white; }
+
+  /* Always-on download tile — the single download */
+  .dl-tile { position:fixed; right:22px; bottom:22px; z-index:60; display:inline-flex; align-items:center; gap:11px;
+    background:var(--gold); color:#0f1629; font-weight:800; font-size:15px; padding:13px 22px; border-radius:14px;
+    box-shadow:0 16px 34px -12px rgba(252,211,77,0.65), 0 6px 16px -6px rgba(0,0,0,0.45); transition:transform .12s ease, box-shadow .2s ease; }
+  .dl-tile:hover { transform:translateY(-2px); box-shadow:0 24px 46px -12px rgba(252,211,77,0.75); }
+  .dl-tile .ar { font-size:19px; line-height:1; }
+  .dl-tile small { display:block; font-weight:600; font-size:11px; color:#5a4d08; margin-top:1px; }
+
+  @media (max-width:760px){ .edges{grid-template-columns:1fr;} .nav-links{display:none;} .cbtn{display:none;} .slide{padding:24px;}
+    .dl-tile { left:14px; right:14px; bottom:12px; justify-content:center; } }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="../index.html"><span class="brand-dot"></span><span>AI Consultants <span class="crumb">/ RWA HQ</span></span></a>
+    <div class="nav-links">
+      <a href="#why">Highlights</a>
+      <a href="#features">All features</a>
+      <a href="../pricing.html">Pricing</a>
+      <a href="../index.html">All products</a>
+    </div>
+    <a class="nav-cta" href="../pricing.html">See pricing</a>
+  </div>
+</nav>
+
+<!-- Hero: logo + the one line -->
+<section class="hero">
+  <img class="logo" src="../img/rwahq.png" alt="RWA HQ">
+  <h1>Manage the community, <span class="grad">not just the facilities.</span></h1>
+  <div class="hero-note">Free to start · works offline · your data stays on your computer</div>
+</section>
+
+<!-- Highlights -->
+<section class="section edge" id="why">
+  <div class="edges">
+    <div class="ecard"><div class="ic">🌊</div><h3>It reaches everyone</h3><p>Other apps only work for residents who install them — and <b>half the building never does</b>. RWA HQ comes to them: share any notice, pass or message to WhatsApp or Telegram in one tap.</p></div>
+    <div class="ecard"><div class="ic">🤖</div><h3>AI that saves time</h3><p>Uses the <b>latest AI</b> to cut down the slow work — like reading a bill or sorting an entry — so the committee gets things done in minutes, not evenings.</p></div>
+    <div class="ecard"><div class="ic">🙌</div><h3>Designed for you, not vendors</h3><p>We don’t push costly hardware you don’t really need — the kind that’s expensive to buy and then lies unused most of the time. RWA HQ runs on the phones and computers you already have.</p></div>
+    <div class="ecard"><div class="ic">🔗</div><h3>Deep integration</h3><p>Your bills, your society accounts and the resident app all work together as one — no exports, no copying data between separate tools.</p></div>
+    <div class="ecard"><div class="ic">💰</div><h3>Always affordable</h3><p>Start free, and stay light on the pocket as you grow. No charge per flat and no surprise bills — priced for a society, not a corporation.</p></div>
+    <div class="ecard"><div class="ic">🧩</div><h3>Feature rich</h3><p>Everything a society needs in one place — billing, accounts, gate passes, complaints, notices and a full resident app. You won’t outgrow it.</p></div>
+  </div>
+</section>
+
+<!-- The complete feature list, collapsible by category -->
+<section class="section" id="features">
+  <div class="section-head">
+    <div class="kicker">Everything inside</div>
+    <h2>Everything RWA HQ can do</h2>
+    <p>Tap a category to open it. For what’s included in each plan, see <a href="../pricing.html" style="color:var(--accent);font-weight:600">Pricing</a>.</p>
+  </div>
+  <div class="acc">
+    <div class="acc-item">
+      <button class="acc-head">Members &amp; society <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Flat &amp; plot register — owners, tenants and family members</li>
+        <li>Resident self sign-up, approved by the manager</li>
+        <li>Member directory, with per-resident privacy controls</li>
+        <li>Family sub-accounts under one flat</li>
+      </ul></div>
+    </div>
+    <div class="acc-item">
+      <button class="acc-head">Maintenance &amp; billing <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Automatic monthly / quarterly maintenance bills</li>
+        <li>Fixed amount, or a rate per square foot, per flat</li>
+        <li>Late fees — a flat amount or a percentage</li>
+        <li>Bill when you raise it, or only when the resident pays (proforma)</li>
+        <li>GST on maintenance, handled correctly</li>
+        <li>Receipts, dues tracking and online payment</li>
+      </ul></div>
+    </div>
+    <div class="acc-item">
+      <button class="acc-head">Society accounts <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Proper double-entry society accounts</li>
+        <li>Dues register and ageing report</li>
+        <li>Collection and GST reports</li>
+        <li>Audit-ready ledgers</li>
+        <li>Runs on the same engine as Accounts HQ</li>
+      </ul></div>
+    </div>
+    <div class="acc-item">
+      <button class="acc-head">Gate &amp; visitors <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Visitor passes — a resident approves, the guard checks a code</li>
+        <li>The pass reaches the resident on WhatsApp</li>
+        <li>Visitor entry log</li>
+      </ul></div>
+    </div>
+    <div class="acc-item">
+      <button class="acc-head">Notices, complaints &amp; polls <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Broadcast notices to every resident</li>
+        <li>Polls and online voting</li>
+        <li>Complaints — raise, track and resolve</li>
+        <li>Resident profile-change requests</li>
+      </ul></div>
+    </div>
+    <div class="acc-item">
+      <button class="acc-head">Community &amp; resident app <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Free resident app for iOS &amp; Android</li>
+        <li>Resident-to-resident chat — by flat number, no phone numbers shared</li>
+        <li>Photos in chat, and free 1-to-1 voice &amp; video calls, with no limits</li>
+        <li>“Who’s around right now” — the live society pulse</li>
+        <li>Share any notice or pass to WhatsApp &amp; Telegram</li>
+        <li>Dues, notices, complaints and passes, all on the phone</li>
+      </ul></div>
+    </div>
+    <div class="acc-item">
+      <button class="acc-head">Your data, your control <span class="chev">+</span></button>
+      <div class="acc-body"><ul>
+        <li>Runs on your own computer</li>
+        <li>Works offline</li>
+        <li>Your society’s data never leaves your machine</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p style="margin-bottom:12px">
+    <a href="../accountshq.html">Accounts HQ</a> · <a href="index.html">RWA HQ</a> · <a href="../tradehq.html">tradeHQ</a> · <a href="../hoahq.html">HOA HQ</a> · <a href="../bookshq.html">Books HQ</a> · <a href="../pricing.html">Pricing</a> · <a href="../contact.html">Contact</a> · <a href="../privacy.html">Privacy</a> · <a href="../terms.html">Terms</a> · <a href="../refund.html">Refund Policy</a> · <a href="../shipping.html">Delivery</a>
+  </p>
+  <p>© 2026 AI Consultants · <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
+  <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
+</footer>
+
+<a class="dl-tile" href="../downloads/RWAHQ-Setup.exe"><span class="ar">⬇</span><span>Download RWA HQ<small>Free · for Windows</small></span></a>
+
+<script>
+  document.querySelectorAll('.acc-head').forEach(function(h){h.onclick=function(){h.parentElement.classList.toggle('open');};});
+</script>
+
+</body>
+</html>

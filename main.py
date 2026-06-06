@@ -14,6 +14,10 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
+# This app is Accounts HQ — the shared license manager will accept ONLY
+# an accgenie license and reject RWA HQ / tradeHQ ones.
+os.environ.setdefault("APP_LICENSE_PRODUCT", "accgenie")
+
 from PySide6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QFormLayout, QFrame,

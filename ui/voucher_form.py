@@ -535,18 +535,23 @@ class VoucherEntryPage(QWidget):
 
         self._type_btns: dict[str, QPushButton] = {}
         for vtype, label, icon in VOUCHER_TYPES:
+            # Icon is part of the button text — rendered at the button's
+            # font size. Bumped from 11→14 so the emoji is large enough
+            # to read at a glance (was barely visible at 11). Height +4
+            # to keep the text/icon comfortable inside the chip.
             btn = QPushButton(f"{icon}  {label}")
             btn.setCheckable(True)
-            btn.setFixedHeight(32)
+            btn.setFixedHeight(38)
             colour = VOUCHER_COLOURS.get(vtype, THEME["accent"])
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
                     border: 1px solid {THEME['border']};
                     border-radius: 6px;
-                    padding: 4px 10px;
-                    font-size: 11px;
+                    padding: 4px 12px;
+                    font-size: 14px;
                     color: {THEME['text_secondary']};
+                    min-height: 0;
                 }}
                 QPushButton:hover {{
                     border-color: {colour};
@@ -596,7 +601,8 @@ class VoucherEntryPage(QWidget):
                 border-radius: 5px;
                 color: {THEME['text_secondary']};
                 padding: 0;
-                font-size: 11px;
+                font-size: 18px;
+                font-weight: bold;
                 min-width: 0;
             }}
             QPushButton:hover {{
@@ -609,13 +615,13 @@ class VoucherEntryPage(QWidget):
             }}
         """
         self._date_prev_btn = QPushButton("‹")
-        self._date_prev_btn.setFixedSize(22, 34)
+        self._date_prev_btn.setFixedSize(36, 34)
         self._date_prev_btn.setStyleSheet(_arrow_qss)
         self._date_prev_btn.setToolTip("Previous day  (Alt+,)")
         self._date_prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._date_prev_btn.clicked.connect(lambda: self._nudge_date(-1))
         self._date_next_btn = QPushButton("›")
-        self._date_next_btn.setFixedSize(22, 34)
+        self._date_next_btn.setFixedSize(36, 34)
         self._date_next_btn.setStyleSheet(_arrow_qss)
         self._date_next_btn.setToolTip("Next day  (Alt+.)")
         self._date_next_btn.setCursor(Qt.CursorShape.PointingHandCursor)

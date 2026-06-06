@@ -296,56 +296,59 @@ QMainWindow {{
 }}
 
 /* ── Cards ───────────────────────────────── */
+/* #card is also worn by voucher-form line rows, so keep these
+   values modest — every extra px of padding/margin here stacks
+   into 5–10 rows of voucher overlap. */
 #card {{
     background-color: {t['bg_card']};
-    border-radius: 14px;
+    border-radius: 8px;
     border: 1px solid {t['border']};
-    padding: 18px;
-    margin: 6px 0;
+    padding: 8px;
+    margin: 2px 0;
 }}
 
 /* ── Bento KPI tile ─────────────────────── */
 #bento_tile {{
     background-color: {t['bg_card']};
-    border-radius: 14px;
+    border-radius: 10px;
     border: 1px solid {t['border']};
-    padding: 16px 18px;
+    padding: 10px 12px;
 }}
 #bento_tile_good {{
     background-color: {t['good_soft']};
-    border-radius: 14px;
+    border-radius: 10px;
     border: 1px solid {t['good']};
-    padding: 16px 18px;
+    padding: 10px 12px;
 }}
 #bento_tile_warn {{
     background-color: {t['warn_soft']};
-    border-radius: 14px;
+    border-radius: 10px;
     border: 1px solid {t['warn']};
-    padding: 16px 18px;
+    padding: 10px 12px;
 }}
 #bento_tile_bad {{
     background-color: {t['bad_soft']};
-    border-radius: 14px;
+    border-radius: 10px;
     border: 1px solid {t['bad']};
-    padding: 16px 18px;
+    padding: 10px 12px;
 }}
 #bento_label {{
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: {t['text_secondary']};
     letter-spacing: 0.08em;
 }}
 #bento_value {{
-    font-size: 26px;
+    font-size: 20px;
     font-weight: 700;
     color: {t['text_primary']};
     letter-spacing: -0.02em;
 }}
-#bento_value_good {{ font-size: 26px; font-weight: 700; color: {t['good']}; letter-spacing: -0.02em; }}
-#bento_value_warn {{ font-size: 26px; font-weight: 700; color: {t['warn']}; letter-spacing: -0.02em; }}
-#bento_value_bad  {{ font-size: 26px; font-weight: 700; color: {t['bad']};  letter-spacing: -0.02em; }}
+#bento_value_good {{ font-size: 20px; font-weight: 700; color: {t['good']}; letter-spacing: -0.02em; }}
+#bento_value_warn {{ font-size: 20px; font-weight: 700; color: {t['warn']}; letter-spacing: -0.02em; }}
+#bento_value_bad  {{ font-size: 20px; font-weight: 700; color: {t['bad']};  letter-spacing: -0.02em; }}
 #bento_delta {{
-    font-size: 12px;
+    font-size: 11px;
     color: {t['text_secondary']};
 }}
 
@@ -387,19 +390,19 @@ QMainWindow {{
 #action_card {{
     background-color: {t['bg_card']};
     border: 1px solid {t['border']};
-    border-radius: 12px;
-    padding: 14px;
+    border-radius: 8px;
+    padding: 8px 10px;
 }}
 #action_card:hover {{
     border: 1px solid {t['accent']};
 }}
 #action_card_title {{
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: {t['text_primary']};
 }}
 #action_card_subtitle {{
-    font-size: 11px;
+    font-size: 10px;
     color: {t['text_secondary']};
 }}
 
@@ -428,10 +431,11 @@ QComboBox::drop-down {{
 }}
 QComboBox::down-arrow {{
     image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
     border-top: 6px solid {arrow_col};
     margin-right: 8px;
+    width: 14px;
 }}
 QComboBox QAbstractItemView {{
     background-color: {t['bg_card']};
@@ -441,8 +445,38 @@ QComboBox QAbstractItemView {{
     font-size: 12px;
     padding: 4px;
 }}
-QDateEdit::up-button, QDateEdit::down-button {{
-    width: 0;
+/* Spin-style increment / decrement buttons on numeric + date editors.
+   AG previously set width:0 to hide them; the Qt-default render still
+   showed a thin un-clickable stub. Generous width so they're easy to
+   click for date stepping in voucher forms. */
+QDateEdit::up-button, QDateEdit::down-button,
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+    width: 28px;
+    background: transparent;
+    border: none;
+    border-left: 1px solid {t['border']};
+}}
+QDateEdit::up-button:hover, QDateEdit::down-button:hover,
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+    background: {t['bg_hover']};
+}}
+QDateEdit::up-arrow, QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: none;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 7px solid {arrow_col};
+    width: 12px;
+    height: 7px;
+}}
+QDateEdit::down-arrow, QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: none;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 7px solid {arrow_col};
+    width: 12px;
+    height: 7px;
 }}
 
 /* ── Labels ──────────────────────────────── */
@@ -458,12 +492,12 @@ QDateEdit::up-button, QDateEdit::down-button {{
 QPushButton {{
     background-color: {t['bg_card']};
     border: 1px solid {t['border']};
-    border-radius: 8px;
-    padding: 8px 16px;
+    border-radius: 6px;
+    padding: 4px 10px;
     color: {t['text_primary']};
     font-size: 12px;
     font-weight: 500;
-    min-height: 32px;
+    min-height: 26px;
 }}
 QPushButton:hover {{
     background-color: {t['bg_hover']};
@@ -476,12 +510,12 @@ QPushButton:pressed {{
 #btn_primary {{
     background-color: {t['accent']};
     border: none;
-    border-radius: 8px;
-    padding: 9px 20px;
+    border-radius: 6px;
+    padding: 5px 14px;
     color: {t['btn_primary_text']};
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
-    min-height: 34px;
+    min-height: 28px;
 }}
 #btn_primary:hover {{
     background-color: {t['accent_hover']};

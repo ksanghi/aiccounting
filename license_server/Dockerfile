@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY license_server /app/license_server
 COPY marketing /app/marketing
+COPY marketing-aic /app/marketing-aic
 
 # SQLite DB persists in /data when a volume is mounted there.
 ENV DATABASE_URL=sqlite:////data/licenses.db

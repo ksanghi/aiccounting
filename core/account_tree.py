@@ -250,10 +250,10 @@ class AccountTree:
         cur = conn.execute(
             """INSERT INTO ledgers
                (company_id, group_id, name, opening_balance, opening_type,
-                is_bank, is_cash, gstin, pan, state_code,
+                is_bank, is_cash, gstin, pan, state_code, hsn_code,
                 is_tds_applicable, tds_section, tds_rate,
                 bank_name, account_number, ifsc)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 self.company_id, group_id, name,
                 kwargs.get("opening_balance", 0.0),
@@ -263,6 +263,7 @@ class AccountTree:
                 kwargs.get("gstin"),
                 kwargs.get("pan"),
                 kwargs.get("state_code"),
+                kwargs.get("hsn_code"),
                 int(kwargs.get("is_tds_applicable", False)),
                 kwargs.get("tds_section"),
                 kwargs.get("tds_rate"),
@@ -313,7 +314,7 @@ class AccountTree:
         # Whitelist editable columns to avoid arbitrary SQL injection via key
         editable = {
             "name", "group_id", "opening_balance", "opening_type",
-            "gstin", "pan", "state_code",
+            "gstin", "pan", "state_code", "hsn_code",
             "is_tds_applicable", "tds_section", "tds_rate",
             "bank_name", "account_number", "ifsc",
             "is_bank", "is_cash", "active",

@@ -35,6 +35,11 @@ from license_server._baked_config import (
     PLAN_USER_LIMITS as _ALL_PLAN_USER_LIMITS,
     PLAN_SEATS as _ALL_PLAN_SEATS,
     PLAN_FEATURES as _ALL_PLAN_FEATURES,
+    # RWA HQ — now baked from the RWAHQ sheet (was hand-maintained below).
+    PLAN_FEATURES_RWA as _ALL_PLAN_FEATURES_RWA,
+    PLAN_FLATS_LIMIT_RWA as _ALL_PLAN_FLATS_LIMIT_RWA,
+    PLAN_PRICES_RWA_INR as _ALL_PLAN_PRICES_RWA_INR,
+    PLAN_PRICES_RWA_MONTHLY_INR as _ALL_PLAN_PRICES_RWA_MONTHLY_INR,
 )
 
 
@@ -56,72 +61,19 @@ PLAN_FEATURES = _strip_demo(_ALL_PLAN_FEATURES)
 
 # ── RWAGenie-specific features per tier ──────────────────────────────────────
 #
-# Only the RWA-side adds. The accounting features come from PLAN_FEATURES
-# above (merged in features_for() below). Tier codes match AG's so a
-# customer on RWAGenie STANDARD inherits AG STANDARD's accounting set.
-PLAN_FEATURES_RWA: dict[str, list[str]] = {
-    "FREE": [
-        "rwa_flat_ledger",
-        "rwa_receipt_tracking",
-        "rwa_member_directory",
-        "rwa_notice_board",
-        "rwa_complaint_tracking",
-        "rwa_broadcast_messaging",
-        "rwa_polls",
-        "rwa_visitor_pass",
-        "rwa_basic_reports",
-    ],
-    "STANDARD": [
-        # FREE features carry forward
-        "rwa_flat_ledger", "rwa_receipt_tracking", "rwa_member_directory",
-        "rwa_notice_board", "rwa_complaint_tracking", "rwa_broadcast_messaging",
-        "rwa_polls", "rwa_visitor_pass", "rwa_basic_reports",
-        # STANDARD adds
-        "rwa_auto_billing",
-        "rwa_late_fees",
-        "rwa_facilities_booking",
-        "rwa_asset_register",
-        "rwa_advanced_reports",
-    ],
-    "PRO": [
-        # STANDARD features carry forward
-        "rwa_flat_ledger", "rwa_receipt_tracking", "rwa_member_directory",
-        "rwa_notice_board", "rwa_complaint_tracking", "rwa_broadcast_messaging",
-        "rwa_polls", "rwa_visitor_pass", "rwa_basic_reports",
-        "rwa_auto_billing", "rwa_late_fees", "rwa_facilities_booking",
-        "rwa_asset_register", "rwa_advanced_reports",
-        # PRO adds
-        "rwa_whatsapp_invoices",
-        "rwa_document_storage",
-        "rwa_vendor_management",
-    ],
-    "PREMIUM": [
-        # PRO features carry forward (Premium = Pro for RWA in v0.1)
-        "rwa_flat_ledger", "rwa_receipt_tracking", "rwa_member_directory",
-        "rwa_notice_board", "rwa_complaint_tracking", "rwa_broadcast_messaging",
-        "rwa_polls", "rwa_visitor_pass", "rwa_basic_reports",
-        "rwa_auto_billing", "rwa_late_fees", "rwa_facilities_booking",
-        "rwa_asset_register", "rwa_advanced_reports",
-        "rwa_whatsapp_invoices", "rwa_document_storage", "rwa_vendor_management",
-    ],
-}
+# NOW BAKED from the RWAHQ sheet in config/pricing.xlsx (was hand-maintained
+# here + in rwagenie/app/license_bridge.py with a "update both together" note —
+# that drift trap is gone). Edit the sheet, run build/bake_config.py.
+# DEMO is stripped server-side (server issues FREE..PREMIUM only).
+PLAN_FEATURES_RWA: dict[str, list[str]] = _strip_demo(_ALL_PLAN_FEATURES_RWA)
 
 # Flats per tier — analogous to PLAN_LIMITS (txn cap) for AG. None = unlimited.
-PLAN_FLATS_LIMIT_RWA: dict[str, int | None] = {
-    "FREE":     300,
-    "STANDARD": 1000,
-    "PRO":      2500,
-    "PREMIUM":  None,
-}
+PLAN_FLATS_LIMIT_RWA: dict[str, int | None] = _strip_demo(_ALL_PLAN_FLATS_LIMIT_RWA)
 
-# RWAGenie-specific INR yearly prices. Drives Razorpay create-order amount.
-# Per the operator's RWA features sheet: 0 / 2999 / 5999 / 14999.
-PLAN_PRICES_RWA_INR: dict[str, int] = {
-    "FREE":     0,
-    "STANDARD": 2999,
-    "PRO":      5999,
-    "PREMIUM": 14999,
-}
+# RWAGenie INR prices. Annual drives the Razorpay create-order amount;
+# monthly is the 11%-of-annual option surfaced at checkout.
+PLAN_PRICES_RWA_INR: dict[str, int] = _strip_demo(_ALL_PLAN_PRICES_RWA_INR)
+PLAN_PRICES_RWA_MONTHLY_INR: dict[str, int] = _strip_demo(_ALL_PLAN_PRICES_RWA_MONTHLY_INR)
 
 # ── tradeHQ-specific features per tier ───────────────────────────────────────
 #

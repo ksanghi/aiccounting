@@ -250,6 +250,161 @@ DOCUMENT CONTENT:
                 f"Response preview: {raw[:500]}"
             )
 
+    def extract_auto(
+        self,
+        document_text: str,
+        ledger_names: list,
+        company_name: str = "",
+    ) -> dict:
+        """
+        ONE AI call that classifies AND extracts in a single pass — the way
+        Dext/Rossum/Vic do it. The accountant reads the document once, the
+        AI reads it once, and the proposed type + draft are shown together
+        for a single accept/reject. No separate classify call (that would be
+        a second read of the same page for no benefit — slower, double cost
+        on the customer's own key).
+
+        Returns:
+            {
+                "doc_type":   purchase_invoice | sales_invoice | debit_note |
+                              credit_note | bank_statement | other,
+                "confidence": 0..1   (how sure of the TYPE),
+                "summary":    {"party","doc_number","doc_date","amount"},
+                "vouchers":   [ {date, voucher_type, dr_ledger, cr_ledger,
+                                 amount, narration, reference, confidence,
+                                 raw_line}, ... ]   # [] for 'other'
+            }
+
+        Raises ValueError only if AI routing is unavailable.
+        """
+        if not self.ai_available:
+            raise ValueError(
+                "AI routing not configured. The Document Inbox needs your own "
+                "Anthropic key (Settings -> AI / Anthropic Key)."
+            )
+
+        ledger_list = "\n".join(f"- {n}" for n in ledger_names[:150])
+        prompt = f"""You are an expert Indian accountant processing one incoming document.
+Do BOTH in a single pass: (1) decide WHAT KIND of document it is, then
+(2) extract its transaction(s) as double-entry vouchers.
+
+Our company (the books this posts into): {company_name or "(unknown)"}
+
+STEP 1 — classify into EXACTLY ONE doc_type:
+- "purchase_invoice" : a bill FROM a supplier TO us (we owe). Seller is not us.
+- "sales_invoice"    : an invoice WE issued to a customer (they owe us).
+- "debit_note"       : a debit note (purchase return / upward revision).
+- "credit_note"      : a credit note (sales return / downward revision).
+- "bank_statement"   : a bank/card statement with many dated rows + running balance.
+- "other"            : anything else (quote, challan, salary slip, unreadable). When unsure use "other" — never guess.
+
+STEP 2 — extract vouchers:
+- bank_statement: one voucher PER transaction row. Money OUT = PAYMENT, money IN = RECEIPT, bank-to-bank = CONTRA. Skip opening/closing/failed/reversed rows.
+- purchase_invoice / debit_note: Dr the expense/purchase (or party on a debit note), Cr the vendor — as a PAYMENT or JOURNAL with the vendor ledger.
+- sales_invoice / credit_note: Dr the customer, Cr sales — as a RECEIPT or JOURNAL with the customer ledger.
+- "other": return an EMPTY vouchers array (we hold it for manual tagging).
+
+LEDGER ACCOUNTS AVAILABLE (match Dr/Cr EXACTLY, case-sensitive):
+{ledger_list}
+- No exact match: use the closest and append " (NEW)" so the user notices.
+- Unknown party: "Sundry Creditors" (we pay) or "Sundry Debtors" (they pay).
+
+CONFIDENCE: 0.95 clear+exact ledger · 0.80 clear+approx · 0.60 ledger guessed · 0.40 unclear.
+
+Return ONLY a JSON object — no markdown, no code fences:
+{{
+  "doc_type": "one of the six",
+  "confidence": 0.0,
+  "summary": {{"party":"", "doc_number":"", "doc_date":"YYYY-MM-DD", "amount": null}},
+  "vouchers": [
+    {{"date":"YYYY-MM-DD","voucher_type":"PAYMENT|RECEIPT|JOURNAL|CONTRA",
+      "dr_ledger":"exact or Name (NEW)","cr_ledger":"exact or Name (NEW)",
+      "amount":0.0,"narration":"","reference":"","confidence":0.0,"raw_line":""}}
+  ]
+}}
+
+DOCUMENT CONTENT (first 20000 chars):
+{document_text[:20000]}"""
+
+        payload = {
+            "model":      self.MODEL,
+            "max_tokens": 8192,
+            "messages":   [{"role": "user", "content": prompt}],
+        }
+        try:
+            data = self._call_anthropic(payload, timeout=120)
+        except urllib.error.HTTPError as e:
+            body = getattr(e, "body_text", "") or ""
+            raise ValueError(f"API error {e.code}: {body}")
+        except urllib.error.URLError as e:
+            raise ValueError(f"Cannot reach Claude API: {e}")
+
+        raw = data["content"][0]["text"].strip()
+        return self._coerce_auto(raw)
+
+    @staticmethod
+    def _coerce_auto(raw: str) -> dict:
+        """Parse the combined classify+extract reply defensively."""
+        from ai.doc_classifier import DOC_TYPES
+        if "```" in raw:
+            for part in raw.split("```"):
+                p = part.strip()
+                if p.startswith("json"):
+                    p = p[4:].strip()
+                if p.startswith("{"):
+                    raw = p
+                    break
+        start, end = raw.find("{"), raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            raw = raw[start:end]
+
+        out = {"doc_type": "other", "confidence": 0.0,
+               "summary": {"party": "", "doc_number": "", "doc_date": "",
+                           "amount": None},
+               "vouchers": []}
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            return out
+        if not isinstance(obj, dict):
+            return out
+
+        dt = str(obj.get("doc_type", "")).strip().lower()
+        out["doc_type"] = dt if dt in DOC_TYPES else "other"
+        try:
+            out["confidence"] = max(0.0, min(1.0, float(obj.get("confidence", 0.0))))
+        except Exception:
+            out["confidence"] = 0.0
+
+        s = obj.get("summary") or {}
+        if isinstance(s, dict):
+            out["summary"]["party"]      = str(s.get("party", ""))[:200]
+            out["summary"]["doc_number"] = str(s.get("doc_number", ""))[:100]
+            out["summary"]["doc_date"]   = str(s.get("doc_date", ""))[:10]
+            try:
+                amt = s.get("amount")
+                out["summary"]["amount"] = abs(float(amt)) if amt is not None else None
+            except Exception:
+                out["summary"]["amount"] = None
+
+        cleaned = []
+        for item in (obj.get("vouchers") or []):
+            if not isinstance(item, dict) or not item.get("date") or not item.get("amount"):
+                continue
+            try:
+                item["amount"] = abs(float(item["amount"]))
+            except Exception:
+                continue
+            if item.get("voucher_type") not in ("PAYMENT", "RECEIPT", "JOURNAL", "CONTRA"):
+                item["voucher_type"] = "JOURNAL"
+            try:
+                item["confidence"] = max(0.0, min(1.0, float(item.get("confidence", 0.7))))
+            except Exception:
+                item["confidence"] = 0.7
+            cleaned.append(item)
+        out["vouchers"] = cleaned
+        return out
+
     def extract_bank_statement_lines(
         self,
         document_text: str,

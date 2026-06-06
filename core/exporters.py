@@ -155,6 +155,76 @@ class ExcelExporter:
         self._set_widths(ws, [12,18,14])
         wb.save(path)
 
+    def gstr3b(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("GSTR-3B")
+        r = self._header(ws, company, f"GSTR-3B: {data['from_date']} to {data['to_date']}")
+        r = self._col_hdrs(ws, r, ["Section","IGST","CGST","SGST","Total"])
+        ow, itc, net = data["outward"], data["itc"], data["net_payable"]
+        ws.append(["3.1 Outward tax", ow["IGST"], ow["CGST"], ow["SGST"], data["total_output"]])
+        ws.append(["4. Eligible ITC", itc["IGST"], itc["CGST"], itc["SGST"], data["total_itc"]])
+        ws.append(["Net payable",     net["IGST"], net["CGST"], net["SGST"], data["total_payable"]])
+        ws.append([])
+        ws.append(["Outward taxable value", ow["taxable"]])
+        self._set_widths(ws, [22,14,14,14,16])
+        wb.save(path)
+
+    def gstr1(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("GSTR-1")
+        r = self._header(ws, company, f"GSTR-1: {data['from_date']} to {data['to_date']}")
+        r = self._col_hdrs(ws, r, ["Invoice","Date","Party","GSTIN","POS","Cat",
+                                   "Taxable","CGST","SGST","IGST"])
+        for inv in data["invoices"]:
+            ws.append([inv["invoice_no"], inv["invoice_date"], inv["party"], inv["gstin"],
+                       inv["pos"], inv["category"], inv["taxable"],
+                       inv["cgst"], inv["sgst"], inv["igst"]])
+        b, c = data["b2b"], data["b2c"]
+        ws.append([])
+        ws.append(["B2B Total","","","","","", b["taxable"], b["cgst"], b["sgst"], b["igst"]])
+        ws.append(["B2C Total","","","","","", c["taxable"], c["cgst"], c["sgst"], c["igst"]])
+        self._set_widths(ws, [16,12,26,20,8,8,14,12,12,12])
+        wb.save(path)
+
+    def gstr2b_recon(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("GSTR-2B Reconciliation")
+        r = self._header(ws, company,
+                         f"GSTR-2B Reconciliation: {data['from_date']} to {data['to_date']}")
+        r = self._col_hdrs(ws, r, ["Status","GSTIN","Invoice","Party",
+                                   "Book Taxable","2B Taxable","Book Tax","2B Tax","Diff"])
+        def emit(status, items):
+            for x in items:
+                ws.append([status, x.get("gstin",""), x.get("invoice_no",""), x.get("party",""),
+                           x.get("book_taxable",""), x.get("b2b_taxable",""),
+                           x.get("book_tax",""), x.get("b2b_tax",""), x.get("diff","")])
+        emit("Matched", data["matched"]); emit("Mismatch", data["mismatch"])
+        emit("In books, not in 2B", data["only_books"]); emit("In 2B, not in books", data["only_2b"])
+        ws.append([])
+        ws.append(["ITC Matched", data["itc_matched"]])
+        ws.append(["ITC at Risk (in books, not in 2B)", data["itc_at_risk"]])
+        self._set_widths(ws, [22,20,16,24,14,14,12,12,10])
+        wb.save(path)
+
+    def tds_register(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("TDS Register")
+        r = self._header(ws, company, f"TDS Register: {data['from_date']} to {data['to_date']}")
+        r = self._col_hdrs(ws, r, ["Party","PAN","Section","Nature","Rate %","Gross Paid","TDS","Txns"])
+        for p in data["parties"]:
+            ws.append([p["party"], p["pan"], p["section"], p["section_desc"],
+                       p["rate"], p["gross"], p["tds"], p["count"]])
+        ws.append(["Total","","","","", data["total_gross"], data["total_tds"], ""])
+        self._set_widths(ws, [24,16,10,28,8,14,14,8])
+        wb.save(path)
+
+    def hsn_summary(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("HSN Summary")
+        r = self._header(ws, company, f"HSN Summary: {data['from_date']} to {data['to_date']}")
+        r = self._col_hdrs(ws, r, ["HSN/SAC","Taxable","CGST","SGST","IGST","Total Tax"])
+        for x in data["rows"]:
+            ws.append([x["hsn"], x["taxable"], x["cgst"], x["sgst"], x["igst"],
+                       round(x["cgst"]+x["sgst"]+x["igst"], 2)])
+        ws.append(["Total", data["total_taxable"], "", "", "", data["total_tax"]])
+        self._set_widths(ws, [22,16,14,14,14,14])
+        wb.save(path)
+
     def receivables_aging(self, data: dict, company: dict, path: str):
         wb, ws = self._wb("Receivables Aging")
         r = self._header(ws, company,
@@ -361,6 +431,91 @@ class PDFExporter:
         rows.append(["Total TDS", _fmt(data["total_tds"]), ""])
         cw = [3*cm, 5*cm, 4*cm]
         t = self._Table(rows, colWidths=cw)
+        t.setStyle(self._tbl_style())
+        elems.append(t)
+        doc.build(elems)
+
+    def gstr3b(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path)
+        elems = self._heading(company, f"GSTR-3B: {data['from_date']} to {data['to_date']}")
+        ow, itc, net = data["outward"], data["itc"], data["net_payable"]
+        rows = [["Section","IGST","CGST","SGST","Total"],
+                ["3.1 Outward tax", _fmt(ow["IGST"]), _fmt(ow["CGST"]), _fmt(ow["SGST"]), _fmt(data["total_output"])],
+                ["4. Eligible ITC", _fmt(itc["IGST"]), _fmt(itc["CGST"]), _fmt(itc["SGST"]), _fmt(data["total_itc"])],
+                ["Net payable",     _fmt(net["IGST"]), _fmt(net["CGST"]), _fmt(net["SGST"]), _fmt(data["total_payable"])],
+                ["Outward taxable value", _fmt(ow["taxable"]), "", "", ""]]
+        t = self._Table(rows, colWidths=[5*cm,3*cm,3*cm,3*cm,3.5*cm])
+        t.setStyle(self._tbl_style())
+        elems.append(t)
+        doc.build(elems)
+
+    def gstr1(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path, wide=True)
+        elems = self._heading(company, f"GSTR-1: {data['from_date']} to {data['to_date']}")
+        rows = [["Invoice","Date","Party","GSTIN","Cat","Taxable","CGST","SGST","IGST"]]
+        for inv in data["invoices"]:
+            rows.append([inv["invoice_no"], inv["invoice_date"], (inv["party"] or "")[:18],
+                         inv["gstin"], inv["category"], _fmt(inv["taxable"]),
+                         _fmt(inv["cgst"]), _fmt(inv["sgst"]), _fmt(inv["igst"])])
+        b, c = data["b2b"], data["b2c"]
+        rows.append(["B2B Total","","","","",_fmt(b["taxable"]),_fmt(b["cgst"]),_fmt(b["sgst"]),_fmt(b["igst"])])
+        rows.append(["B2C Total","","","","",_fmt(c["taxable"]),_fmt(c["cgst"]),_fmt(c["sgst"]),_fmt(c["igst"])])
+        cw = [3*cm,2*cm,4*cm,4*cm,1.5*cm,2.5*cm,2.2*cm,2.2*cm,2.2*cm]
+        t = self._Table(rows, colWidths=cw)
+        t.setStyle(self._tbl_style())
+        elems.append(t)
+        doc.build(elems)
+
+    def gstr2b_recon(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path, wide=True)
+        elems = self._heading(company,
+                              f"GSTR-2B Reconciliation: {data['from_date']} to {data['to_date']}")
+        rows = [["Status","GSTIN","Invoice","Party","Book Tax","2B Tax","Diff"]]
+        def emit(status, items):
+            for x in items:
+                rows.append([status, x.get("gstin",""), x.get("invoice_no",""),
+                             (x.get("party","") or "")[:16],
+                             _fmt(x["book_tax"]) if "book_tax" in x else "",
+                             _fmt(x["b2b_tax"]) if "b2b_tax" in x else "",
+                             _fmt(x["diff"]) if "diff" in x else ""])
+        emit("Matched", data["matched"]); emit("Mismatch", data["mismatch"])
+        emit("Books not 2B", data["only_books"]); emit("2B not books", data["only_2b"])
+        rows.append(["ITC at Risk","","","","","",_fmt(data["itc_at_risk"])])
+        cw = [3.4*cm,4*cm,3*cm,4*cm,2.5*cm,2.5*cm,2.2*cm]
+        t = self._Table(rows, colWidths=cw)
+        t.setStyle(self._tbl_style())
+        elems.append(t)
+        doc.build(elems)
+
+    def tds_register(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path, wide=True)
+        elems = self._heading(company, f"TDS Register: {data['from_date']} to {data['to_date']}")
+        rows = [["Party","PAN","Section","Nature","Rate %","Gross","TDS","Txns"]]
+        for p in data["parties"]:
+            rows.append([(p["party"] or "")[:18], p["pan"], p["section"],
+                         (p["section_desc"] or "")[:18], f"{p['rate']}%",
+                         _fmt(p["gross"]), _fmt(p["tds"]), str(p["count"])])
+        rows.append(["Total","","","","",_fmt(data["total_gross"]),_fmt(data["total_tds"]),""])
+        cw = [3.5*cm,3*cm,1.6*cm,3.5*cm,1.6*cm,2.5*cm,2.5*cm,1.4*cm]
+        t = self._Table(rows, colWidths=cw)
+        t.setStyle(self._tbl_style())
+        elems.append(t)
+        doc.build(elems)
+
+    def hsn_summary(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path)
+        elems = self._heading(company, f"HSN Summary: {data['from_date']} to {data['to_date']}")
+        rows = [["HSN/SAC","Taxable","CGST","SGST","IGST","Total Tax"]]
+        for x in data["rows"]:
+            rows.append([x["hsn"], _fmt(x["taxable"]), _fmt(x["cgst"]), _fmt(x["sgst"]),
+                         _fmt(x["igst"]), _fmt(round(x["cgst"]+x["sgst"]+x["igst"], 2))])
+        rows.append(["Total", _fmt(data["total_taxable"]),"","","",_fmt(data["total_tax"])])
+        t = self._Table(rows, colWidths=[3.5*cm,3*cm,2.6*cm,2.6*cm,2.6*cm,2.8*cm])
         t.setStyle(self._tbl_style())
         elems.append(t)
         doc.build(elems)

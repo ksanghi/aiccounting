@@ -2,7 +2,7 @@
 Reports pages — UI for all reports with Excel and PDF export.
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QDateEdit, QFrame,
     QHeaderView, QAbstractItemView, QMessageBox, QFileDialog,
     QScrollArea, QSplitter, QSizePolicy, QComboBox,
@@ -12,7 +12,7 @@ from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label, SmartDateEdit
-from ui.table_utils import make_sortable
+from ui.table_utils import make_sortable, apply_text_filter
 from core.i18n   import format_currency
 
 
@@ -79,6 +79,11 @@ class _ReportBase(QWidget):
         super().__init__(parent)
         self.rpt   = rpt
         self._data = None
+        # Tables registered via _register_filter_target() get free-text
+        # filtering driven by the shell's search input. Subclasses that
+        # call `make_sortable(t)` should also call
+        # `self._register_filter_target(t)` right after to opt in.
+        self._filter_targets: list = []
         self._build_shell()
 
     # ── shell layout ──────────────────────────────────────────────────────────
@@ -123,6 +128,18 @@ class _ReportBase(QWidget):
             frow.addWidget(self.to_date)
 
         self._extra_filters(frow)
+
+        # Free-text row filter — workspace rule: every table needs a
+        # filter. Subclasses opt their table(s) in via
+        # _register_filter_target() right after make_sortable().
+        self._search_box = QLineEdit()
+        self._search_box.setPlaceholderText("🔍 Filter rows…")
+        self._search_box.setClearButtonEnabled(True)
+        self._search_box.setFixedHeight(30)
+        self._search_box.setMinimumWidth(180)
+        self._search_box.textChanged.connect(self._on_search_changed)
+        frow.addWidget(self._search_box, 2)
+
         frow.addStretch()
 
         ref_btn = QPushButton("↻  Refresh")
@@ -163,6 +180,21 @@ class _ReportBase(QWidget):
 
     def _extra_filters(self, row):
         pass
+
+    # ── Filter target registration ────────────────────────────────────────
+    def _register_filter_target(self, table) -> None:
+        """Wire a table to the shell's free-text search input.
+
+        Subclasses call this right after `make_sortable(t)` so the
+        global search box hides non-matching rows. Multiple tables on
+        one report (e.g. by_flat + by_mode on the receipts report) can
+        each be registered; the search filters all of them together."""
+        if table not in self._filter_targets:
+            self._filter_targets.append(table)
+
+    def _on_search_changed(self, text: str) -> None:
+        for t in self._filter_targets:
+            apply_text_filter(t, text)
 
     def _dates(self):
         if self.AS_OF:
@@ -340,6 +372,7 @@ class TrialBalancePage(_ReportBase):
             t.setItem(i, 8, _item(_fmt(d["closing_dr"]), right=True, colour=colour if net_dr else None))
             t.setItem(i, 9, _item(_fmt(d["closing_cr"]), right=True, colour=colour if net_cr else None))
         make_sortable(t)
+        self._register_filter_target(t)
 
         tot_dr = sum(d["closing_dr"] for d in self._data)
         tot_cr = sum(d["closing_cr"] for d in self._data)
@@ -541,6 +574,7 @@ class BalanceSheetPage(_ReportBase):
                 table.setItem(i, 3, _item(d["side"]))
             # Flat balance-sheet has no hierarchy — sort is safe.
             make_sortable(table)
+            self._register_filter_target(table)
             return
 
         # Grouped mode below — leave sort off (set inline because the table
@@ -689,6 +723,7 @@ class _LedgerBookPage(_ReportBase):
         # being meaningful once rows are re-ordered, but a user clicking
         # a column header has clearly asked for that trade-off.
         make_sortable(t)
+        self._register_filter_target(t)
 
         # KEY FIX: size the inner table to fit ALL its rows. Without this
         # Qt sizes the table to its default minimum (~80 px ≈ 2-3 rows)
@@ -905,6 +940,415 @@ class TDSReportPage(_ReportBase):
 
     def _do_pdf(self, exp, path):
         exp.tds_report(self._data, self.rpt.get_company(), path)
+
+
+# ── 8b. GSTR-3B working ───────────────────────────────────────────────────────
+
+class GSTR3BPage(_ReportBase):
+    TITLE    = "GSTR-3B"
+    SUBTITLE = "Summary return working — outward tax vs eligible ITC, net payable"
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Section", "IGST", "CGST", "SGST", "Total"], stretch_cols=[0]
+        )
+        self._body.addWidget(self._table, 1)
+
+        sum_bar = QFrame(); sum_bar.setObjectName("card")
+        sum_row = QHBoxLayout(sum_bar)
+        sum_row.setContentsMargins(18, 10, 18, 10); sum_row.setSpacing(32)
+        for attr, label, colour in [
+            ("_lbl_taxable", "Outward Taxable", THEME["text_secondary"]),
+            ("_lbl_output",  "Output Tax",      THEME["danger"]),
+            ("_lbl_itc",     "Eligible ITC",    THEME["success"]),
+            ("_lbl_net",     "Net Payable",     THEME["warning"]),
+        ]:
+            col = QVBoxLayout(); col.setSpacing(2)
+            l = QLabel(label); l.setStyleSheet(f"font-size:10px; color:{THEME['text_dim']};")
+            v = QLabel("₹0.00"); v.setStyleSheet(f"font-size:14px; font-weight:bold; color:{colour};")
+            col.addWidget(l); col.addWidget(v); sum_row.addLayout(col); setattr(self, attr, v)
+        sum_row.addStretch()
+        self._body.addWidget(sum_bar)
+
+    def refresh(self):
+        fd, td = self._dates()
+        d = self._data = self.rpt.gstr3b(fd, td)
+        sections = [
+            ("3.1  Outward tax", d["outward"], d["total_output"], THEME["danger"]),
+            ("4.  Eligible ITC", d["itc"],     d["total_itc"],    THEME["success"]),
+            ("Net payable",      d["net_payable"], d["total_payable"], THEME["warning"]),
+        ]
+        self._table.setRowCount(len(sections))
+        for i, (name, vals, total, colour) in enumerate(sections):
+            self._table.setItem(i, 0, _item(name))
+            self._table.setItem(i, 1, _item(_fmt(vals["IGST"]), right=True))
+            self._table.setItem(i, 2, _item(_fmt(vals["CGST"]), right=True))
+            self._table.setItem(i, 3, _item(_fmt(vals["SGST"]), right=True))
+            self._table.setItem(i, 4, _item(_fmt(total), right=True, colour=colour))
+        self._lbl_taxable.setText(_fmt(d["outward"]["taxable"]))
+        self._lbl_output.setText(_fmt(d["total_output"]))
+        self._lbl_itc.setText(_fmt(d["total_itc"]))
+        self._lbl_net.setText(_fmt(d["total_payable"]))
+        self._status.setText(
+            f"Period: {fd}  →  {td}  |  Outward taxable value: {_fmt(d['outward']['taxable'])}"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.gstr3b(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.gstr3b(self._data, self.rpt.get_company(), path)
+
+
+# ── 8c. GSTR-1 (outward supplies, invoice-wise) ───────────────────────────────
+
+class GSTR1Page(_ReportBase):
+    TITLE    = "GSTR-1"
+    SUBTITLE = "Outward supplies — invoice-wise, B2B / B2C"
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Invoice", "Date", "Party", "GSTIN", "POS", "Cat",
+             "Taxable", "CGST", "SGST", "IGST"], stretch_cols=[2]
+        )
+        self._body.addWidget(self._table, 1)
+
+        sum_bar = QFrame(); sum_bar.setObjectName("card")
+        sum_row = QHBoxLayout(sum_bar)
+        sum_row.setContentsMargins(18, 10, 18, 10); sum_row.setSpacing(32)
+        for attr, label, colour in [
+            ("_lbl_b2b",   "B2B Taxable",   THEME["text_secondary"]),
+            ("_lbl_b2c",   "B2C Taxable",   THEME["text_secondary"]),
+            ("_lbl_taxbl", "Total Taxable", THEME["text_secondary"]),
+            ("_lbl_tax",   "Total Tax",     THEME["danger"]),
+        ]:
+            col = QVBoxLayout(); col.setSpacing(2)
+            l = QLabel(label); l.setStyleSheet(f"font-size:10px; color:{THEME['text_dim']};")
+            v = QLabel("₹0.00"); v.setStyleSheet(f"font-size:14px; font-weight:bold; color:{colour};")
+            col.addWidget(l); col.addWidget(v); sum_row.addLayout(col); setattr(self, attr, v)
+        sum_row.addStretch()
+        self._body.addWidget(sum_bar)
+
+    def refresh(self):
+        fd, td = self._dates()
+        d = self._data = self.rpt.gstr1(fd, td)
+        rows = d["invoices"]
+        self._table.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            self._table.setItem(i, 0, _item(r["invoice_no"]))
+            self._table.setItem(i, 1, _item(r["invoice_date"]))
+            self._table.setItem(i, 2, _item(r["party"]))
+            self._table.setItem(i, 3, _item(r["gstin"]))
+            self._table.setItem(i, 4, _item(r["pos"]))
+            self._table.setItem(i, 5, _item(r["category"]))
+            self._table.setItem(i, 6, _item(_fmt(r["taxable"]), right=True))
+            self._table.setItem(i, 7, _item(_fmt(r["cgst"]), right=True))
+            self._table.setItem(i, 8, _item(_fmt(r["sgst"]), right=True))
+            self._table.setItem(i, 9, _item(_fmt(r["igst"]), right=True))
+        make_sortable(self._table)
+        self._register_filter_target(self._table)
+        self._lbl_b2b.setText(_fmt(d["b2b"]["taxable"]))
+        self._lbl_b2c.setText(_fmt(d["b2c"]["taxable"]))
+        self._lbl_taxbl.setText(_fmt(d["total_taxable"]))
+        self._lbl_tax.setText(_fmt(d["total_tax"]))
+        self._status.setText(
+            f"Period: {fd}  →  {td}  |  {d['b2b']['count']} B2B + {d['b2c']['count']} B2C invoices"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.gstr1(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.gstr1(self._data, self.rpt.get_company(), path)
+
+
+# ── 8d. GSTR-2B reconciliation (ITC matching) ─────────────────────────────────
+
+class GSTR2BReconPage(_ReportBase):
+    TITLE    = "GSTR-2B Reconciliation"
+    SUBTITLE = "Match the portal's 2B against your purchases — find ITC at risk"
+
+    def _extra_filters(self, row):
+        self._portal_rows = []
+        self._loaded_name = ""
+        btn = QPushButton("📂  Load GSTR-2B…")
+        btn.setFixedHeight(30)
+        btn.setToolTip("Download GSTR-2B (Excel/CSV) from the GST portal, then load it here.")
+        btn.clicked.connect(self._load_2b)
+        row.addWidget(btn)
+
+        pull = QPushButton("☁  Pull from portal")
+        pull.setFixedHeight(30)
+        pull.setToolTip("Fetch GSTR-2B directly from the GST portal for the 'From' month "
+                        "(needs an OTP; a small per-pull charge applies to your wallet).")
+        pull.clicked.connect(self._pull_from_portal)
+        row.addWidget(pull)
+
+    def _pull_from_portal(self):
+        """Auto-pull the 2B via the server (Sandbox GSP). Server holds the GSP
+        key + debits the wallet; we only relay the OTP. Period = the 'From' date's
+        month. GSTIN + GST username come from the company (set once at setup)."""
+        import requests
+        from PySide6.QtWidgets import QInputDialog
+        co = self.rpt.get_company()
+        gstin = (co.get("gstin") or "").strip()
+        username = (co.get("gst_username") or "").strip()
+        if not gstin or not username:
+            QMessageBox.information(self, "GST details needed",
+                "Set the company's GSTIN and GST portal username first "
+                "(Company settings → GST details). Then you can pull the 2B.")
+            return
+        fd, _ = self._dates()
+        year, month = fd[:4], fd[5:7]
+        try:
+            from core.license_manager import LicenseManager, SERVER_URL
+            mgr = LicenseManager()
+            base = SERVER_URL.rstrip("/")
+            payload = {"license_key": mgr.license_key, "machine_id": mgr.get_machine_id(),
+                       "gstin": gstin, "username": username}
+            r = requests.post(f"{base}/gst/2b/otp", json=payload, timeout=60)
+            j = r.json() if "application/json" in r.headers.get("content-type", "") else {}
+            if r.status_code != 200 or not j.get("ok"):
+                QMessageBox.warning(self, "Couldn't start pull",
+                                    j.get("detail") or j.get("error") or f"status {r.status_code}")
+                return
+            price = (j.get("price_paise") or 0) / 100.0
+        except Exception as e:
+            QMessageBox.critical(self, "Pull failed", str(e))
+            return
+        otp, ok = QInputDialog.getText(self, "Enter GST OTP",
+            f"An OTP was sent to the mobile registered for {gstin}.\n"
+            f"This pull will charge ₹{price:.2f} to your wallet.\n\nEnter the OTP:")
+        if not ok or not otp.strip():
+            return
+        try:
+            payload2 = dict(payload, otp=otp.strip(), year=year, month=month)
+            r2 = requests.post(f"{base}/gst/2b/fetch", json=payload2, timeout=120)
+            j2 = r2.json() if "application/json" in r2.headers.get("content-type", "") else {}
+            if r2.status_code != 200 or not j2.get("ok"):
+                QMessageBox.warning(self, "Pull failed",
+                                    j2.get("detail") or j2.get("error") or f"status {r2.status_code}")
+                return
+            self._portal_rows = j2.get("rows") or []
+            charged = (j2.get("charged_paise") or 0) / 100.0
+            bal = (j2.get("balance_paise") or 0) / 100.0
+            self._loaded_name = f"Portal 2B {month}/{year}"
+            QMessageBox.information(self, "GSTR-2B pulled",
+                f"Fetched {len(self._portal_rows)} invoice(s) for {month}/{year}.\n"
+                f"Charged ₹{charged:.2f} · wallet balance ₹{bal:.2f}.")
+            self.refresh()
+        except Exception as e:
+            QMessageBox.critical(self, "Pull failed", str(e))
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Status", "GSTIN", "Invoice", "Party",
+             "Book Taxable", "2B Taxable", "Book Tax", "2B Tax", "Diff"],
+            stretch_cols=[3]
+        )
+        self._body.addWidget(self._table, 1)
+
+        sum_bar = QFrame(); sum_bar.setObjectName("card")
+        sum_row = QHBoxLayout(sum_bar)
+        sum_row.setContentsMargins(18, 10, 18, 10); sum_row.setSpacing(28)
+        for attr, label, colour in [
+            ("_lbl_matched",  "Matched",          THEME["success"]),
+            ("_lbl_mismatch", "Mismatch",         THEME["warning"]),
+            ("_lbl_risk",     "ITC at Risk",      THEME["danger"]),
+            ("_lbl_only2b",   "Only in 2B",       THEME["text_secondary"]),
+            ("_lbl_itc",      "ITC Matched",      THEME["success"]),
+        ]:
+            col = QVBoxLayout(); col.setSpacing(2)
+            l = QLabel(label); l.setStyleSheet(f"font-size:10px; color:{THEME['text_dim']};")
+            v = QLabel("—"); v.setStyleSheet(f"font-size:14px; font-weight:bold; color:{colour};")
+            col.addWidget(l); col.addWidget(v); sum_row.addLayout(col); setattr(self, attr, v)
+        sum_row.addStretch()
+        self._body.addWidget(sum_bar)
+
+    def _load_2b(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load GSTR-2B (downloaded from the GST portal)",
+            "", "GSTR-2B (*.xlsx *.xls *.csv)")
+        if not path:
+            return
+        try:
+            from core.gst_import import parse_gstr2b
+            self._portal_rows = parse_gstr2b(path)
+            from pathlib import Path as _P
+            self._loaded_name = _P(path).name
+        except Exception as e:
+            QMessageBox.critical(self, "Couldn't read 2B", str(e))
+            return
+        if not self._portal_rows:
+            QMessageBox.warning(self, "Empty 2B",
+                "No invoice rows were found in that file. Use the B2B sheet of the "
+                "portal's GSTR-2B export.")
+            return
+        self.refresh()
+
+    def refresh(self):
+        fd, td = self._dates()
+        if not getattr(self, "_portal_rows", None):
+            self._table.setRowCount(0)
+            self._status.setText("Load a GSTR-2B file (downloaded from the GST portal) to reconcile.")
+            return
+        d = self._data = self.rpt.gstr2b_reconcile(fd, td, self._portal_rows)
+        ordered = (
+            [("✓ Matched", r, THEME["success"]) for r in d["matched"]]
+            + [("≠ Mismatch", r, THEME["warning"]) for r in d["mismatch"]]
+            + [("⚠ In books, not in 2B", r, THEME["danger"]) for r in d["only_books"]]
+            + [("• In 2B, not in books", r, THEME["text_secondary"]) for r in d["only_2b"]]
+        )
+        self._table.setRowCount(len(ordered))
+        for i, (status, r, colour) in enumerate(ordered):
+            def m(k):
+                return _fmt(r[k]) if k in r else ""
+            self._table.setItem(i, 0, _item(status, colour=colour))
+            self._table.setItem(i, 1, _item(r.get("gstin", "")))
+            self._table.setItem(i, 2, _item(r.get("invoice_no", "")))
+            self._table.setItem(i, 3, _item(r.get("party", "")))
+            self._table.setItem(i, 4, _item(m("book_taxable"), right=True))
+            self._table.setItem(i, 5, _item(m("b2b_taxable"), right=True))
+            self._table.setItem(i, 6, _item(m("book_tax"), right=True))
+            self._table.setItem(i, 7, _item(m("b2b_tax"), right=True))
+            self._table.setItem(i, 8, _item(m("diff"), right=True))
+        make_sortable(self._table)
+        self._register_filter_target(self._table)
+        self._lbl_matched.setText(str(d["n_matched"]))
+        self._lbl_mismatch.setText(str(d["n_mismatch"]))
+        self._lbl_risk.setText(_fmt(d["itc_at_risk"]))
+        self._lbl_only2b.setText(str(d["n_only_2b"]))
+        self._lbl_itc.setText(_fmt(d["itc_matched"]))
+        self._status.setText(
+            f"{self._loaded_name}  |  Period {fd} → {td}  |  "
+            f"{d['n_matched']} matched, {d['n_mismatch']} mismatch, "
+            f"{d['n_only_books']} only-in-books, {d['n_only_2b']} only-in-2B"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.gstr2b_recon(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.gstr2b_recon(self._data, self.rpt.get_company(), path)
+
+
+# ── 9b. TDS Register (26Q-style, by deductee) ─────────────────────────────────
+
+class TDSRegisterPage(_ReportBase):
+    TITLE    = "TDS Register"
+    SUBTITLE = "TDS deducted by deductee & section — the 26Q working set"
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Party", "PAN", "Section", "Nature", "Rate %", "Gross Paid", "TDS", "Txns"],
+            stretch_cols=[0, 3]
+        )
+        self._body.addWidget(self._table, 1)
+
+        sum_bar = QFrame(); sum_bar.setObjectName("card")
+        sum_row = QHBoxLayout(sum_bar)
+        sum_row.setContentsMargins(18, 10, 18, 10); sum_row.setSpacing(32)
+        for attr, label, colour in [
+            ("_lbl_parties", "Deductees",   THEME["text_secondary"]),
+            ("_lbl_gross",   "Gross Paid",  THEME["text_secondary"]),
+            ("_lbl_tds",     "Total TDS",   THEME["warning"]),
+        ]:
+            col = QVBoxLayout(); col.setSpacing(2)
+            l = QLabel(label); l.setStyleSheet(f"font-size:10px; color:{THEME['text_dim']};")
+            v = QLabel("—"); v.setStyleSheet(f"font-size:14px; font-weight:bold; color:{colour};")
+            col.addWidget(l); col.addWidget(v); sum_row.addLayout(col); setattr(self, attr, v)
+        sum_row.addStretch()
+        self._body.addWidget(sum_bar)
+
+    def refresh(self):
+        fd, td = self._dates()
+        d = self._data = self.rpt.tds_register(fd, td)
+        rows = d["parties"]
+        self._table.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            self._table.setItem(i, 0, _item(r["party"]))
+            self._table.setItem(i, 1, _item(r["pan"]))
+            self._table.setItem(i, 2, _item(r["section"]))
+            self._table.setItem(i, 3, _item(r["section_desc"]))
+            self._table.setItem(i, 4, _item(f"{r['rate']}%", right=True))
+            self._table.setItem(i, 5, _item(_fmt(r["gross"]), right=True))
+            self._table.setItem(i, 6, _item(_fmt(r["tds"]), right=True, colour=THEME["warning"]))
+            self._table.setItem(i, 7, _item(str(r["count"]), right=True))
+        make_sortable(self._table)
+        self._register_filter_target(self._table)
+        self._lbl_parties.setText(str(len(rows)))
+        self._lbl_gross.setText(_fmt(d["total_gross"]))
+        self._lbl_tds.setText(_fmt(d["total_tds"]))
+        self._status.setText(f"Period: {fd}  →  {td}  |  Total TDS deducted: {_fmt(d['total_tds'])}")
+
+    def _do_excel(self, exp, path):
+        exp.tds_register(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.tds_register(self._data, self.rpt.get_company(), path)
+
+
+# ── 8e. HSN summary ───────────────────────────────────────────────────────────
+
+class HSNSummaryPage(_ReportBase):
+    TITLE    = "HSN Summary"
+    SUBTITLE = "Outward supplies by HSN/SAC — the GSTR-1 HSN table"
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["HSN / SAC", "Taxable", "CGST", "SGST", "IGST", "Total Tax"],
+            stretch_cols=[0]
+        )
+        self._body.addWidget(self._table, 1)
+
+        sum_bar = QFrame(); sum_bar.setObjectName("card")
+        sum_row = QHBoxLayout(sum_bar)
+        sum_row.setContentsMargins(18, 10, 18, 10); sum_row.setSpacing(32)
+        for attr, label, colour in [
+            ("_lbl_codes",   "HSN Codes",     THEME["text_secondary"]),
+            ("_lbl_taxable", "Total Taxable", THEME["text_secondary"]),
+            ("_lbl_tax",     "Total Tax",     THEME["danger"]),
+        ]:
+            col = QVBoxLayout(); col.setSpacing(2)
+            l = QLabel(label); l.setStyleSheet(f"font-size:10px; color:{THEME['text_dim']};")
+            v = QLabel("—"); v.setStyleSheet(f"font-size:14px; font-weight:bold; color:{colour};")
+            col.addWidget(l); col.addWidget(v); sum_row.addLayout(col); setattr(self, attr, v)
+        sum_row.addStretch()
+        self._body.addWidget(sum_bar)
+
+    def refresh(self):
+        fd, td = self._dates()
+        d = self._data = self.rpt.hsn_summary(fd, td)
+        rows = d["rows"]
+        self._table.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            total = round(r["cgst"] + r["sgst"] + r["igst"], 2)
+            self._table.setItem(i, 0, _item(r["hsn"]))
+            self._table.setItem(i, 1, _item(_fmt(r["taxable"]), right=True))
+            self._table.setItem(i, 2, _item(_fmt(r["cgst"]), right=True))
+            self._table.setItem(i, 3, _item(_fmt(r["sgst"]), right=True))
+            self._table.setItem(i, 4, _item(_fmt(r["igst"]), right=True))
+            self._table.setItem(i, 5, _item(_fmt(total), right=True, colour=THEME["danger"]))
+        make_sortable(self._table)
+        self._register_filter_target(self._table)
+        self._lbl_codes.setText(str(len(rows)))
+        self._lbl_taxable.setText(_fmt(d["total_taxable"]))
+        self._lbl_tax.setText(_fmt(d["total_tax"]))
+        self._status.setText(
+            f"Period: {fd}  →  {td}  |  outward supplies grouped by HSN/SAC "
+            f"(set codes on sales ledgers)"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.hsn_summary(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.hsn_summary(self._data, self.rpt.get_company(), path)
 
 
 # ── Receivables Aging ────────────────────────────────────────────────────────

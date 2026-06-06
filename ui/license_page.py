@@ -18,9 +18,9 @@ from core.license_manager import (
 )
 from core import pricing
 
-# Upgrade flow points at the real checkout once accgenie.in is live.
-# Override locally with the ACCGENIE_UPGRADE_URL env var if needed
-# (e.g. pointing at a staging marketing site).
+# Marketing checkout site is at apps.ai-consultants.in (not accgenie.in
+# — that domain is parked at Hostinger and not in use). Override locally
+# with ACCGENIE_UPGRADE_URL env var if needed (e.g. for staging).
 #
 # The button-click handlers below append "?product=<x>&plan=<y>" to this
 # base — the marketing page reads those query params and pre-selects
@@ -28,7 +28,7 @@ from core import pricing
 import os as _os
 UPGRADE_URL = _os.environ.get(
     "ACCGENIE_UPGRADE_URL",
-    "https://accgenie.in/checkout.html",
+    "https://apps.ai-consultants.in/checkout.html",
 )
 
 # Email fallback for when the marketing site isn't reachable. Click
@@ -325,7 +325,7 @@ class LicensePage(QWidget):
         kc.setSpacing(10)
 
         info = QLabel(
-            "Purchase a plan at accgenie.in "
+            "Purchase a plan at apps.ai-consultants.in "
             "to receive your license key by email."
         )
         info.setStyleSheet(

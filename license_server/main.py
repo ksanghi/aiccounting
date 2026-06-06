@@ -15,7 +15,7 @@ Endpoints:
   POST /admin/keys/{key}/revoke    admin — revoke
   POST /admin/keys/{key}/extend    admin — extend expiry
   POST /admin/keys/{key}/seats     admin — change per-license seat cap
-  POST /admin/credits/{key}/topup  admin — add AI credits
+  POST /admin/credits/{key}/topup  admin — add wallet/credit balance (paise)
 
 Admin endpoints require header:  Authorization: Bearer <ADMIN_TOKEN>
 """
@@ -94,6 +94,10 @@ app.add_middleware(
 class ValidateRequest(BaseModel):
     license_key: str
     machine_id:  str
+    # The asking app's product, e.g. 'rwagenie'. When present, a license
+    # whose product differs is rejected (each product's license only works
+    # in its own app). Optional for back-compat with older builds.
+    product:     Optional[str] = None
     app_version: str = ""
 
 
@@ -226,6 +230,10 @@ class CheckoutCreateResponse(BaseModel):
     plan_name:        Optional[str] = None
     product:          Optional[str] = None  # 'accgenie' or 'rwagenie'
     error:            Optional[str] = None
+    # Free-tier branch (no Razorpay round-trip): server has already minted
+    # + emailed the key by the time this response is sent.
+    free:             bool = False
+    license_key:      Optional[str] = None
 
 
 class InstallStats(BaseModel):
@@ -250,7 +258,7 @@ class WalletDebitRequest(BaseModel):
     machine_id:      str    = Field(default="", max_length=64)
     amount_paise:    int    = Field(..., ge=1, le=10_000_000)
     kind:            str    = Field(default="sms_broadcast",
-                                    pattern="^(sms_otp|sms_broadcast|visitor_pass_wa|visitor_pass_sms)$")
+                                    pattern="^(sms_otp|sms_broadcast|visitor_pass_wa|visitor_pass_sms|decision_wa)$")
     recipient_phone: str    = Field(default="", max_length=32)
     ref:             str    = Field(default="", max_length=128)
 
@@ -481,7 +489,7 @@ def validate(
         return ValidateResponse(valid=False, error=error)
 
     if not is_valid_format(key):
-        return _fail("Invalid key format. Expected ACCG-XXXX-XXXX-XXXX.")
+        return _fail("Invalid key format. Expected XXXX-XXXX-XXXX-XXXX.")
     if not machine_id:
         return _fail("Missing machine_id.")
 
@@ -492,6 +500,22 @@ def validate(
         return _fail("License has been revoked.", license_id=lic.id)
     if lic.expires_at < date.today():
         return _fail("License has expired.", license_id=lic.id)
+
+    # Product match — a license only works in its own app. Checked only
+    # when the app declares its product (back-compat with older builds).
+    # Done before machine binding so a wrong product never burns a seat.
+    if body.product:
+        _want = body.product.strip().lower()
+        _have = (lic.product or "accgenie").lower()
+        if _want and _want != _have:
+            _names = {"accgenie": "Accounts HQ", "rwagenie": "RWA HQ",
+                      "tradehq": "tradeHQ"}
+            return _fail(
+                f"This is a {_names.get(_have, _have)} license — it won't work "
+                f"in {_names.get(_want, _want)}. Please use a "
+                f"{_names.get(_want, _want)} license.",
+                license_id=lic.id,
+            )
 
     # Machine binding: bind on first seen, reject if over per-license seat cap.
     # seats_allowed is per-License (replaces the old global config knob).
@@ -853,6 +877,90 @@ def credit_topup(key: str, body: TopupRequest, db: Session = Depends(get_db)):
     )
 
 
+# ── GST GSTR-2B pull (Sandbox GSP proxy, wallet-metered) ─────────────────────
+# REPORTS/reconcile: read the taxpayer's 2B to reconcile their books. NOT
+# compliance/filing. Per-pull charge debits the credits wallet; the desktop
+# never holds the GSP key. See sandbox_gst.py for the proven Sandbox contract.
+
+import os as _os
+_GST_2B_PULL_PAISE = int(_os.environ.get("GST_2B_PULL_PAISE", "1000"))   # markup; Rs 10 default
+
+
+class Gst2bOtpReq(BaseModel):
+    license_key: str
+    machine_id:  str = ""
+    gstin:       str
+    username:    str
+
+
+class Gst2bFetchReq(BaseModel):
+    license_key: str
+    machine_id:  str = ""
+    gstin:       str
+    username:    str
+    otp:         str
+    year:        str
+    month:       str
+
+
+def _gst_license(db: Session, key: str, machine_id: str) -> License:
+    key = (key or "").strip().upper()
+    if not is_valid_format(key):
+        raise HTTPException(401, "Invalid license key format.")
+    lic = db.scalar(select(License).where(License.license_key == key))
+    if lic is None or lic.revoked or lic.expires_at < date.today():
+        raise HTTPException(401, "License not valid.")
+    if machine_id.strip():
+        b = db.scalar(select(MachineBinding).where(
+            MachineBinding.license_id == lic.id,
+            MachineBinding.machine_id == machine_id.strip()))
+        if b is None:
+            raise HTTPException(401, "Machine not bound to this license.")
+    return lic
+
+
+@app.post("/api/v1/gst/2b/otp")
+def gst_2b_otp(body: Gst2bOtpReq, db: Session = Depends(get_db)):
+    """Trigger the GSTN OTP for a 2B pull. Gated on wallet balance so the user
+    isn't sent an OTP they can't afford to spend."""
+    lic = _gst_license(db, body.license_key, body.machine_id)
+    credit = _get_or_create_credit_row(db, lic.id)
+    db.commit()
+    if credit.balance_paise < _GST_2B_PULL_PAISE:
+        raise HTTPException(402, (
+            f"Low balance. A GSTR-2B pull costs Rs {_GST_2B_PULL_PAISE/100:.2f}; "
+            f"you have Rs {credit.balance_paise/100:.2f}. Top up to continue."))
+    try:
+        from license_server.sandbox_gst import generate_otp
+        generate_otp(body.gstin.strip().upper(), body.username.strip())
+    except Exception as e:
+        raise HTTPException(502, f"GSP OTP request failed: {e}")
+    return {"ok": True, "message": "OTP sent to the registered mobile.",
+            "price_paise": _GST_2B_PULL_PAISE, "balance_paise": credit.balance_paise}
+
+
+@app.post("/api/v1/gst/2b/fetch")
+def gst_2b_fetch(body: Gst2bFetchReq, db: Session = Depends(get_db)):
+    """Verify the OTP, fetch the 2B, debit the wallet ONLY on success, return
+    normalised B2B invoice rows for the desktop reconciler."""
+    lic = _gst_license(db, body.license_key, body.machine_id)
+    credit = _get_or_create_credit_row(db, lic.id)
+    if credit.balance_paise < _GST_2B_PULL_PAISE:
+        raise HTTPException(402, "Low balance — top up to pull.")
+    try:
+        from license_server.sandbox_gst import verify_otp, fetch_2b
+        gstin = body.gstin.strip().upper()
+        sess = verify_otp(gstin, body.username.strip(), body.otp.strip())
+        rows = fetch_2b(sess, gstin, body.year.strip(), body.month.strip())
+    except Exception as e:
+        raise HTTPException(502, f"GSTR-2B fetch failed (no charge): {e}")
+    credit.balance_paise = max(0, credit.balance_paise - _GST_2B_PULL_PAISE)
+    credit.updated_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True, "rows": rows, "count": len(rows),
+            "charged_paise": _GST_2B_PULL_PAISE, "balance_paise": credit.balance_paise}
+
+
 def _forward_to_anthropic(body: bytes) -> tuple[int, dict | None, str]:
     """
     Blocking forward to Anthropic. Returns (status_code, json_or_None, error_text).
@@ -988,16 +1096,13 @@ async def ai_proxy(
     )
 
 
-# ── SMS Wallet (per-license pre-paid balance) ───────────────────────────────
-
-def _get_or_create_wallet(db: Session, license_id: int) -> SMSWallet:
-    """Lazy-create. New licenses start at 0 paise."""
-    row = db.scalar(select(SMSWallet).where(SMSWallet.license_id == license_id))
-    if row is None:
-        row = SMSWallet(license_id=license_id, balance_paise=0)
-        db.add(row)
-        db.flush()
-    return row
+# ── Wallet = the `credits` balance (ONE wallet) ─────────────────────────────
+# RWAHQ_ARCHITECTURE.md §3: there is ONE prepaid balance per license — the
+# `credits` row (`_get_or_create_credit_row`). The old per-license `sms_wallets`
+# balance is RETIRED: its accessor `_get_or_create_wallet` was deleted and the
+# /api/v1/wallet/* endpoints + the Razorpay wallet-topup now operate on
+# `credits`. `SMSWallet` (the balance table) is dormant; `SMSWalletTxn` lives on
+# only as the per-message audit ledger. Do NOT reintroduce a second balance.
 
 
 def _resolve_active_license(db: Session, license_key: str) -> tuple[Optional[License], str]:
@@ -1026,15 +1131,21 @@ def wallet_balance(
     """Read-only wallet balance. Public — clients poll this to show the
     current balance in the desktop "Wallet" page and the web-app footer.
 
+    ONE WALLET (RWAHQ_ARCHITECTURE.md §3): the wallet IS the `credits`
+    balance. AI usage AND messages (SMS, visitor-pass WA, decision WA) all
+    draw from it; all top-ups credit it. The old separate `sms_wallets`
+    balance is retired — this endpoint and /api/v1/credits/balance return
+    the SAME number now.
+
     Returns balance in paise (₹0.50 SMS = 50 paise)."""
     lic, err = _resolve_active_license(db, license_key)
     if lic is None:
         return WalletBalanceResponse(ok=False, error=err)
-    w = _get_or_create_wallet(db, lic.id)
+    row = _get_or_create_credit_row(db, lic.id)
     db.commit()
     return WalletBalanceResponse(
         ok=True,
-        balance_paise=w.balance_paise,
+        balance_paise=row.balance_paise,
         license_key=lic.license_key,
     )
 
@@ -1059,23 +1170,27 @@ def wallet_debit(
     if lic is None:
         return WalletDebitResponse(ok=False, error=err)
 
-    w = _get_or_create_wallet(db, lic.id)
-    if w.balance_paise < body.amount_paise:
+    # ONE WALLET: debit the `credits` balance (the single active wallet) —
+    # not a separate sms_wallets row. `sms_wallet_txns` is kept ONLY as the
+    # per-message audit ledger (recipient/kind/ref), with balance_after now
+    # reflecting the credits balance.
+    row = _get_or_create_credit_row(db, lic.id)
+    if row.balance_paise < body.amount_paise:
         return WalletDebitResponse(
             ok=False,
-            balance_after_paise=w.balance_paise,
+            balance_after_paise=row.balance_paise,
             error="insufficient_balance",
         )
 
-    w.balance_paise -= body.amount_paise
-    w.updated_at = datetime.utcnow()
+    row.balance_paise -= body.amount_paise
+    row.updated_at = datetime.utcnow()
     txn = SMSWalletTxn(
         license_id=lic.id,
         amount_paise=-body.amount_paise,          # signed: debit is negative
         kind=body.kind,
         ref=body.ref or "",
         recipient_phone=body.recipient_phone or "",
-        balance_after_paise=w.balance_paise,
+        balance_after_paise=row.balance_paise,
         machine_id=body.machine_id or "",
     )
     db.add(txn)
@@ -1083,7 +1198,7 @@ def wallet_debit(
     db.refresh(txn)
     return WalletDebitResponse(
         ok=True,
-        balance_after_paise=w.balance_paise,
+        balance_after_paise=row.balance_paise,
         txn_id=txn.id,
     )
 
@@ -1175,11 +1290,11 @@ def checkout_create_order(
          frontend can hand them to Razorpay Checkout JS.
 
     The actual fulfillment (mint license + email key) happens later in
-    /webhooks/razorpay when Razorpay confirms the payment.
+    /webhooks/razorpay when Razorpay confirms the payment — EXCEPT for
+    the FREE tier, which short-circuits below: no Razorpay order is
+    created, the license is minted and emailed inline, and the caller
+    gets `free=true` in the response so it can skip the Razorpay modal.
     """
-    if not razorpay_client.is_enabled():
-        raise HTTPException(503, "Payments are not configured on this server.")
-
     plan = (body.plan or "").upper()
     product = (body.product or "accgenie").lower()
     country = (body.country_code or "IN").upper()
@@ -1189,6 +1304,65 @@ def checkout_create_order(
 
     if product not in VALID_PRODUCTS:
         return CheckoutCreateResponse(ok=False, error=f"Unknown product: {product}")
+
+    # ── FREE-tier short-circuit ──────────────────────────────────────
+    # No payment, so we don't need Razorpay to be enabled on this
+    # server. Mint the key, persist an Order row for audit, email the
+    # key, and return early.
+    if plan == "FREE":
+        try:
+            lic = mint_license(
+                db=db,
+                product=product,
+                plan="FREE",
+                customer_email=email,
+                company_name=body.company_name or "",
+                expires_at=default_expiry_for_plan("FREE"),
+                notes="free-tier self-serve checkout",
+            )
+        except MintError as e:
+            return CheckoutCreateResponse(ok=False, error=f"Mint failed: {e}")
+
+        # Audit row — same shape as a paid Order but amount=0,
+        # razorpay_order_id synthesised so the unique-index doesn't clash.
+        order = Order(
+            razorpay_order_id=f"free-{int(datetime.utcnow().timestamp())}-{lic.id}",
+            product=product, plan="FREE", amount_paise=0, currency="INR",
+            country_code=country, customer_email=email,
+            customer_name=body.customer_name or "",
+            customer_phone=body.customer_phone or "",
+            company_name=body.company_name or "",
+            status="paid", license_id=lic.id,
+            notes=f"[free] license={lic.license_key}",
+        )
+        db.add(order)
+        db.commit()
+
+        # Email the key (best-effort — same pattern as the webhook).
+        try:
+            email_service.send_license_email(
+                to_email=email,
+                license_key=lic.license_key,
+                plan="FREE",
+                expires_at=lic.expires_at.isoformat(),
+                customer_name=body.customer_name or "",
+                amount_paid_str="Free",
+                product=product,
+            )
+        except Exception:
+            pass
+
+        return CheckoutCreateResponse(
+            ok=True, free=True,
+            plan="FREE", plan_name="Free",
+            product=product,
+            amount_paise=0, amount_display="Free", currency="INR",
+            license_key=lic.license_key,
+        )
+
+    # Paid tiers from here on need Razorpay configured.
+    if not razorpay_client.is_enabled():
+        raise HTTPException(503, "Payments are not configured on this server.")
 
     # ── Pricing ──
     # AG uses the baked pricing.xlsx via resolve_price().
@@ -1361,15 +1535,17 @@ async def razorpay_webhook(
         if lic is None:
             raise HTTPException(500, f"Wallet top-up target license {target_id} not found")
 
-        w = _get_or_create_wallet(db, lic.id)
-        w.balance_paise += order.amount_paise
-        w.updated_at = datetime.utcnow()
+        # ONE WALLET: a wallet top-up credits the `credits` balance (the
+        # single active wallet), not a separate sms_wallets row.
+        row = _get_or_create_credit_row(db, lic.id)
+        row.balance_paise += order.amount_paise
+        row.updated_at = datetime.utcnow()
         db.add(SMSWalletTxn(
             license_id=lic.id,
             amount_paise=order.amount_paise,
             kind="topup",
             ref=rp_payment_id,
-            balance_after_paise=w.balance_paise,
+            balance_after_paise=row.balance_paise,
         ))
         order.status              = "paid"
         order.razorpay_payment_id = rp_payment_id
@@ -1380,7 +1556,7 @@ async def razorpay_webhook(
         db.commit()
         return {"ok": True, "status": "wallet_credited",
                 "wallet_license_id": lic.id,
-                "balance_paise": w.balance_paise}
+                "balance_paise": row.balance_paise}
 
     # ── Tier-purchase branch (the original flow) ──
     # Mint the license. Carry the product (accgenie/rwagenie) forward
@@ -1439,7 +1615,50 @@ async def razorpay_webhook(
 # Razorpay activation needs a public website at the registered KYC
 # business name. Hosting the static pages from the same Fly app avoids
 # spinning up a separate host. See project-marketing-site memory.
-_marketing_dir = Path(__file__).resolve().parent.parent / "marketing"
+#
+# Multi-tenant marketing — two parallel brands on the same Fly app:
+#   apps.ai-consultants.in        → marketing/      (Aashray Sanghi)
+#   aic.ai-consultants.in         → marketing-aic/  (AI Consultants /
+#                                                    Analysis and Ideas
+#                                                    Consultants, prop.
+#                                                    Monika Sanghi)
+# A small middleware checks the Host header and (for AIC) rewrites the
+# request path to a private prefix that's served from the AIC folder.
+# The user-visible URL stays clean; only the internal routing path
+# changes.
+
+_marketing_dir     = Path(__file__).resolve().parent.parent / "marketing"
+_marketing_aic_dir = Path(__file__).resolve().parent.parent / "marketing-aic"
+
+_AIC_INTERNAL_PREFIX = "/_aic-static"
+_AIC_HOSTNAME        = "aic.ai-consultants.in"
+
+
+@app.middleware("http")
+async def _aic_host_rewrite(request, call_next):
+    """For requests on the AIC hostname, internally re-route to the
+    AIC static mount. User-visible URL is unchanged. Requests on any
+    other hostname (apps.*, license.*, raw fly.dev, etc.) pass through
+    untouched and serve the existing marketing/ folder."""
+    host = (request.headers.get("host") or "").split(":", 1)[0].lower()
+    if host == _AIC_HOSTNAME:
+        # Don't double-prefix if for some reason the path is already
+        # under the internal prefix (shouldn't happen via the public
+        # hostname, but defensive).
+        path = request.scope["path"]
+        if not path.startswith(_AIC_INTERNAL_PREFIX):
+            request.scope["path"] = _AIC_INTERNAL_PREFIX + path
+            request.scope["raw_path"] = request.scope["path"].encode("utf-8")
+    return await call_next(request)
+
+
+# Mount AIC FIRST so /_aic-static routes match before the catch-all /
+# mount below it.
+if _marketing_aic_dir.is_dir():
+    app.mount(_AIC_INTERNAL_PREFIX,
+              StaticFiles(directory=str(_marketing_aic_dir), html=True),
+              name="marketing-aic")
+
 if _marketing_dir.is_dir():
     app.mount("/", StaticFiles(directory=str(_marketing_dir), html=True),
               name="marketing")

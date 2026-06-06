@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tradeHQ — every broker, one cockpit · AI Consultants</title>
+<meta name="description" content="tradeHQ pulls every broker into one cockpit — holdings, P&L and ledgers across your whole family. Auto-synced, reconciled into your books. ₹200/month. By AI Consultants.">
+<style>
+  :root {
+    --bg: #0B1220; --bg-soft: #F8FAFC; --ink: #0F172A; --ink-mute: #475569;
+    --line: #E2E8F0; --accent: #F5A524; --accent-2: #FBBF24; --accent-deep: #B45309; --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  body { background: var(--white); line-height: 1.55; }
+  a { color: inherit; text-decoration: none; }
+
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,0.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav-inner { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; color: var(--ink); }
+  .brand-dot { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .crumb { color: var(--ink-mute); font-weight: 500; }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; color: var(--ink-mute); }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { background: var(--accent-deep); color: white; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .nav-cta:hover { background: #92400E; }
+
+  .hero { background: linear-gradient(180deg, #FFFFFF 0%, #FFF7ED 100%); padding: 80px 24px 56px; text-align: center; }
+  .eyebrow { display: inline-block; background: rgba(245,165,36,0.1); color: var(--accent-deep); border: 1px solid rgba(245,165,36,0.28); padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; margin-bottom: 24px; }
+  h1 { font-size: clamp(34px, 5vw, 58px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; max-width: 820px; margin: 0 auto 22px; }
+  h1 .grad { background: linear-gradient(135deg, var(--accent-deep) 0%, var(--accent) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p.lead { font-size: clamp(17px, 1.4vw, 21px); color: var(--ink-mute); max-width: 680px; margin: 0 auto 36px; }
+  .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary, .btn-ghost { display: inline-block; padding: 14px 26px; border-radius: 10px; font-size: 15px; font-weight: 600; }
+  .btn-primary { background: var(--accent-deep); color: white; box-shadow: 0 8px 22px -8px rgba(180,83,9,0.5); }
+  .btn-primary:hover { background: #92400E; }
+  .btn-ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
+  .btn-ghost:hover { border-color: var(--ink); }
+
+  .section { max-width: 1080px; margin: 0 auto; padding: 72px 24px; }
+  .section-head { text-align: center; max-width: 640px; margin: 0 auto 44px; }
+  .section-head h2 { font-size: clamp(26px, 3.2vw, 38px); letter-spacing: -0.02em; font-weight: 800; margin-bottom: 12px; }
+  .section-head p { color: var(--ink-mute); font-size: 17px; }
+
+  .feat { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+  .fcard { background: var(--white); border: 1px solid var(--line); border-radius: 14px; padding: 26px; }
+  .fcard .ic { font-size: 24px; margin-bottom: 12px; }
+  .fcard h3 { font-size: 19px; font-weight: 700; margin-bottom: 8px; }
+  .fcard p { color: var(--ink-mute); font-size: 15px; }
+  .fcard b { color: var(--ink); }
+
+  .price-wrap { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .pricecard { max-width: 420px; margin: 0 auto; background: var(--white); border: 2px solid var(--accent); border-radius: 18px; padding: 34px; text-align: center; box-shadow: 0 24px 50px -28px rgba(180,83,9,0.4); }
+  .pricecard .amt { font-size: 46px; font-weight: 800; letter-spacing: -0.02em; }
+  .pricecard .amt small { font-size: 17px; color: var(--ink-mute); font-weight: 600; }
+  .pricecard ul { list-style: none; text-align: left; margin: 22px 0; }
+  .pricecard li { padding: 7px 0; color: var(--ink-mute); font-size: 15px; }
+  .pricecard li::before { content: "✓"; color: var(--accent-deep); font-weight: 800; margin-right: 10px; }
+
+  .final { background: linear-gradient(135deg, #1C1408 0%, #0B1220 100%); color: white; text-align: center; padding: 72px 24px; }
+  .final h2 { color: white; font-size: clamp(24px, 3vw, 34px); font-weight: 800; margin-bottom: 14px; }
+  .final p { color: #E7D9C4; max-width: 540px; margin: 0 auto 28px; font-size: 17px; }
+
+  footer { background: var(--bg); color: #94A3B8; padding: 40px 24px; text-align: center; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.06); }
+  footer a { color: #CBD5E1; } footer a:hover { color: white; }
+
+  @media (max-width: 760px) { .feat { grid-template-columns: 1fr; } .nav-links { display: none; } }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-dot"></span>
+      <span>AI Consultants <span class="crumb">/ tradeHQ</span></span>
+    </a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="index.html">All products</a>
+    </div>
+    <a class="nav-cta" href="pricing.html">Try free</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <span class="eyebrow">tradeHQ · family-wealth cockpit</span>
+  <h1>Every broker. <span class="grad">One cockpit.</span></h1>
+  <p class="lead">Your family’s trading lives across Zerodha, Groww, a demat here, a folio there. tradeHQ pulls it all into <b>one view</b> — holdings, P&amp;L and ledgers — and flows it straight into your books.</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="pricing.html">Start free</a>
+    <a class="btn-ghost" href="index.html">See all products</a>
+  </div>
+</section>
+
+<section class="section" id="features">
+  <div class="section-head">
+    <h2>One honest view of the family’s money</h2>
+    <p>Stop opening five broker apps and a spreadsheet to answer “so where do we stand?”</p>
+  </div>
+  <div class="feat">
+    <div class="fcard">
+      <div class="ic">🔄</div>
+      <h3>Auto-pull, no exports</h3>
+      <p>Log in once and tradeHQ syncs each broker for you — <b>no CSV exports, no manual copy-paste.</b> It reads what the broker’s own app reads.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic">👨‍👩‍👧</div>
+      <h3>The whole family, together</h3>
+      <p>Every member, every broker, on one screen. See the household’s real position — <b>not one account at a time.</b></p>
+    </div>
+    <div class="fcard">
+      <div class="ic">📊</div>
+      <h3>Holdings, P&amp;L &amp; ledgers</h3>
+      <p>Current holdings, realised &amp; unrealised P&amp;L, and the cash ledger — consolidated across brokers and segments.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic">🧾</div>
+      <h3>Flows into Accounts HQ</h3>
+      <p>Clean ledgers and holdings post straight into <a href="accountshq.html" style="color:var(--accent-deep);font-weight:600">Accounts HQ</a> as investments — so your books and your trades agree, automatically.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic">📰</div>
+      <h3>News that matters to you</h3>
+      <p>A once-a-day AI digest of the news that touches <b>what you actually hold</b> — not a firehose of every ticker.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic">🔒</div>
+      <h3>Runs on your machine</h3>
+      <p>Your credentials and positions stay on your own desktop. tradeHQ is your private cockpit — not another account on someone’s server.</p>
+    </div>
+  </div>
+</section>
+
+<section class="price-wrap">
+  <div class="section">
+    <div class="section-head">
+      <h2>One plan. One price.</h2>
+      <p>No tiers to decode. Try it free, then it’s a flat monthly.</p>
+    </div>
+    <div class="pricecard">
+      <div class="amt">₹200<small> / month</small></div>
+      <p style="color:var(--ink-mute);margin-top:6px">Everything in tradeHQ, for the whole family.</p>
+      <ul>
+        <li>All your brokers, auto-synced</li>
+        <li>Family-wide holdings, P&amp;L &amp; ledgers</li>
+        <li>Posts to Accounts HQ</li>
+        <li>Daily AI news on your holdings</li>
+        <li>Runs private, on your machine</li>
+      </ul>
+      <a class="btn-primary" href="pricing.html" style="display:block">Start free</a>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <h2>See where the family really stands.</h2>
+  <p>Pull every broker into one cockpit — and let your books keep up by themselves.</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="pricing.html">Start free</a>
+    <a class="btn-ghost" href="index.html" style="background:transparent;color:white;border-color:rgba(255,255,255,0.3)">All products</a>
+  </div>
+</section>
+
+<footer>
+  <p style="margin-bottom:12px">
+    <a href="accountshq.html">Accounts HQ</a> ·
+    <a href="rwahq/">RWA HQ</a> ·
+    <a href="tradehq.html">tradeHQ</a> ·
+    <a href="pricing.html">Pricing</a> ·
+    <a href="contact.html">Contact</a> ·
+    <a href="privacy.html">Privacy</a> ·
+    <a href="terms.html">Terms</a> ·
+    <a href="refund.html">Refund Policy</a> ·
+    <a href="shipping.html">Delivery</a>
+  </p>
+  <p>© 2026 AI Consultants · <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
+  <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
+</footer>
+
+</body>
+</html>

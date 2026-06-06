@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Consultants — Software for Indian businesses</title>
+<meta name="description" content="AI Consultants builds focused software for Indian businesses: Accounts HQ (accounting, GST, TDS), RWA HQ (society & apartment management), tradeHQ (family trading & investments). Built for India. Start free.">
+<style>
+  :root {
+    --bg: #0B1220;
+    --bg-card: #111A2E;
+    --bg-soft: #F8FAFC;
+    --ink: #0F172A;
+    --ink-mute: #475569;
+    --line: #E2E8F0;
+    --accent: #0EA5A5;
+    --accent-2: #00D4AA;
+    --accent-warm: #F5A524;
+    --accent-rwa: #6366F1;
+    --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  body { background: var(--white); line-height: 1.55; }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+
+  /* ── Nav ───────────────────────────────────────── */
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,0.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav-inner { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; color: var(--ink); }
+  .brand-dot { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; color: var(--ink-mute); }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { background: var(--accent); color: white; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .nav-cta:hover { background: #0C8E8E; }
+
+  /* ── Hero ──────────────────────────────────────── */
+  .hero { background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%); padding: 80px 24px 56px; text-align: center; }
+  .eyebrow { display: inline-block; background: rgba(14,165,165,0.08); color: var(--accent); border: 1px solid rgba(14,165,165,0.2); padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 24px; }
+  h1 { font-size: clamp(36px, 5vw, 60px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; max-width: 860px; margin: 0 auto 22px; }
+  h1 .grad { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p.lead { font-size: clamp(17px, 1.4vw, 21px); color: var(--ink-mute); max-width: 700px; margin: 0 auto 36px; }
+  .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary, .btn-ghost { display: inline-block; padding: 14px 26px; border-radius: 10px; font-size: 15px; font-weight: 600; transition: transform 0.06s ease, box-shadow 0.2s ease; }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 8px 22px -8px rgba(14,165,165,0.6); }
+  .btn-primary:hover { background: #0C8E8E; transform: translateY(-1px); }
+  .btn-ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
+  .btn-ghost:hover { border-color: var(--ink); }
+
+  /* ── Sections ──────────────────────────────────── */
+  .section { max-width: 1120px; margin: 0 auto; padding: 76px 24px; }
+  .section-head { text-align: center; max-width: 660px; margin: 0 auto 48px; }
+  .section-head h2 { font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -0.02em; font-weight: 800; margin-bottom: 14px; }
+  .section-head p { color: var(--ink-mute); font-size: 17px; }
+
+  /* ── Products (deep-blue band, logos on navy) ──── */
+  .products-band { background: linear-gradient(180deg, #0B1220 0%, #0F1A2E 100%); border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .products-band .section-head h2 { color: #fff; }
+  .products-band .section-head p { color: #94A3B8; }
+  .products { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .pcard { display: flex; flex-direction: column; background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 26px 24px; transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+  .pcard:hover { transform: translateY(-3px); box-shadow: 0 26px 52px -24px rgba(0,0,0,0.65); border-color: rgba(252,211,77,0.55); }
+  .pcard img.logo { height: 38px; width: auto; margin-bottom: 20px; }
+  .pcard .job { color: #E2E8F0; font-weight: 600; font-size: 15.5px; line-height: 1.45; flex: 1; margin-bottom: 18px; }
+  .pcard .go { font-weight: 700; font-size: 14px; color: #fcd34d; }
+
+  /* ── Why grid ──────────────────────────────────── */
+  .why { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .wcard { background: var(--white); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .wcard h4 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .wcard p { color: var(--ink-mute); font-size: 14.5px; }
+  .wcard .ic { font-size: 22px; margin-bottom: 10px; }
+
+  /* ── Final CTA ─────────────────────────────────── */
+  .final { background: linear-gradient(135deg, #0F172A 0%, #0B1220 100%); color: white; text-align: center; padding: 76px 24px; }
+  .final h2 { color: white; font-size: clamp(26px, 3vw, 36px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 14px; }
+  .final p { color: #CBD5E1; max-width: 560px; margin: 0 auto 30px; font-size: 17px; }
+
+  /* ── Footer ────────────────────────────────────── */
+  footer { background: var(--bg); color: #94A3B8; padding: 40px 24px; text-align: center; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.06); }
+  footer a { color: #CBD5E1; } footer a:hover { color: white; }
+
+  @media (max-width: 860px) {
+    .products, .why-grid { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-dot"></span>
+      <span>AI Consultants</span>
+    </a>
+    <div class="nav-links">
+      <a href="#products">Products</a>
+      <a href="#why">Why us</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <a class="nav-cta" href="#products">Get started</a>
+  </div>
+</nav>
+
+<!-- Hero / Welcome -->
+<section class="hero">
+  <span class="eyebrow">Software for Indian businesses</span>
+  <h1>Welcome to <span class="grad">AI Consultants</span></h1>
+  <p class="lead">A family of focused apps for how India actually runs a business — your <b>books</b>, your <b>society</b>, your <b>investments</b>. Each one built deep for its job. All built for India.</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="#products">What do you want to do?</a>
+    <a class="btn-ghost" href="contact.html">Talk to us</a>
+  </div>
+</section>
+
+<!-- What are you here to do today -->
+<section class="products-band">
+  <div class="section" id="products">
+    <div class="section-head">
+      <h2>What are you here to do today?</h2>
+      <p>Pick the job in front of you — each one is its own app, built end to end for it.</p>
+    </div>
+    <div class="products">
+      <a class="pcard" href="accountshq.html">
+        <img class="logo" src="img/accountshq.png" alt="Accounts HQ">
+        <div class="job">Run my books, GST &amp; TDS.</div>
+        <span class="go">Explore Accounts HQ →</span>
+      </a>
+      <a class="pcard" href="rwahq/">
+        <img class="logo" src="img/rwahq.png" alt="RWA HQ">
+        <div class="job">Manage my apartment or plot society.</div>
+        <span class="go">Explore RWA HQ →</span>
+      </a>
+      <a class="pcard" href="tradehq.html">
+        <img class="logo" src="img/tradehq.png" alt="tradeHQ">
+        <div class="job">See my family’s investments in one place.</div>
+        <span class="go">Explore tradeHQ →</span>
+      </a>
+      <a class="pcard" href="hoahq.html">
+        <img class="logo" src="img/hoahq.png" alt="HOA HQ">
+        <div class="job">Run my homeowners association.</div>
+        <span class="go">Explore HOA HQ →</span>
+      </a>
+      <a class="pcard" href="bookshq.html">
+        <img class="logo" src="img/bookshq.png" alt="Books HQ">
+        <div class="job">Keep simple books for my small business.</div>
+        <span class="go">Explore Books HQ →</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Why AI Consultants -->
+<section class="why">
+  <div class="section">
+    <div class="section-head">
+      <h2>Why AI Consultants?</h2>
+      <p>Three small, sharp apps from one team — instead of one bloated suite that does everything badly.</p>
+    </div>
+    <div class="why-grid">
+      <div class="wcard">
+        <div class="ic">🇮🇳</div>
+        <h4>Built for India, not adapted to it</h4>
+        <p>GST, TDS, society bye-laws, the way Indian businesses really work — baked in from the start, not bolted on for a foreign product.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">🤖</div>
+        <h4>AI that does the work</h4>
+        <p>Drop a bill and get a voucher. Talk, and we post. The software handles the typing so you handle the decisions.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">🔒</div>
+        <h4>Your data stays yours</h4>
+        <p>The heavy apps run on your own machine — your books and your members never leave it. The cloud stays thin and carries only what you choose to share.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">📈</div>
+        <h4>Pay only when you grow</h4>
+        <p>Start free and stay free until it’s clearly worth more. Honest, grow-as-you-go pricing — no per-seat traps, no surprise bills.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">🧩</div>
+        <h4>One team behind all of it</h4>
+        <p>Same people, same support, one login across every HQ app. When you grow into the next one, nothing to relearn.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">💬</div>
+        <h4>You can actually reach us</h4>
+        <p>A real person at <a href="mailto:info@ai-consultants.in" style="color:var(--accent);font-weight:600">info@ai-consultants.in</a> — not a ticket queue that closes itself in three days.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA -->
+<section class="final">
+  <h2>Pick where you want to start.</h2>
+  <p>Most people start with one app and grow into the others. There’s a free tier on each — try it before you pay a rupee.</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="#products">See the products</a>
+    <a class="btn-ghost" href="pricing.html" style="background:transparent;color:white;border-color:rgba(255,255,255,0.3)">View pricing</a>
+  </div>
+</section>
+
+<footer>
+  <p style="margin-bottom:12px">
+    <a href="accountshq.html">Accounts HQ</a> ·
+    <a href="rwahq/">RWA HQ</a> ·
+    <a href="tradehq.html">tradeHQ</a> ·
+    <a href="hoahq.html">HOA HQ</a> ·
+    <a href="bookshq.html">Books HQ</a> ·
+    <a href="pricing.html">Pricing</a> ·
+    <a href="contact.html">Contact</a> ·
+    <a href="privacy.html">Privacy</a> ·
+    <a href="terms.html">Terms</a> ·
+    <a href="refund.html">Refund Policy</a> ·
+    <a href="shipping.html">Delivery</a>
+  </p>
+  <p>© 2026 AI Consultants · <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
+  <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
+</footer>
+
+</body>
+</html>

@@ -334,6 +334,18 @@ class DocumentReaderPage(QWidget):
         )
         layout.addWidget(rev_lbl)
 
+        # Free-text filter — bank statements can produce hundreds of
+        # extracted rows; this lets the reviewer narrow to a substring
+        # match across all columns (ledger / amount / narration / ref).
+        self._filter_edit = QLineEdit()
+        self._filter_edit.setPlaceholderText(
+            "🔍 Filter by ledger / narration / amount…"
+        )
+        self._filter_edit.setClearButtonEnabled(True)
+        self._filter_edit.setFixedHeight(28)
+        self._filter_edit.textChanged.connect(self._on_filter_changed)
+        layout.addWidget(self._filter_edit)
+
         self._table = QTableWidget()
         self._table.setColumnCount(9)
         self._table.setHorizontalHeaderLabels([
@@ -640,6 +652,10 @@ class DocumentReaderPage(QWidget):
 
         from ui.table_utils import make_sortable
         make_sortable(self._table)
+        # Re-apply the filter after a refresh so any active filter
+        # text keeps hiding non-matching rows in the new dataset.
+        if self._filter_edit.text():
+            self._on_filter_changed(self._filter_edit.text())
         self._update_count()
         net = abs(total_dr - total_cr)
         self._total_label.setText(
@@ -647,6 +663,12 @@ class DocumentReaderPage(QWidget):
             f"Receipts: Rs.{total_cr:,.2f}  |  "
             f"Net: Rs.{net:,.2f}"
         )
+
+    def _on_filter_changed(self, text: str):
+        """Hide rows that don't match the filter substring (case-insensitive,
+        across every column). Uses the shared apply_text_filter helper."""
+        from ui.table_utils import apply_text_filter
+        apply_text_filter(self._table, text)
 
     def _update_count(self):
         selected = sum(

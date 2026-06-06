@@ -29,11 +29,32 @@ from core.license_manager  import LicenseManager
 
 
 class NavButton(QPushButton):
+    """Sidebar nav button — icon at ~18px (visible / scannable) +
+    label at ~12px. Previous version put the icon inside the button
+    text, which inherited the 12px font and rendered emoji too small
+    to read."""
+
     def __init__(self, icon: str, label: str, parent=None):
-        super().__init__(f"  {icon}   {label}", parent)
+        super().__init__("", parent)                       # text rendered by child labels
         self.setCheckable(True)
         self.setFixedHeight(36)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        h = QHBoxLayout(self)
+        h.setContentsMargins(11, 0, 14, 0)
+        h.setSpacing(10)
+
+        self._icon_lbl = QLabel(icon)
+        self._icon_lbl.setFixedWidth(22)
+        self._icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        h.addWidget(self._icon_lbl)
+
+        self._text_lbl = QLabel(label)
+        self._text_lbl.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred,
+        )
+        h.addWidget(self._text_lbl, 1)
+
         self._update_style(False)
 
     def set_active(self, active: bool):
@@ -48,36 +69,44 @@ class NavButton(QPushButton):
                     border: none;
                     border-left: 3px solid {THEME['accent']};
                     border-radius: 7px;
-                    padding: 0px 14px 0px 11px;
                     text-align: left;
-                    font-size: 12px;
-                    color: {THEME['accent']};
-                    font-weight: bold;
                     height: 36px;
                     min-height: 36px;
                     max-height: 36px;
                 }}
             """)
+            self._icon_lbl.setStyleSheet(
+                f"font-size: 18px; color: {THEME['accent']};"
+                f" background: transparent; border: none;"
+            )
+            self._text_lbl.setStyleSheet(
+                f"font-size: 12px; font-weight: bold;"
+                f" color: {THEME['accent']};"
+                f" background: transparent; border: none;"
+            )
         else:
             self.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
                     border: none;
                     border-radius: 7px;
-                    padding: 0px 14px;
                     text-align: left;
-                    font-size: 12px;
-                    color: {THEME['text_secondary']};
-                    font-weight: normal;
                     height: 36px;
                     min-height: 36px;
                     max-height: 36px;
                 }}
                 QPushButton:hover {{
                     background-color: {THEME['bg_hover']};
-                    color: {THEME['text_primary']};
                 }}
             """)
+            self._icon_lbl.setStyleSheet(
+                f"font-size: 18px; color: {THEME['text_primary']};"
+                f" background: transparent; border: none;"
+            )
+            self._text_lbl.setStyleSheet(
+                f"font-size: 12px; color: {THEME['text_secondary']};"
+                f" background: transparent; border: none;"
+            )
 
 
 class MainWindow(QMainWindow):
@@ -511,17 +540,42 @@ class MainWindow(QMainWindow):
                     section_above="TAX",
                 )
 
+            # GSTR-3B + GSTR-1 + 2B reconciliation — me-too returns (PRO gate).
+            if lmgr.has_feature("gst"):
+                from ui.reports_page import GSTR3BPage, GSTR1Page, GSTR2BReconPage, HSNSummaryPage
+                self.register_page("GSTR-3B", "🧮",
+                                    GSTR3BPage(ReportsEngine(self.db, self.company_id)))
+                self.register_page("GSTR-1", "📤",
+                                    GSTR1Page(ReportsEngine(self.db, self.company_id)))
+                self.register_page("HSN Summary", "🏷",
+                                    HSNSummaryPage(ReportsEngine(self.db, self.company_id)))
+                self.register_page("GSTR-2B Recon", "🔍",
+                                    GSTR2BReconPage(ReportsEngine(self.db, self.company_id)))
+            else:
+                self.register_page("GSTR-3B", "🧮",
+                                    self._locked_page("gst", "PRO", "GSTR-3B"))
+                self.register_page("GSTR-1", "📤",
+                                    self._locked_page("gst", "PRO", "GSTR-1"))
+                self.register_page("HSN Summary", "🏷",
+                                    self._locked_page("gst", "PRO", "HSN Summary"))
+                self.register_page("GSTR-2B Recon", "🔍",
+                                    self._locked_page("gst", "PRO", "GSTR-2B Recon"))
+
         # ── TDS — PRO+ ── (India-only screen; see country pack A13)
         if "tds" in _profile.tax_screens:
             if lmgr.has_feature("tds"):
-                from ui.reports_page import TDSReportPage
-                rpt_tds = ReportsEngine(self.db, self.company_id)
-                self.register_page("TDS Reports", "📑", TDSReportPage(rpt_tds))
+                from ui.reports_page import TDSReportPage, TDSRegisterPage
+                self.register_page("TDS Reports", "📑",
+                                    TDSReportPage(ReportsEngine(self.db, self.company_id)))
+                self.register_page("TDS Register", "🧾",
+                                    TDSRegisterPage(ReportsEngine(self.db, self.company_id)))
             else:
                 self.register_page(
                     "TDS Reports", "📑",
                     self._locked_page("tds", "PRO", "TDS Reports"),
                 )
+                self.register_page("TDS Register", "🧾",
+                                    self._locked_page("tds", "PRO", "TDS Register"))
 
         # ── AI Doc Reader — PRO+ ──
         if lmgr.has_feature("ai_document_reader"):
@@ -536,6 +590,23 @@ class MainWindow(QMainWindow):
                 "AI Doc Reader", "🤖",
                 self._locked_page(
                     "ai_document_reader", "PRO", "AI Document Reader"
+                ),
+                section_above="AI",
+            )
+
+        # ── Document Inbox — PRO+ (BYOK) ──
+        if lmgr.has_feature("document_inbox"):
+            from ui.document_inbox_page import DocumentInboxPage
+            self.register_page(
+                "Document Inbox", "📥",
+                DocumentInboxPage(ReportsEngine(self.db, self.company_id), self.tree),
+                section_above="AI",
+            )
+        else:
+            self.register_page(
+                "Document Inbox", "📥",
+                self._locked_page(
+                    "document_inbox", "PRO", "Document Inbox"
                 ),
                 section_above="AI",
             )
@@ -833,9 +904,10 @@ class MainWindow(QMainWindow):
         card.addWidget(hint)
 
         row = self.db.connect().execute(
-            "SELECT gstin, tan FROM companies WHERE id=?", (self.company_id,),
+            "SELECT gstin, gst_username, tan FROM companies WHERE id=?", (self.company_id,),
         ).fetchone()
         gstin = (row["gstin"] if row and row["gstin"] else "")
+        gst_user = (row["gst_username"] if row and row["gst_username"] else "")
         tan   = (row["tan"]   if row and row["tan"]   else "")
 
         g_row = QHBoxLayout()
@@ -850,6 +922,21 @@ class MainWindow(QMainWindow):
         )
         g_row.addWidget(self._gstin_edit)
         card.addLayout(g_row)
+
+        # GST portal username — enables the one-tap GSTR-2B pull (sent with
+        # the GSTIN; only the OTP is entered per pull).
+        gu_row = QHBoxLayout()
+        gu_lbl = QLabel("GST User")
+        gu_lbl.setFixedWidth(70)
+        gu_row.addWidget(gu_lbl)
+        self._gst_user_edit = QLineEdit(gst_user)
+        self._gst_user_edit.setFixedHeight(30)
+        self._gst_user_edit.setPlaceholderText("GST portal login username — for the 2B pull")
+        self._gst_user_edit.editingFinished.connect(
+            lambda: self._save_company_field("gst_username", self._gst_user_edit.text())
+        )
+        gu_row.addWidget(self._gst_user_edit)
+        card.addLayout(gu_row)
 
         t_row = QHBoxLayout()
         t_lbl = QLabel("TAN")
@@ -868,7 +955,7 @@ class MainWindow(QMainWindow):
         # `field` is one of a fixed internal set ("gstin" / "tan") — never
         # user input — so the f-string column name is safe; the value is
         # parameterised.
-        if field not in ("gstin", "tan"):
+        if field not in ("gstin", "tan", "gst_username"):
             return
         conn = self.db.connect()
         conn.execute(
@@ -1220,8 +1307,24 @@ class MainWindow(QMainWindow):
             pass
 
     def _show_calculator(self):
-        sidebar_pos = self._sidebar.mapToGlobal(self._sidebar.rect().bottomLeft())
-        self.calculator.move(sidebar_pos.x() + 10, sidebar_pos.y() - 360)
+        # Anchor calculator to the TOP-RIGHT of the sidebar (just inside
+        # the main window) and then clamp to the screen so the paste
+        # button at the bottom never falls off on shorter displays.
+        from PySide6.QtGui import QGuiApplication
+        sidebar_tr = self._sidebar.mapToGlobal(self._sidebar.rect().topRight())
+        x = sidebar_tr.x() + 12
+        y = sidebar_tr.y() + 60
+        screen = QGuiApplication.primaryScreen().availableGeometry()
+        cw = self.calculator.width()
+        ch = self.calculator.height()
+        # Keep at least 8 px margin from each screen edge.
+        if x + cw > screen.right() - 8:
+            x = screen.right() - cw - 8
+        if y + ch > screen.bottom() - 8:
+            y = screen.bottom() - ch - 8
+        if x < screen.left() + 8:  x = screen.left() + 8
+        if y < screen.top()  + 8:  y = screen.top()  + 8
+        self.calculator.move(x, y)
         self.calculator.show()
         self.calculator.raise_()
 

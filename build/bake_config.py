@@ -153,6 +153,70 @@ def read_pricing(path: Path) -> dict:
     }
 
 
+def read_rwa(path: Path) -> dict:
+    """Read the unified `RWAHQ` sheet — one row per attribute/feature,
+    one column per tier. `row_type` says how to read each row:
+      price / limit / rate / quota -> numeric per tier
+      feature                       -> Y/blank per tier (+ upgrade_to)
+    DEMO is derived (desktop trial = mirrors PREMIUM features; server
+    never issues DEMO). This replaces the old hand-maintained dicts in
+    license_bridge.py + plans.py."""
+    wb = load_workbook(path, data_only=True)
+    ws = wb["RWAHQ"]
+    rows = list(_rows(ws, header_row=3))
+    tiers = ["FREE", "STANDARD", "PRO", "PREMIUM"]
+
+    def _row(rid):
+        for r in rows:
+            if (str(r.get("id") or "")).strip() == rid:
+                return r
+        return None
+
+    def _nummap(rid, asfloat=False, blank_none=False):
+        r = _row(rid)
+        out = {}
+        for t in tiers:
+            v = None if r is None else r.get(t)
+            if v is None or v == "":
+                out[t] = None if blank_none else (0.0 if asfloat else 0)
+            else:
+                out[t] = _as_float(v) if asfloat else _as_int(v)
+        return out
+
+    features: dict[str, list[str]] = {t: [] for t in tiers}
+    upgrade_map: dict[str, str] = {}
+    for r in rows:
+        if (str(r.get("row_type") or "")).strip() != "feature":
+            continue
+        fid = (str(r.get("id") or "")).strip()
+        if not fid:
+            continue
+        for t in tiers:
+            v = r.get(t)
+            if (isinstance(v, str) and v.strip().upper() in ("Y", "YES", "TRUE", "1", "X")) or v is True:
+                features[t].append(fid)
+        up = str(r.get("upgrade_to") or "").strip().upper()
+        if up in tiers:
+            upgrade_map[fid] = up
+
+    features["DEMO"] = list(features["PREMIUM"])  # desktop trial mirrors PREMIUM
+    txn = _nummap("txn_limit");                 txn["DEMO"] = 50
+    flats = _nummap("flats", blank_none=True);  flats["DEMO"] = None
+    seats = _nummap("seats");                   seats["DEMO"] = seats["PREMIUM"]
+    overage = _nummap("overage_rate", asfloat=True); overage["DEMO"] = 0.0
+    notices = _nummap("notices_per_month", blank_none=True); notices["DEMO"] = None
+    promos = _nummap("free_promos_per_month"); promos["DEMO"] = promos["PREMIUM"]
+    p_annual = _nummap("price_annual_INR");     p_annual["DEMO"] = 0
+    p_monthly = _nummap("price_monthly_INR");   p_monthly["DEMO"] = 0
+
+    return {
+        "features": features, "upgrade_map": upgrade_map,
+        "txn_limit": txn, "flats": flats, "seats": seats, "overage": overage,
+        "notices": notices, "promos": promos,
+        "price_annual": p_annual, "price_monthly": p_monthly,
+    }
+
+
 def _as_int(v, default=0):
     if v is None or v == "":
         return default
@@ -202,7 +266,7 @@ def _py(val, indent=0):
     raise TypeError(f"Cannot format {type(val)}")
 
 
-def render_module(ai_features: dict, pricing: dict) -> str:
+def render_module(ai_features: dict, pricing: dict, rwa: dict) -> str:
     tiers = pricing["tiers"]
     plan_features = pricing["plan_features"]
     upgrade_map = pricing["feature_upgrade_map"]
@@ -247,7 +311,24 @@ def render_module(ai_features: dict, pricing: dict) -> str:
         "PLAN_PRICES = " + _py(plan_prices) + "\n\n"
         "COUNTRIES = " + _py(countries) + "\n"
     )
-    return header + body
+
+    # ── RWA HQ (rwagenie) — baked from the unified RWAHQ sheet ──
+    # Replaces the old hand-maintained dicts in rwagenie/app/license_bridge.py
+    # and license_server/plans.py (which now import these).
+    rwa_body = (
+        "\n\n# ── RWA HQ (rwagenie) — from the RWAHQ sheet ──\n"
+        "PLAN_FEATURES_RWA = " + _py(rwa["features"]) + "\n\n"
+        "FEATURE_UPGRADE_MAP_RWA = " + _py(rwa["upgrade_map"]) + "\n\n"
+        "PLAN_LIMITS_RWA = " + _py(rwa["txn_limit"]) + "\n\n"
+        "PLAN_FLATS_LIMIT_RWA = " + _py(rwa["flats"]) + "\n\n"
+        "PLAN_SEATS_RWA = " + _py(rwa["seats"]) + "\n\n"
+        "OVERAGE_RATES_RWA = " + _py(rwa["overage"]) + "\n\n"
+        "RWA_NOTICES_QUOTA = " + _py(rwa["notices"]) + "\n\n"
+        "RWA_PROMOS_QUOTA = " + _py(rwa["promos"]) + "\n\n"
+        "PLAN_PRICES_RWA_INR = " + _py(rwa["price_annual"]) + "\n\n"
+        "PLAN_PRICES_RWA_MONTHLY_INR = " + _py(rwa["price_monthly"]) + "\n"
+    )
+    return header + body + rwa_body
 
 
 def main():
@@ -260,7 +341,8 @@ def main():
 
     ai_features = read_ai_features(ai_path)
     pricing = read_pricing(pr_path)
-    text = render_module(ai_features, pricing)
+    rwa = read_rwa(pr_path)
+    text = render_module(ai_features, pricing, rwa)
 
     CORE_OUT.write_text(text, encoding="utf-8")
     SERVER_OUT.write_text(text, encoding="utf-8")
@@ -269,6 +351,7 @@ def main():
     print(f"  AI features: {len(ai_features)}")
     print(f"  Tiers:       {[t['code'] for t in pricing['tiers']]}")
     print(f"  Countries:   {[c['country_code'] for c in pricing['countries']]}")
+    print(f"  RWA features/tier: { {k: len(v) for k, v in rwa['features'].items()} }")
 
 
 if __name__ == "__main__":

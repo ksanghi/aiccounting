@@ -108,7 +108,9 @@ class CalculatorWidget(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._expr = ""
         self._build_ui()
-        self.setFixedSize(260, 340)
+        # The keypad totals: title 20 + expr 14 + display 52 + 5 button rows
+        # at 30 + spacing + paste 32 + card margins. Tight but fits.
+        self.setFixedSize(252, 360)
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
@@ -160,7 +162,7 @@ class CalculatorWidget(QDialog):
 
         # Button grid
         grid = QGridLayout()
-        grid.setSpacing(5)
+        grid.setSpacing(4)
 
         btn_defs = [
             ("C",   0, 0, THEME["danger"]),
@@ -187,16 +189,21 @@ class CalculatorWidget(QDialog):
 
         for (label, row, col, colour) in btn_defs:
             btn = QPushButton(label)
-            btn.setFixedHeight(38)
+            btn.setFixedHeight(30)
             c = colour or THEME["bg_hover"]
+            # Explicit padding: 0 + min-height: 0 stops the app's global
+            # QPushButton QSS (which carries padding + min-height for
+            # toolbars and forms) from inflating these keypad cells.
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background-color: {c}{'33' if not colour else '22' if colour != THEME['bg_hover'] else ''};
                     color: {colour if colour else THEME['text_primary']};
                     border: 1px solid {c}{'44' if colour else THEME['border']};
-                    border-radius: 7px;
-                    font-size: 14px;
+                    border-radius: 6px;
+                    font-size: 13px;
                     font-weight: {'bold' if colour else 'normal'};
+                    padding: 0;
+                    min-height: 0;
                 }}
                 QPushButton:hover {{
                     background-color: {c}44;
@@ -210,9 +217,25 @@ class CalculatorWidget(QDialog):
 
         layout.addLayout(grid)
 
-        # Paste button
+        # Paste button — explicit dimensions so the global #btn_primary
+        # QSS (which sets min-height + larger padding for page-level
+        # primary actions) doesn't make this paste button overflow the
+        # calculator dialog. Same colour scheme; just sized for here.
         paste_btn = QPushButton("⬆  Paste to amount field")
-        paste_btn.setObjectName("btn_primary")
+        paste_btn.setFixedHeight(32)
+        paste_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {THEME['accent']};
+                color: {THEME['btn_primary_text']};
+                border: none;
+                border-radius: 7px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0;
+                min-height: 0;
+            }}
+            QPushButton:hover {{ background-color: {THEME['accent_hover']}; }}
+        """)
         paste_btn.clicked.connect(self._paste)
         layout.addWidget(paste_btn)
 
@@ -433,6 +456,12 @@ class QuickAddLedgerDialog(QDialog):
         self.pan_edit.setPlaceholderText("Optional")
         form.addRow(make_label("PAN"), self.pan_edit)
 
+        # HSN / SAC — default code for a sales/purchase ledger; drives the
+        # GSTR-1 HSN summary. Optional, blank for non-goods/services ledgers.
+        self.hsn_edit = QLineEdit()
+        self.hsn_edit.setPlaceholderText("Optional — HSN (goods) / SAC (services) code")
+        form.addRow(make_label("HSN / SAC"), self.hsn_edit)
+
         # TDS
         tds_row = QHBoxLayout()
         self.tds_combo = QComboBox()
@@ -514,6 +543,7 @@ class QuickAddLedgerDialog(QDialog):
         # Tax fields
         self.gstin_edit.setText(e.get("gstin") or "")
         self.pan_edit.setText(e.get("pan") or "")
+        self.hsn_edit.setText(e.get("hsn_code") or "")
         # TDS
         section = e.get("tds_section")
         if section and (e.get("is_tds_applicable") or 0):
@@ -585,6 +615,7 @@ class QuickAddLedgerDialog(QDialog):
             kwargs["pan"] = self.pan_edit.text().strip()
         else:
             kwargs["pan"] = None
+        kwargs["hsn_code"] = self.hsn_edit.text().strip() or None
         if self.tds_combo.currentIndex() > 0:
             kwargs["is_tds_applicable"] = True
             kwargs["tds_section"]       = self.tds_combo.currentData()

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Books HQ — simple books for small business · AI Consultants</title>
+<meta name="description" content="Books HQ is the easy way to keep your small business books — invoices, expenses and GST-ready records, no accountant-speak. Grows into Accounts HQ when you do. By AI Consultants.">
+<style>
+  :root { --bg:#0B1220; --bg-soft:#F8FAFC; --ink:#0F172A; --ink-mute:#475569; --line:#E2E8F0; --accent:#0EA5A5; --accent-2:#00D4AA; --navy:#0f1629; --gold:#fcd34d; --white:#FFFFFF; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; color:var(--ink); -webkit-font-smoothing:antialiased; }
+  body { background:var(--white); line-height:1.55; }
+  a { color:inherit; text-decoration:none; }
+  img { max-width:100%; display:block; }
+
+  .nav { position:sticky; top:0; z-index:50; background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  .nav-inner { max-width:1120px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; padding:14px 24px; }
+  .brand { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; color:var(--ink); }
+  .brand-dot { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); }
+  .crumb { color:var(--ink-mute); font-weight:500; }
+  .nav-links { display:flex; gap:28px; font-size:14px; color:var(--ink-mute); }
+  .nav-links a:hover { color:var(--ink); }
+  .nav-cta { background:var(--accent); color:white; padding:8px 16px; border-radius:8px; font-size:14px; font-weight:600; }
+  .nav-cta:hover { background:#0C8E8E; }
+
+  .hero { background:linear-gradient(180deg,#0B1220 0%,#0E2030 100%); padding:72px 24px 64px; text-align:center; color:white; }
+  .hero img.logo { height:56px; width:auto; margin:0 auto 28px; }
+  .eyebrow { display:inline-block; background:rgba(14,165,165,0.16); color:#99F6E4; border:1px solid rgba(14,165,165,0.4); padding:6px 14px; border-radius:999px; font-size:13px; font-weight:700; margin-bottom:22px; }
+  h1 { font-size:clamp(34px,5vw,56px); line-height:1.06; letter-spacing:-0.03em; font-weight:800; max-width:760px; margin:0 auto 20px; }
+  h1 .grad { color:var(--gold); }
+  .hero p.lead { font-size:clamp(17px,1.4vw,21px); color:#CBD5E1; max-width:640px; margin:0 auto 34px; }
+  .cta-row { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .btn-primary,.btn-ghost { display:inline-block; padding:14px 26px; border-radius:10px; font-size:15px; font-weight:600; }
+  .btn-primary { background:var(--accent); color:white; box-shadow:0 8px 22px -8px rgba(14,165,165,0.6); }
+  .btn-primary:hover { background:#0C8E8E; }
+  .btn-ghost { background:transparent; color:white; border:1px solid rgba(255,255,255,0.3); }
+  .btn-ghost:hover { border-color:white; }
+
+  .section { max-width:1080px; margin:0 auto; padding:72px 24px; }
+  .section-head { text-align:center; max-width:640px; margin:0 auto 44px; }
+  .section-head h2 { font-size:clamp(26px,3.2vw,38px); letter-spacing:-0.02em; font-weight:800; margin-bottom:12px; }
+  .section-head p { color:var(--ink-mute); font-size:17px; }
+  .feat { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  .fcard { background:var(--white); border:1px solid var(--line); border-radius:14px; padding:24px; }
+  .fcard .ic { font-size:23px; margin-bottom:11px; }
+  .fcard h3 { font-size:18px; font-weight:700; margin-bottom:7px; }
+  .fcard p { color:var(--ink-mute); font-size:14.5px; }
+
+  .strip { background:var(--bg-soft); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .strip .section { display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+  .strip h3 { font-size:21px; font-weight:800; letter-spacing:-0.01em; }
+  .strip p { color:var(--ink-mute); font-size:15px; margin-top:4px; max-width:560px; }
+
+  .final { background:linear-gradient(135deg,#0F172A 0%,#0B1220 100%); color:white; text-align:center; padding:72px 24px; }
+  .final h2 { color:white; font-size:clamp(24px,3vw,34px); font-weight:800; margin-bottom:14px; }
+  .final p { color:#CBD5E1; max-width:540px; margin:0 auto 28px; font-size:17px; }
+
+  footer { background:var(--bg); color:#94A3B8; padding:40px 24px; text-align:center; font-size:13px; border-top:1px solid rgba(255,255,255,0.06); }
+  footer a { color:#CBD5E1; } footer a:hover { color:white; }
+  @media (max-width:760px){ .feat{grid-template-columns:1fr;} .nav-links{display:none;} }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-dot"></span><span>AI Consultants <span class="crumb">/ Books HQ</span></span></a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="contact.html">Contact</a>
+      <a href="index.html">All products</a>
+    </div>
+    <a class="nav-cta" href="pricing.html">Try free</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <img class="logo" src="img/bookshq.png" alt="Books HQ">
+  <span class="eyebrow">Books HQ · simple books for small business</span>
+  <h1>Simple books. <span class="grad">Done.</span></h1>
+  <p class="lead">The easy way to keep your shop or startup’s books — send invoices, snap your expenses, stay GST-ready. No journal entries, no accountant-speak. Just numbers you can trust.</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="pricing.html">Start free</a>
+    <a class="btn-ghost" href="index.html">See all products</a>
+  </div>
+</section>
+
+<section class="section" id="features">
+  <div class="section-head">
+    <h2>Books, without the jargon</h2>
+    <p>Everything a small business needs to stay on top of its money — nothing it doesn’t.</p>
+  </div>
+  <div class="feat">
+    <div class="fcard"><div class="ic">🧾</div><h3>Send invoices</h3><p>Make a clean, GST-ready invoice in seconds and send it on WhatsApp or email. See who’s paid and who hasn’t at a glance.</p></div>
+    <div class="fcard"><div class="ic">📸</div><h3>Snap your expenses</h3><p>Photograph a bill and Books HQ reads it for you — vendor, amount, tax — and files it. No typing, no shoebox.</p></div>
+    <div class="fcard"><div class="ic">🏦</div><h3>Match your bank</h3><p>Import your statement and tick off what cleared. Always know your real cash position, not last month’s.</p></div>
+    <div class="fcard"><div class="ic">🇮🇳</div><h3>GST-ready</h3><p>Records kept the way GST expects — so filing season is a download, not a nightmare.</p></div>
+    <div class="fcard"><div class="ic">📊</div><h3>Plain-English reports</h3><p>What you earned, what you spent, who owes you — in words you actually use, not “trial balance.”</p></div>
+    <div class="fcard"><div class="ic">🔒</div><h3>Yours, on your machine</h3><p>Your books live on your own computer. Private by default, working with or without internet.</p></div>
+  </div>
+</section>
+
+<section class="strip">
+  <div class="section">
+    <div>
+      <h3>Outgrow it? Accounts HQ is one click away.</h3>
+      <p>When you’re ready for full GST/TDS, multi-user and deeper accounting, your data steps up to <b>Accounts HQ</b> — nothing to re-enter, nothing to relearn.</p>
+    </div>
+    <a class="btn-primary" href="accountshq.html" style="white-space:nowrap">See Accounts HQ →</a>
+  </div>
+</section>
+
+<section class="final">
+  <h2>Keep your books without dreading them.</h2>
+  <p>Start free — invoices, expenses and reports, in minutes. Pay only when it’s clearly worth it.</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="pricing.html">Start free</a>
+    <a class="btn-ghost" href="index.html">All products</a>
+  </div>
+</section>
+
+<footer>
+  <p style="margin-bottom:12px">
+    <a href="accountshq.html">Accounts HQ</a> · <a href="rwahq/">RWA HQ</a> · <a href="tradehq.html">tradeHQ</a> · <a href="hoahq.html">HOA HQ</a> · <a href="bookshq.html">Books HQ</a> · <a href="pricing.html">Pricing</a> · <a href="contact.html">Contact</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="refund.html">Refund Policy</a> · <a href="shipping.html">Delivery</a>
+  </p>
+  <p>© 2026 AI Consultants · <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
+  <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
+</footer>
+
+</body>
+</html>

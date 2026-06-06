@@ -79,6 +79,22 @@ def companies_dir() -> Path:
     return p
 
 
+def inbox_dir(company_slug: str) -> Path:
+    """
+    Per-company Document Inbox store — the watched folder that the email
+    reader, the ADF scanner, and manual drops all feed into. The review
+    queue (core/doc_inbox.py) consumes it. Auto-creates if missing.
+
+    Sub-layout:
+      <root>/inbox/<slug>/incoming/   — drop zone (watched for new files)
+      <root>/inbox/<slug>/store/      — managed copies with nice names
+    """
+    p = user_data_dir() / "inbox" / company_slug
+    (p / "incoming").mkdir(parents=True, exist_ok=True)
+    (p / "store").mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def license_file() -> Path:
     return user_data_dir() / "license.json"
 

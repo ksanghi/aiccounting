@@ -399,6 +399,10 @@ class LicenseManager:
                 "license_key": license_key,
                 "machine_id":  self.get_machine_id(),
                 "app_version": "1.0.10",
+                # Which app is asking — the server rejects a license whose
+                # product doesn't match (a product's license only works with
+                # its own app). Empty for legacy builds → no server check.
+                "product":     os.environ.get("APP_LICENSE_PRODUCT", ""),
             }).encode()
 
             req = urllib.request.Request(
@@ -412,6 +416,19 @@ class LicenseManager:
 
             if not data.get("valid"):
                 return False, data.get("error", "Invalid license key")
+
+            # Belt-and-suspenders product match (also enforced server-side):
+            # an app only accepts its own product's license.
+            _expected = (os.environ.get("APP_LICENSE_PRODUCT") or "").strip().lower()
+            _got = (data.get("product") or "").strip().lower()
+            if _expected and _got and _got != _expected:
+                _names = {"accgenie": "Accounts HQ", "rwagenie": "RWA HQ",
+                          "tradehq": "tradeHQ"}
+                return False, (
+                    f"This is a {_names.get(_got, _got)} license — it won't work "
+                    f"in {_names.get(_expected, _expected)}. Please use a "
+                    f"{_names.get(_expected, _expected)} license."
+                )
 
             plan = data.get("plan", "FREE")
             # Re-sync local counters from disk before rewriting the blob —

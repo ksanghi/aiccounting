@@ -688,6 +688,321 @@ class ReportsEngine:
             "to_date":   to_date,
         }
 
+    # ── 8b. GSTR-3B working ───────────────────────────────────────────────────
+    # me-too summary return: outward tax liability vs eligible ITC -> net
+    # payable. Built from posted tax lines (NOT filing — that's compliance).
+    # Outward = SALES less CREDIT_NOTE; inward ITC = PURCHASE less DEBIT_NOTE.
+
+    _GST_TYPES = ("IGST", "CGST", "SGST")
+
+    def _gst_tax_by_type(self, vtypes, col, from_date, to_date) -> dict:
+        ph = ",".join("?" * len(vtypes))
+        rows = self.db.execute(
+            f"""SELECT vl.tax_type, COALESCE(SUM(vl.{col}),0) AS amt
+                  FROM voucher_lines vl JOIN vouchers v ON vl.voucher_id=v.id
+                 WHERE v.company_id=? AND v.is_cancelled=0 AND vl.is_tax_line=1
+                   AND vl.tax_type IN ('CGST','SGST','IGST')
+                   AND v.voucher_type IN ({ph})
+                   AND v.voucher_date BETWEEN ? AND ?
+                 GROUP BY vl.tax_type""",
+            (self.company_id, *vtypes, from_date, to_date),
+        ).fetchall()
+        return {r["tax_type"]: (r["amt"] or 0.0) for r in rows}
+
+    def _gst_base(self, vtypes, col, from_date, to_date) -> float:
+        ph = ",".join("?" * len(vtypes))
+        row = self.db.execute(
+            f"""SELECT COALESCE(SUM(vl.{col}),0) AS base
+                  FROM voucher_lines vl JOIN vouchers v ON vl.voucher_id=v.id
+                  JOIN ledgers l ON vl.ledger_id=l.id
+                  JOIN account_groups g ON l.group_id=g.id
+                 WHERE v.company_id=? AND v.is_cancelled=0 AND vl.is_tax_line=0
+                   AND g.nature='INCOME' AND v.voucher_type IN ({ph})
+                   AND v.voucher_date BETWEEN ? AND ?""",
+            (self.company_id, *vtypes, from_date, to_date),
+        ).fetchone()
+        return row["base"] or 0.0
+
+    def gstr3b(self, from_date: str, to_date: str) -> dict:
+        out_s = self._gst_tax_by_type(["SALES"], "cr_amount", from_date, to_date)
+        out_cn = self._gst_tax_by_type(["CREDIT_NOTE"], "cr_amount", from_date, to_date)
+        in_p = self._gst_tax_by_type(["PURCHASE"], "dr_amount", from_date, to_date)
+        in_dn = self._gst_tax_by_type(["DEBIT_NOTE"], "dr_amount", from_date, to_date)
+
+        outward = {t: round(out_s.get(t, 0.0) - out_cn.get(t, 0.0), 2) for t in self._GST_TYPES}
+        itc = {t: round(in_p.get(t, 0.0) - in_dn.get(t, 0.0), 2) for t in self._GST_TYPES}
+        net = {t: round(outward[t] - itc[t], 2) for t in self._GST_TYPES}
+
+        taxable = round(self._gst_base(["SALES"], "cr_amount", from_date, to_date)
+                        - self._gst_base(["CREDIT_NOTE"], "cr_amount", from_date, to_date), 2)
+        return {
+            "outward":       {"taxable": taxable, **outward},
+            "itc":           itc,
+            "net_payable":   net,
+            "total_output":  round(sum(outward.values()), 2),
+            "total_itc":     round(sum(itc.values()), 2),
+            "total_payable": round(sum(net.values()), 2),
+            "from_date":     from_date,
+            "to_date":       to_date,
+        }
+
+    # ── 8c. GSTR-1 (outward supplies, invoice/party-wise) ─────────────────────
+    # me-too sales return: one row per invoice, B2B (party has GSTIN) vs B2C,
+    # with CGST/SGST/IGST. CREDIT_NOTE rows are signed negative. HSN summary is
+    # a follow-up (needs an hsn column at entry — schema touch).
+
+    def gstr1(self, from_date: str, to_date: str) -> dict:
+        rows = self.db.execute(
+            """SELECT v.id, v.voucher_number AS invoice_no, v.voucher_date AS invoice_date,
+                      v.voucher_type AS doc_type,
+                      (SELECT l.name FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                         JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND g.name='Sundry Debtors'
+                        ORDER BY x.dr_amount DESC LIMIT 1) AS party,
+                      (SELECT l.gstin FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                         JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND g.name='Sundry Debtors'
+                        ORDER BY x.dr_amount DESC LIMIT 1) AS gstin,
+                      (SELECT l.state_code FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                         JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND g.name='Sundry Debtors'
+                        ORDER BY x.dr_amount DESC LIMIT 1) AS pos,
+                      COALESCE((SELECT SUM(x.cr_amount) FROM voucher_lines x
+                         JOIN ledgers l ON x.ledger_id=l.id JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND x.is_tax_line=0 AND g.nature='INCOME'),0) AS taxable,
+                      COALESCE((SELECT SUM(cr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='CGST'),0) AS cgst,
+                      COALESCE((SELECT SUM(cr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='SGST'),0) AS sgst,
+                      COALESCE((SELECT SUM(cr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='IGST'),0) AS igst
+                 FROM vouchers v
+                WHERE v.company_id=? AND v.is_cancelled=0
+                  AND v.voucher_type IN ('SALES','CREDIT_NOTE')
+                  AND v.voucher_date BETWEEN ? AND ?
+                ORDER BY v.voucher_date, v.id""",
+            (self.company_id, from_date, to_date),
+        ).fetchall()
+
+        invoices, b2b, b2c = [], {"taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "count": 0}, \
+            {"taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "count": 0}
+        for r in rows:
+            sign = -1.0 if r["doc_type"] == "CREDIT_NOTE" else 1.0
+            inv = {
+                "invoice_no": r["invoice_no"], "invoice_date": r["invoice_date"],
+                "doc_type": r["doc_type"], "party": r["party"] or "(cash / unregistered)",
+                "gstin": r["gstin"] or "", "pos": r["pos"] or "",
+                "taxable": round(sign * (r["taxable"] or 0.0), 2),
+                "cgst": round(sign * (r["cgst"] or 0.0), 2),
+                "sgst": round(sign * (r["sgst"] or 0.0), 2),
+                "igst": round(sign * (r["igst"] or 0.0), 2),
+                "category": "B2B" if r["gstin"] else "B2C",
+            }
+            invoices.append(inv)
+            bucket = b2b if r["gstin"] else b2c
+            for k in ("taxable", "cgst", "sgst", "igst"):
+                bucket[k] = round(bucket[k] + inv[k], 2)
+            bucket["count"] += 1
+        return {
+            "invoices": invoices, "b2b": b2b, "b2c": b2c,
+            "total_taxable": round(b2b["taxable"] + b2c["taxable"], 2),
+            "total_tax": round(sum(b2b[k] + b2c[k] for k in ("cgst", "sgst", "igst")), 2),
+            "from_date": from_date, "to_date": to_date,
+        }
+
+    # ── 8d. GSTR-2B reconciliation (ITC matching) ─────────────────────────────
+    # Match the portal's 2B (what suppliers reported) against our purchase/ITC
+    # records. Import-and-match like bank reco — NO GSP, NO filing. The marquee
+    # PRO feature: catches ITC at risk (supplier didn't report a bill).
+
+    def _purchase_invoices(self, from_date: str, to_date: str) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT v.id, v.reference AS invoice_no, v.voucher_date AS invoice_date,
+                      (SELECT l.name FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                         JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND g.name='Sundry Creditors'
+                        ORDER BY x.cr_amount DESC LIMIT 1) AS party,
+                      (SELECT l.gstin FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                         JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND g.name='Sundry Creditors'
+                        ORDER BY x.cr_amount DESC LIMIT 1) AS gstin,
+                      COALESCE((SELECT SUM(x.dr_amount) FROM voucher_lines x
+                         JOIN ledgers l ON x.ledger_id=l.id JOIN account_groups g ON l.group_id=g.id
+                        WHERE x.voucher_id=v.id AND x.is_tax_line=0 AND g.nature='EXPENSE'),0) AS taxable,
+                      COALESCE((SELECT SUM(dr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='CGST'),0) AS cgst,
+                      COALESCE((SELECT SUM(dr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='SGST'),0) AS sgst,
+                      COALESCE((SELECT SUM(dr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='IGST'),0) AS igst
+                 FROM vouchers v
+                WHERE v.company_id=? AND v.is_cancelled=0
+                  AND v.voucher_type IN ('PURCHASE','DEBIT_NOTE')
+                  AND v.voucher_date BETWEEN ? AND ?
+                ORDER BY v.voucher_date, v.id""",
+            (self.company_id, from_date, to_date),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    @staticmethod
+    def _inv_key(gstin, inv):
+        return ((gstin or "").strip().upper(), "".join((inv or "").split()).upper())
+
+    def gstr2b_reconcile(self, from_date: str, to_date: str, portal_rows: list) -> dict:
+        books = self._purchase_invoices(from_date, to_date)
+        book_idx: dict = {}
+        for b in books:
+            book_idx.setdefault(self._inv_key(b["gstin"], b["invoice_no"]), []).append(b)
+
+        matched, mismatch, only_books, only_2b = [], [], [], []
+        consumed = set()
+        for p in portal_rows:
+            cands = book_idx.get(self._inv_key(p["gstin"], p["invoice_no"]))
+            if cands:
+                b = cands.pop(0)
+                consumed.add(id(b))
+                p_tax = round(p["igst"] + p["cgst"] + p["sgst"], 2)
+                b_tax = round((b["igst"] or 0) + (b["cgst"] or 0) + (b["sgst"] or 0), 2)
+                rec = {
+                    "gstin": p["gstin"], "invoice_no": p["invoice_no"], "party": b["party"] or "",
+                    "book_taxable": round(b["taxable"] or 0, 2), "b2b_taxable": p["taxable"],
+                    "book_tax": b_tax, "b2b_tax": p_tax, "diff": round(b_tax - p_tax, 2),
+                }
+                ok = abs(b_tax - p_tax) <= 1.0 and abs((b["taxable"] or 0) - p["taxable"]) <= 1.0
+                (matched if ok else mismatch).append(rec)
+            else:
+                only_2b.append({
+                    "gstin": p["gstin"], "invoice_no": p["invoice_no"], "party": "",
+                    "b2b_taxable": p["taxable"], "b2b_tax": round(p["igst"] + p["cgst"] + p["sgst"], 2),
+                })
+        for b in books:
+            if id(b) not in consumed:
+                only_books.append({
+                    "gstin": b["gstin"] or "", "invoice_no": b["invoice_no"] or "", "party": b["party"] or "",
+                    "book_taxable": round(b["taxable"] or 0, 2),
+                    "book_tax": round((b["igst"] or 0) + (b["cgst"] or 0) + (b["sgst"] or 0), 2),
+                })
+        return {
+            "matched": matched, "mismatch": mismatch,
+            "only_books": only_books, "only_2b": only_2b,
+            "n_matched": len(matched), "n_mismatch": len(mismatch),
+            "n_only_books": len(only_books), "n_only_2b": len(only_2b),
+            "itc_matched": round(sum(r["book_tax"] for r in matched), 2),
+            "itc_at_risk": round(sum(r["book_tax"] for r in only_books), 2),
+            "from_date": from_date, "to_date": to_date,
+        }
+
+    # ── 9b. TDS Register (26Q-style, by deductee party + section) ─────────────
+    # Deductee = the party line (ledger with is_tds_applicable=1) on a voucher
+    # that carries a TDS tax line; gross = amount paid to that party; tds = the
+    # TDS line. Aggregated by (party, section) with PAN — the 26Q working set.
+
+    def tds_register(self, from_date: str, to_date: str) -> dict:
+        rows = self.db.execute(
+            """SELECT
+                  (SELECT l.name FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                     WHERE x.voucher_id=v.id AND l.is_tds_applicable=1 AND x.is_tax_line=0
+                     ORDER BY x.dr_amount DESC LIMIT 1) AS party,
+                  (SELECT l.pan FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                     WHERE x.voucher_id=v.id AND l.is_tds_applicable=1 AND x.is_tax_line=0
+                     ORDER BY x.dr_amount DESC LIMIT 1) AS pan,
+                  (SELECT l.tds_section FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                     WHERE x.voucher_id=v.id AND l.is_tds_applicable=1 AND x.is_tax_line=0
+                     ORDER BY x.dr_amount DESC LIMIT 1) AS section,
+                  COALESCE((SELECT SUM(x.dr_amount) FROM voucher_lines x JOIN ledgers l ON x.ledger_id=l.id
+                     WHERE x.voucher_id=v.id AND l.is_tds_applicable=1 AND x.is_tax_line=0),0) AS gross,
+                  COALESCE((SELECT SUM(cr_amount) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='TDS'),0) AS tds,
+                  COALESCE((SELECT MAX(tax_rate) FROM voucher_lines WHERE voucher_id=v.id AND tax_type='TDS'),0) AS rate
+                 FROM vouchers v
+                WHERE v.company_id=? AND v.is_cancelled=0
+                  AND v.voucher_date BETWEEN ? AND ?
+                  AND EXISTS (SELECT 1 FROM voucher_lines WHERE voucher_id=v.id AND tax_type='TDS')
+                ORDER BY v.voucher_date, v.id""",
+            (self.company_id, from_date, to_date),
+        ).fetchall()
+
+        try:
+            from core.voucher_engine import TDS_SECTIONS
+        except Exception:
+            TDS_SECTIONS = {}
+
+        agg: dict = {}
+        for r in rows:
+            key = (r["party"] or "(unknown)", r["section"] or "")
+            a = agg.setdefault(key, {
+                "party": r["party"] or "(unknown)", "pan": r["pan"] or "",
+                "section": r["section"] or "", "rate": r["rate"] or 0.0,
+                "gross": 0.0, "tds": 0.0, "count": 0,
+            })
+            a["gross"] = round(a["gross"] + (r["gross"] or 0), 2)
+            a["tds"] = round(a["tds"] + (r["tds"] or 0), 2)
+            a["count"] += 1
+        parties = sorted(agg.values(), key=lambda x: (x["section"], x["party"]))
+        for p in parties:
+            p["section_desc"] = (TDS_SECTIONS.get(p["section"], {}) or {}).get("desc", "")
+        return {
+            "parties":     parties,
+            "total_gross": round(sum(p["gross"] for p in parties), 2),
+            "total_tds":   round(sum(p["tds"] for p in parties), 2),
+            "from_date":   from_date, "to_date": to_date,
+        }
+
+    # ── 8e. HSN summary (GSTR-1 outward, by HSN/SAC) ──────────────────────────
+    # Group outward supplies by the income ledger's hsn_code. Voucher tax
+    # (CGST/SGST/IGST) is allocated to each income line proportionally by its
+    # taxable share, so multi-HSN invoices split correctly. CREDIT_NOTE signed
+    # negative. Ledgers with no HSN fall under "(no HSN)".
+
+    def hsn_summary(self, from_date: str, to_date: str) -> dict:
+        inc = self.db.execute(
+            """SELECT v.id AS vid, v.voucher_type AS vt,
+                      COALESCE(l.hsn_code,'') AS hsn, vl.cr_amount AS taxable
+                 FROM voucher_lines vl JOIN vouchers v ON vl.voucher_id=v.id
+                 JOIN ledgers l ON vl.ledger_id=l.id
+                 JOIN account_groups g ON l.group_id=g.id
+                WHERE v.company_id=? AND v.is_cancelled=0 AND vl.is_tax_line=0
+                  AND g.nature='INCOME' AND v.voucher_type IN ('SALES','CREDIT_NOTE')
+                  AND v.voucher_date BETWEEN ? AND ?""",
+            (self.company_id, from_date, to_date),
+        ).fetchall()
+        tax = self.db.execute(
+            """SELECT v.id AS vid, vl.tax_type AS tt, COALESCE(SUM(vl.cr_amount),0) AS amt
+                 FROM voucher_lines vl JOIN vouchers v ON vl.voucher_id=v.id
+                WHERE v.company_id=? AND v.is_cancelled=0 AND vl.is_tax_line=1
+                  AND vl.tax_type IN ('CGST','SGST','IGST')
+                  AND v.voucher_type IN ('SALES','CREDIT_NOTE')
+                  AND v.voucher_date BETWEEN ? AND ?
+                GROUP BY v.id, vl.tax_type""",
+            (self.company_id, from_date, to_date),
+        ).fetchall()
+
+        vtax: dict = {}
+        for r in tax:
+            vtax.setdefault(r["vid"], {"CGST": 0.0, "SGST": 0.0, "IGST": 0.0})[r["tt"]] = r["amt"] or 0.0
+        vinc: dict = {}
+        vtype: dict = {}
+        for r in inc:
+            vinc.setdefault(r["vid"], []).append((r["hsn"] or "(no HSN)", r["taxable"] or 0.0))
+            vtype[r["vid"]] = r["vt"]
+
+        agg: dict = {}
+        for vid, lines in vinc.items():
+            sign = -1.0 if vtype[vid] == "CREDIT_NOTE" else 1.0
+            total = sum(t for _, t in lines)
+            vt = vtax.get(vid, {"CGST": 0.0, "SGST": 0.0, "IGST": 0.0})
+            for hsn, taxable in lines:
+                share = (taxable / total) if total else 0.0
+                a = agg.setdefault(hsn, {"hsn": hsn, "taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0})
+                a["taxable"] += sign * taxable
+                a["cgst"] += sign * vt["CGST"] * share
+                a["sgst"] += sign * vt["SGST"] * share
+                a["igst"] += sign * vt["IGST"] * share
+
+        rows = []
+        for hsn in sorted(agg):
+            a = agg[hsn]
+            rows.append({k: (round(v, 2) if isinstance(v, float) else v) for k, v in a.items()})
+        return {
+            "rows":          rows,
+            "total_taxable": round(sum(r["taxable"] for r in rows), 2),
+            "total_tax":     round(sum(r["cgst"] + r["sgst"] + r["igst"] for r in rows), 2),
+            "from_date":     from_date, "to_date": to_date,
+        }
+
     # ── 10. Day Book ──────────────────────────────────────────────────────────
 
     def day_book(self, from_date: str, to_date: str,

@@ -1,0 +1,26 @@
+# Keep the license_server + marketing image lean.
+# Only the license_server/ + marketing/ directories are needed at runtime
+# (Dockerfile COPIes them explicitly). Everything else is dev-only.
+
+# Marketing dev scripts + the deploy-bundle workspace
+marketing/_*.py
+marketing/_deploy/
+marketing/competitor_*.md
+marketing-aic/_*.py
+
+# Desktop app, build pipeline, tests — not needed by the server
+core/
+ui/
+ai/
+app/
+build/
+tests/
+data/
+docs/
+.claude/
+.git/
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.DS_Store

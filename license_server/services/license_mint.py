@@ -75,7 +75,7 @@ def mint_license(
     # collisions are astronomically rare, but be defensive.
     key = None
     for _ in range(10):
-        candidate = generate_key()
+        candidate = generate_key(product)
         if not db.scalar(select(License).where(License.license_key == candidate)):
             key = candidate
             break

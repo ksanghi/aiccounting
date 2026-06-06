@@ -141,7 +141,14 @@ class AIUsageLog(Base):
 
 class SMSWallet(Base):
     """
-    Per-license pre-paid SMS balance in paise.
+    RETIRED 2026-06-04 (RWAHQ_ARCHITECTURE.md §3 — ONE wallet). This separate
+    balance is no longer read or written: there is a SINGLE prepaid wallet per
+    license = the `credits` row, and ALL charges (AI usage, SMS, visitor-pass
+    WA, decision WA) debit it. Table kept dormant to avoid a destructive drop;
+    do NOT reintroduce it as a balance. `SMSWalletTxn` survives as the
+    per-message audit ledger only.
+
+    (Historical) Per-license pre-paid SMS balance in paise.
 
     Pricing model (decided 2026-05-17): cloud + web + mobile are free; the
     society monetises by paying ₹0.50 per SMS (OTP for resident login, or
