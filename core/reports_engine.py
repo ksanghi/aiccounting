@@ -436,6 +436,133 @@ class ReportsEngine:
             "totals": {k: round(v, 2) for k, v in totals.items()},
         }
 
+    def payables_aging(self, as_of: str) -> dict:
+        """Age the outstanding balance of every Sundry Creditor ledger — the
+        mirror of receivables_aging for what WE owe suppliers.
+
+        FIFO, dr/cr flipped: a creditor's charges are its Cr postings
+        (purchases/bills) oldest-first; payments are Dr postings; a Cr opening
+        balance is the oldest charge. Returns the same shape as
+        receivables_aging.
+        """
+        as_of_d = date.fromisoformat(as_of)
+        creditor_ledgers = self.db.execute(
+            """SELECT l.id, l.name AS ledger,
+                      l.opening_balance, l.opening_type
+                 FROM ledgers l
+                 JOIN account_groups g ON l.group_id = g.id
+                WHERE l.company_id = ? AND l.active = 1
+                  AND g.name = 'Sundry Creditors'
+             ORDER BY l.name""",
+            (self.company_id,),
+        ).fetchall()
+
+        rows: list[dict] = []
+        totals = {"b0_30": 0.0, "b31_60": 0.0, "b61_90": 0.0, "b90p": 0.0}
+        for l in creditor_ledgers:
+            lines = self.db.execute(
+                """SELECT v.voucher_date AS d, vl.dr_amount AS dr,
+                          vl.cr_amount AS cr
+                     FROM voucher_lines vl
+                     JOIN vouchers v ON v.id = vl.voucher_id
+                    WHERE vl.ledger_id = ? AND v.is_cancelled = 0
+                      AND v.company_id = ? AND v.voucher_date <= ?
+                 ORDER BY v.voucher_date, v.id""",
+                (l["id"], self.company_id, as_of),
+            ).fetchall()
+
+            # Charges = what we owe = Cr postings oldest-first (Cr opening =
+            # oldest). Payments = Dr postings (+ a Dr opening pool).
+            charges: list[list] = []
+            payments = 0.0
+            ob = l["opening_balance"] or 0.0
+            if l["opening_type"] == "Cr" and ob > 0:
+                charges.append([None, ob])
+            elif l["opening_type"] == "Dr" and ob > 0:
+                payments += ob
+            for ln in lines:
+                if (ln["cr"] or 0) > 0:
+                    charges.append([ln["d"], float(ln["cr"])])
+                if (ln["dr"] or 0) > 0:
+                    payments += float(ln["dr"])
+
+            pool = payments
+            for ch in charges:
+                if pool <= 0:
+                    break
+                take = min(pool, ch[1])
+                ch[1] -= take
+                pool  -= take
+
+            lb = {"b0_30": 0.0, "b31_60": 0.0, "b61_90": 0.0, "b90p": 0.0}
+            for ch_date, rem in charges:
+                if rem <= 0.01:
+                    continue
+                age = (9999 if ch_date is None
+                       else (as_of_d - date.fromisoformat(ch_date)).days)
+                if   age <= 30: lb["b0_30"]  += rem
+                elif age <= 60: lb["b31_60"] += rem
+                elif age <= 90: lb["b61_90"] += rem
+                else:           lb["b90p"]   += rem
+
+            total = round(sum(lb.values()), 2)
+            if total > 0.01:
+                rows.append({
+                    "ledger": l["ledger"],
+                    "b0_30":  round(lb["b0_30"],  2),
+                    "b31_60": round(lb["b31_60"], 2),
+                    "b61_90": round(lb["b61_90"], 2),
+                    "b90p":   round(lb["b90p"],   2),
+                    "total":  total,
+                })
+                for k in totals:
+                    totals[k] += lb[k]
+
+        rows.sort(key=lambda r: r["total"], reverse=True)
+        return {
+            "as_of":  as_of,
+            "rows":   rows,
+            "totals": {k: round(v, 2) for k, v in totals.items()},
+        }
+
+    def cash_flow_planning(self, as_of: str) -> dict:
+        """Aging-only cash-flow projection in monthly-horizon buckets.
+
+        Reuses the receivables (expected IN) and payables (expected OUT) aging
+        buckets as a forward timeline — i.e. the age of an outstanding item is
+        read as roughly when it should clear. No recurring flows are modelled
+        (aging-only, by design). Returns per-bucket inflow/outflow/net + a
+        running cumulative cash position, plus headline totals.
+        """
+        rec = self.receivables_aging(as_of)["totals"]
+        pay = self.payables_aging(as_of)["totals"]
+        order = [
+            ("b0_30",  "This month (0–30 days)"),
+            ("b31_60", "Next month (31–60 days)"),
+            ("b61_90", "In 2–3 months (61–90 days)"),
+            ("b90p",   "Beyond 90 days (overdue)"),
+        ]
+        buckets: list[dict] = []
+        cum = 0.0
+        for key, label in order:
+            inflow  = round(rec.get(key, 0.0), 2)
+            outflow = round(pay.get(key, 0.0), 2)
+            net = round(inflow - outflow, 2)
+            cum = round(cum + net, 2)
+            buckets.append({
+                "label": label, "inflow": inflow, "outflow": outflow,
+                "net": net, "cumulative": cum,
+            })
+        total_in  = round(sum(rec.values()), 2)
+        total_out = round(sum(pay.values()), 2)
+        return {
+            "as_of": as_of,
+            "buckets": buckets,
+            "total_in": total_in,
+            "total_out": total_out,
+            "net_position": round(total_in - total_out, 2),
+        }
+
     # ── 4 & 5. Cash Book / Bank Book ─────────────────────────────────────────
 
     def cash_book(self, from_date: str, to_date: str) -> dict:

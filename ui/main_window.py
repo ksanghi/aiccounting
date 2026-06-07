@@ -555,13 +555,14 @@ class MainWindow(QMainWindow):
             ("ledger_account",    "Ledger Account", "📒", "LedgerAccountPage"),
             ("receipts_payments", "Rcpts & Pmts",   "↕",  "ReceiptsPaymentsPage"),
             ("receivables_aging", "Receivables Aging", "⏳", "ReceivablesAgingPage"),
+            ("payables_aging",    "Payables Aging",    "⌛", "PayablesAgingPage"),
         ]
         any_report_unlocked = any(lmgr.has_feature(fid) for fid, *_ in report_specs)
         if any_report_unlocked:
             from ui.reports_page import (
                 TrialBalancePage, ProfitLossPage, BalanceSheetPage,
                 CashBookPage, BankBookPage, ReceiptsPaymentsPage,
-                LedgerAccountPage, ReceivablesAgingPage,
+                LedgerAccountPage, ReceivablesAgingPage, PayablesAgingPage,
             )
             rpt = ReportsEngine(self.db, self.company_id)
             page_factories = {
@@ -573,6 +574,7 @@ class MainWindow(QMainWindow):
                 "LedgerAccountPage":    lambda: LedgerAccountPage(rpt, self.tree, self.engine),
                 "ReceiptsPaymentsPage": lambda: ReceiptsPaymentsPage(rpt),
                 "ReceivablesAgingPage": lambda: ReceivablesAgingPage(rpt),
+                "PayablesAgingPage":    lambda: PayablesAgingPage(rpt),
             }
             for fid, label, icon, page_cls in report_specs:
                 if lmgr.has_feature(fid):
@@ -599,6 +601,19 @@ class MainWindow(QMainWindow):
             self.register_page(
                 "Bill-wise Outstanding", "🧾",
                 self._locked_page("bill_wise_refs", "PRO", "Bill-wise Outstanding"),
+            )
+
+        # ── Cash-Flow Planning (aging-based) — PRO+ ──
+        if lmgr.has_feature("cash_flow_planning"):
+            from ui.reports_page import CashFlowPlanningPage
+            self.register_page(
+                "Cash-Flow Planning", "💧",
+                CashFlowPlanningPage(ReportsEngine(self.db, self.company_id)),
+            )
+        else:
+            self.register_page(
+                "Cash-Flow Planning", "💧",
+                self._locked_page("cash_flow_planning", "PRO", "Cash-Flow Planning"),
             )
 
         # ── Bank Reconciliation — STANDARD+ ──

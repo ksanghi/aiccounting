@@ -1407,6 +1407,112 @@ class ReceivablesAgingPage(_ReportBase):
         exp.receivables_aging(self._data, self.rpt.get_company(), path)
 
 
+# ── Payables Aging (mirror of receivables, for creditors) ────────────────────
+
+class PayablesAgingPage(_ReportBase):
+    """How old is each supplier's outstanding — what WE owe, FIFO-aged."""
+    TITLE    = "Payables Aging"
+    SUBTITLE = "Outstanding to each supplier, bucketed by age"
+    AS_OF    = True
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Supplier", "0-30 days", "31-60 days", "61-90 days",
+             "90+ days", "Total"],
+            stretch_cols=[0],
+        )
+        self._body.addWidget(self._table, 1)
+
+    def refresh(self):
+        as_of = self._dates()
+        self._data = self.rpt.payables_aging(as_of)
+        rows = self._data["rows"]
+        t = self._table
+        t.setRowCount(len(rows) + (1 if rows else 0))
+        for i, d in enumerate(rows):
+            t.setItem(i, 0, _item(d["ledger"]))
+            t.setItem(i, 1, _item(_fmt(d["b0_30"]),  right=True))
+            t.setItem(i, 2, _item(_fmt(d["b31_60"]), right=True))
+            t.setItem(i, 3, _item(_fmt(d["b61_90"]), right=True))
+            t.setItem(i, 4, _item(_fmt(d["b90p"]),   right=True,
+                                  colour=THEME["danger"] if d["b90p"] else None))
+            t.setItem(i, 5, _item(_fmt(d["total"]),  right=True, bold=True))
+        if rows:
+            tot = self._data["totals"]
+            grand = round(sum(tot.values()), 2)
+            i = len(rows)
+            t.setItem(i, 0, _item("TOTAL", bold=True))
+            t.setItem(i, 1, _item(_fmt(tot["b0_30"]),  right=True, bold=True))
+            t.setItem(i, 2, _item(_fmt(tot["b31_60"]), right=True, bold=True))
+            t.setItem(i, 3, _item(_fmt(tot["b61_90"]), right=True, bold=True))
+            t.setItem(i, 4, _item(_fmt(tot["b90p"]),   right=True, bold=True))
+            t.setItem(i, 5, _item(_fmt(grand),         right=True, bold=True))
+        self._status.setText(
+            f"As on {as_of}  |  {len(rows)} supplier(s) with outstanding"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.payables_aging(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.payables_aging(self._data, self.rpt.get_company(), path)
+
+
+# ── Cash-Flow Planning (aging-based, monthly-horizon buckets) ────────────────
+
+class CashFlowPlanningPage(_ReportBase):
+    """Projected cash position by horizon: receivables (in) vs payables (out),
+    aging buckets read as a forward timeline. Aging-only — no recurring flows."""
+    TITLE    = "Cash-Flow Planning"
+    SUBTITLE = "Projected position by horizon — receivables in vs payables out (aging-based)"
+    AS_OF    = True
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["Horizon", "Expected In", "Expected Out", "Net",
+             "Cumulative Position"],
+            stretch_cols=[0],
+        )
+        self._body.addWidget(self._table, 1)
+
+    def refresh(self):
+        as_of = self._dates()
+        self._data = self.rpt.cash_flow_planning(as_of)
+        buckets = self._data["buckets"]
+        t = self._table
+        t.setRowCount(len(buckets) + 1)
+        for i, d in enumerate(buckets):
+            net_col = THEME["success"] if d["net"] >= 0 else THEME["danger"]
+            cum_col = THEME["success"] if d["cumulative"] >= 0 else THEME["danger"]
+            t.setItem(i, 0, _item(d["label"]))
+            t.setItem(i, 1, _item(_fmt(d["inflow"]),  right=True))
+            t.setItem(i, 2, _item(_fmt(d["outflow"]), right=True))
+            t.setItem(i, 3, _item(_fmt(d["net"]),     right=True, colour=net_col))
+            t.setItem(i, 4, _item(_fmt(d["cumulative"]), right=True,
+                                  bold=True, colour=cum_col))
+        i = len(buckets)
+        np = self._data["net_position"]
+        np_col = THEME["success"] if np >= 0 else THEME["danger"]
+        t.setItem(i, 0, _item("NET POSITION", bold=True))
+        t.setItem(i, 1, _item(_fmt(self._data["total_in"]),  right=True, bold=True))
+        t.setItem(i, 2, _item(_fmt(self._data["total_out"]), right=True, bold=True))
+        t.setItem(i, 3, _item(_fmt(np), right=True, bold=True, colour=np_col))
+        t.setItem(i, 4, _item(""))
+        self._status.setText(
+            f"As on {as_of}  |  Receivable {_fmt(self._data['total_in'])}  −  "
+            f"Payable {_fmt(self._data['total_out'])}  =  Net {_fmt(np)}  "
+            f"(aging-based, no recurring flows)"
+        )
+
+    def _do_excel(self, exp, path):
+        exp.cash_flow(self._data, self.rpt.get_company(), path)
+
+    def _do_pdf(self, exp, path):
+        exp.cash_flow(self._data, self.rpt.get_company(), path)
+
+
 # ── Ledger Account (per-ledger statement view) ───────────────────────────────
 
 class LedgerAccountPage(_ReportBase):
