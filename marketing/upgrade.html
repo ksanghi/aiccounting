@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upgrade your licence</title>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+  :root{--teal:#0EA5A5;--ink:#0f1629;--muted:#667085;--line:#e5e9f1;--bg:#f6f8fb;}
+  *{box-sizing:border-box;}
+  body{font-family:system-ui,'Segoe UI',Roboto,sans-serif;margin:0;background:var(--bg);color:var(--ink);}
+  .wrap{max-width:560px;margin:40px auto;padding:0 16px;}
+  h1{font-size:24px;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:20px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;}
+  label{display:block;font-weight:600;font-size:13px;margin:0 0 6px;}
+  input[type=text]{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:16px;letter-spacing:1px;text-transform:uppercase;}
+  button{background:var(--teal);color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer;}
+  button:disabled{opacity:.5;cursor:default;}
+  .cur{font-size:14px;color:var(--muted);margin-bottom:14px;}
+  .cur b{color:var(--ink);}
+  .opt{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+  .opt .t{font-weight:700;font-size:16px;}
+  .opt .calc{font-size:12px;color:var(--muted);margin-top:2px;}
+  .opt .pay{font-size:18px;font-weight:800;color:var(--teal);white-space:nowrap;}
+  .opt button{padding:10px 14px;font-size:14px;}
+  .alert{padding:12px;border-radius:8px;font-size:14px;margin-bottom:14px;display:none;}
+  .alert.err{background:#fde8e8;color:#c0392b;display:block;}
+  .alert.ok{background:#e7f7ee;color:#0a7a55;display:block;}
+  .ok-screen{display:none;text-align:center;}
+  .ok-screen .big{font-size:40px;}
+  small{color:var(--muted);font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Upgrade your licence</h1>
+  <div class="sub">Move up a tier and pay only the difference — we credit the unused value of your current licence.</div>
+
+  <div id="alert" class="alert"></div>
+
+  <!-- Step 1: enter key -->
+  <div class="card" id="key-card">
+    <label for="key">Your licence key</label>
+    <input type="text" id="key" placeholder="ACCG-XXXX-XXXX-XXXX" autocomplete="off">
+    <div style="margin-top:14px"><button id="check" onclick="checkUpgrades()">See upgrade prices →</button></div>
+  </div>
+
+  <!-- Step 2: options -->
+  <div class="card" id="opt-card" style="display:none;">
+    <div class="cur" id="cur"></div>
+    <div id="opts"></div>
+    <small>Upgrading gives you a fresh full term from today at the new tier. No refunds for time already paid.</small>
+  </div>
+
+  <!-- Success -->
+  <div class="card ok-screen" id="ok">
+    <div class="big">✓</div>
+    <h1 id="ok-title">Upgraded!</h1>
+    <p id="ok-msg" class="sub"></p>
+    <small>Your existing key is unchanged — its plan and validity are updated. Re-open the app to see the new tier.</small>
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://license.ai-consultants.in";
+let STATE = { key:"", product:"", quote:null };
+
+function alertBox(kind, msg){
+  const a = document.getElementById("alert");
+  a.className = "alert " + (kind==="ok"?"ok":"err");
+  a.textContent = msg;
+}
+function clearAlert(){ const a=document.getElementById("alert"); a.className="alert"; a.textContent=""; }
+
+async function checkUpgrades(){
+  clearAlert();
+  const key = document.getElementById("key").value.trim().toUpperCase();
+  if(key.length < 4){ alertBox("err","Enter your licence key."); return; }
+  const btn = document.getElementById("check");
+  btn.disabled = true; btn.textContent = "Checking…";
+  let body;
+  try{
+    const r = await fetch(`${API_BASE}/api/v1/checkout/upgrade-quote`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ license_key: key }),
+    });
+    body = await r.json();
+  }catch(e){ alertBox("err","Network error — try again."); btn.disabled=false; btn.textContent="See upgrade prices →"; return; }
+  btn.disabled = false; btn.textContent = "See upgrade prices →";
+  if(!body.ok){ alertBox("err", body.error || "Could not look up that key."); return; }
+
+  STATE.key = key; STATE.product = body.product;
+  document.getElementById("cur").innerHTML =
+    `Current plan: <b>${body.current_plan}</b> (${body.billing_period}) · expires <b>${body.expires_at}</b> · ${body.days_left} days left`;
+
+  const wrap = document.getElementById("opts");
+  if(!body.options.length){
+    wrap.innerHTML = `<div class="sub">You're already on the highest tier — nothing to upgrade. 🎉</div>`;
+  } else {
+    wrap.innerHTML = body.options.map((o, i) => `
+      <div class="opt">
+        <div>
+          <div class="t">Upgrade to ${o.target_plan}</div>
+          <div class="calc">${o.new_full_display} full − ${o.balance_display} credit · new expiry ${o.new_expiry}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="pay">${o.upgrade_display}</div>
+          <button onclick='startUpgrade(${i})'>Upgrade →</button>
+        </div>
+      </div>`).join("");
+    STATE.quote = body;
+  }
+  document.getElementById("key-card").style.display = "none";
+  document.getElementById("opt-card").style.display = "block";
+}
+
+async function startUpgrade(i){
+  clearAlert();
+  const opt = STATE.quote.options[i];
+  let body;
+  try{
+    const r = await fetch(`${API_BASE}/api/v1/checkout/create-upgrade-order`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ license_key: STATE.key, target_plan: opt.target_plan }),
+    });
+    body = await r.json();
+  }catch(e){ alertBox("err","Network error — try again."); return; }
+  if(!body.ok){ alertBox("err", body.error || "Could not start the upgrade."); return; }
+
+  const rzp = new Razorpay({
+    key: body.razorpay_key_id,
+    order_id: body.order_id,
+    amount: body.amount_paise,
+    currency: body.currency,
+    name: "Licence upgrade",
+    description: `Upgrade to ${opt.target_plan}`,
+    notes: { kind:"tier_upgrade", license_key: STATE.key, target_plan: opt.target_plan },
+    theme: { color: "#0EA5A5" },
+    handler: function(){
+      document.getElementById("opt-card").style.display = "none";
+      document.getElementById("key-card").style.display = "none";
+      document.getElementById("ok").style.display = "block";
+      document.getElementById("ok-title").textContent = `Upgraded to ${opt.target_plan}!`;
+      document.getElementById("ok-msg").textContent =
+        `Your key ${STATE.key} is now ${opt.target_plan}, valid to ${opt.new_expiry}.`;
+    },
+    modal: { ondismiss: function(){} }
+  });
+  rzp.on("payment.failed", function(resp){
+    alertBox("err", "Payment failed: " + (resp.error && resp.error.description || "unknown error"));
+  });
+  rzp.open();
+}
+</script>
+</body>
+</html>

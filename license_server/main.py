@@ -49,9 +49,11 @@ from license_server.plans import (
 from license_server.keys import is_valid_format
 from license_server.services import razorpay_client, email_service
 from license_server.services.license_mint import (
-    mint_license, default_expiry_for_plan, MintError,
+    mint_license, default_expiry_for_plan, expiry_for, MintError,
 )
-from license_server.services.pricing_lookup import resolve_price, PricingError
+from license_server.services.pricing_lookup import (
+    resolve_price, compute_upgrade, tier_rank, PricingError,
+)
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────
@@ -212,6 +214,7 @@ class CheckoutCreateRequest(BaseModel):
     plan:           str    = Field(..., min_length=2, max_length=16)
     product:        str    = Field(default="accgenie",
                                    pattern="^(accgenie|rwagenie|tradehq)$")
+    billing_period: str    = Field(default="annual", pattern="^(annual|monthly)$")
     country_code:   str    = Field(default="IN", min_length=2, max_length=4)
     customer_email: str    = Field(..., min_length=3, max_length=256)
     customer_name:  str    = Field(default="", max_length=256)
@@ -1381,6 +1384,7 @@ def checkout_create_order(
     plan = (body.plan or "").upper()
     product = (body.product or "accgenie").lower()
     country = (body.country_code or "IN").upper()
+    period = (body.billing_period or "annual").lower()
     email = (body.customer_email or "").strip()
     if not email or "@" not in email:
         return CheckoutCreateResponse(ok=False, error="Valid email required")
@@ -1453,25 +1457,31 @@ def checkout_create_order(
     # (no sister xlsx files yet). All three branches produce the same
     # {amount_paise, currency, plan_code, ...} dict so the rest of this
     # handler stays product-agnostic.
-    from license_server.plans import price_for
+    from license_server.plans import price_paise_for
     if product in ("rwagenie", "tradehq"):
-        inr = price_for(product, plan, country)
-        if not inr:
+        paise = price_paise_for(product, plan, country, period)
+        if not paise:
             product_label = "tradeHQ" if product == "tradehq" else "RWAGenie"
+            extra = " (monthly)" if period == "monthly" else ""
             return CheckoutCreateResponse(
                 ok=False,
-                error=(f"{product_label} {plan} is not priced for sale "
+                error=(f"{product_label} {plan}{extra} is not priced for sale "
                        f"in {country} yet."),
             )
         price = {
             "plan_code":      plan,
             "plan_name":      plan.title(),
             "currency":       "INR",
-            "amount_paise":   int(inr * 100),
-            "amount_display": f"Rs. {inr:,.2f}",
+            "amount_paise":   paise,
+            "amount_display": f"Rs. {paise/100:,.2f}",
             "country_code":   country,
         }
     else:
+        # AHQ (accgenie): annual only, multi-country via pricing.xlsx.
+        if period == "monthly":
+            return CheckoutCreateResponse(
+                ok=False,
+                error="Monthly billing isn't available for this plan — choose annual.")
         try:
             price = resolve_price(plan, country)
         except PricingError as e:
@@ -1506,6 +1516,7 @@ def checkout_create_order(
         razorpay_order_id=rp_order["id"],
         product=product,
         plan=price["plan_code"],
+        billing_period=period,
         amount_paise=price["amount_paise"],
         currency=price["currency"],
         country_code=price["country_code"],
@@ -1528,6 +1539,128 @@ def checkout_create_order(
         razorpay_key_id=settings.razorpay_key_id,
         plan=price["plan_code"],
         plan_name=price["plan_name"],
+    )
+
+
+# ── License upgrade (in-place; new full price − balance of existing key) ──────
+
+class UpgradeQuoteRequest(BaseModel):
+    license_key: str = Field(..., min_length=4, max_length=32)
+
+
+class UpgradeOption(BaseModel):
+    target_plan:      str
+    new_full_display: str
+    balance_display:  str
+    upgrade_display:  str
+    upgrade_paise:    int
+    new_expiry:       str
+
+
+class UpgradeQuoteResponse(BaseModel):
+    ok:              bool
+    error:           Optional[str] = None
+    product:         Optional[str] = None
+    current_plan:    Optional[str] = None
+    billing_period:  Optional[str] = None
+    expires_at:      Optional[str] = None
+    days_left:       Optional[int] = None
+    razorpay_key_id: Optional[str] = None
+    options:         list[UpgradeOption] = []
+
+
+class UpgradeOrderRequest(BaseModel):
+    license_key: str = Field(..., min_length=4, max_length=32)
+    target_plan: str = Field(..., min_length=2, max_length=16)
+
+
+_UPGRADE_TIERS = ("STANDARD", "PRO", "PREMIUM")
+
+
+@app.post("/api/v1/checkout/upgrade-quote", response_model=UpgradeQuoteResponse)
+def upgrade_quote(body: UpgradeQuoteRequest, db: Session = Depends(get_db)):
+    """Given an existing key, return the upgrade price to each higher tier:
+    new full (period) price − the balance value of the current key."""
+    key = (body.license_key or "").strip().upper()
+    lic = db.scalar(select(License).where(License.license_key == key))
+    if lic is None:
+        return UpgradeQuoteResponse(ok=False, error="License key not found.")
+    if lic.revoked:
+        return UpgradeQuoteResponse(ok=False, error="This license is revoked.")
+    period = (lic.billing_period or "annual").lower()
+    options: list[UpgradeOption] = []
+    for tgt in _UPGRADE_TIERS:
+        if tier_rank(tgt) <= tier_rank(lic.plan):
+            continue
+        try:
+            q = compute_upgrade(lic.product, lic.plan, lic.expires_at, tgt,
+                                "IN", period)
+        except PricingError:
+            continue
+        options.append(UpgradeOption(
+            target_plan=tgt,
+            new_full_display=q["new_full_display"],
+            balance_display=q["balance_display"],
+            upgrade_display=q["upgrade_display"],
+            upgrade_paise=q["upgrade_paise"],
+            new_expiry=q["new_expiry"],
+        ))
+    return UpgradeQuoteResponse(
+        ok=True, product=lic.product, current_plan=lic.plan,
+        billing_period=period, expires_at=lic.expires_at.isoformat(),
+        days_left=max(0, (lic.expires_at - date.today()).days),
+        razorpay_key_id=settings.razorpay_key_id, options=options,
+    )
+
+
+@app.post("/api/v1/checkout/create-upgrade-order",
+          response_model=CheckoutCreateResponse)
+def create_upgrade_order(body: UpgradeOrderRequest, db: Session = Depends(get_db)):
+    """Razorpay order for an in-place tier upgrade. Price recomputed server-side
+    (never trust the client). On payment the webhook upgrades the EXISTING key
+    (plan + fresh full term) — no new key is minted."""
+    if not razorpay_client.is_enabled():
+        raise HTTPException(503, "Payments are not configured on this server.")
+    key = (body.license_key or "").strip().upper()
+    tgt = (body.target_plan or "").strip().upper()
+    lic = db.scalar(select(License).where(License.license_key == key))
+    if lic is None:
+        return CheckoutCreateResponse(ok=False, error="License key not found.")
+    if lic.revoked:
+        return CheckoutCreateResponse(ok=False, error="This license is revoked.")
+    period = (lic.billing_period or "annual").lower()
+    try:
+        q = compute_upgrade(lic.product, lic.plan, lic.expires_at, tgt, "IN", period)
+    except PricingError as e:
+        return CheckoutCreateResponse(ok=False, error=str(e))
+    if q["upgrade_paise"] <= 0:
+        return CheckoutCreateResponse(
+            ok=False,
+            error="No upgrade charge is due — contact support to switch tiers.")
+    try:
+        rp_order = razorpay_client.create_order(
+            amount_paise=q["upgrade_paise"], currency="INR",
+            receipt_id=f"upg-{tgt[:4]}-{int(datetime.utcnow().timestamp())}",
+            notes={"kind": "tier_upgrade", "license_key": key,
+                   "target_plan": tgt, "product": lic.product, "period": period},
+        )
+    except razorpay_client.RazorpayError as e:
+        return CheckoutCreateResponse(ok=False, error=f"Razorpay: {e}")
+    order = Order(
+        razorpay_order_id=rp_order["id"], kind="tier_upgrade",
+        product=lic.product, plan=tgt, billing_period=period,
+        amount_paise=q["upgrade_paise"], currency="INR", country_code="IN",
+        customer_email=lic.customer_email, company_name=lic.company_name or "",
+        wallet_license_id=lic.id, status="created",
+        notes=f"[upgrade-create] {lic.plan}->{tgt} key={key}",
+    )
+    db.add(order)
+    db.commit()
+    return CheckoutCreateResponse(
+        ok=True, order_id=rp_order["id"], amount_paise=q["upgrade_paise"],
+        amount_display=q["upgrade_display"], currency="INR",
+        razorpay_key_id=settings.razorpay_key_id,
+        plan=tgt, plan_name=tgt.title(), product=lic.product,
     )
 
 
@@ -1641,6 +1774,51 @@ async def razorpay_webhook(
                 "wallet_license_id": lic.id,
                 "balance_paise": row.balance_paise}
 
+    # ── Tier-upgrade branch ──
+    # Upgrade the EXISTING license in place (no new key): new plan + fresh full
+    # term + new-tier limits. The order carries the existing license id and the
+    # target plan/period.
+    if (order.kind or "tier_purchase") == "tier_upgrade":
+        target_id = order.wallet_license_id
+        lic = db.get(License, target_id) if target_id else None
+        if lic is None:
+            raise HTTPException(500, "Upgrade order: target license not found")
+        from license_server.plans import (
+            PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_SEATS,
+        )
+        old_plan = lic.plan
+        lic.plan           = order.plan
+        lic.billing_period = order.billing_period or "annual"
+        lic.expires_at     = expiry_for(order.plan, lic.billing_period)
+        try:
+            lic.txn_limit     = PLAN_LIMITS.get(order.plan, lic.txn_limit)
+            lic.user_limit    = PLAN_USER_LIMITS.get(order.plan, lic.user_limit)
+            lic.seats_allowed = PLAN_SEATS.get(order.plan, lic.seats_allowed)
+        except Exception:
+            pass
+        order.status              = "paid"
+        order.razorpay_payment_id = rp_payment_id
+        order.license_id          = lic.id
+        order.notes               = (order.notes or "") + (
+            f"\n[paid upgrade] {old_plan}->{lic.plan} key={lic.license_key} "
+            f"payment={rp_payment_id}"
+        )
+        db.commit()
+        try:
+            email_service.send_license_email(
+                to_email=lic.customer_email,
+                license_key=lic.license_key,
+                plan=lic.plan,
+                expires_at=lic.expires_at.isoformat(),
+                customer_name=order.customer_name or "",
+                amount_paid_str=f"INR {order.amount_paise/100:,.2f}",
+                product=lic.product or "accgenie",
+            )
+        except Exception:
+            pass
+        return {"ok": True, "status": "upgraded",
+                "license_id": lic.id, "plan": lic.plan}
+
     # ── Tier-purchase branch (the original flow) ──
     # Mint the license. Carry the product (accgenie/rwagenie) forward
     # from the order so RWAGenie purchases produce RWAGenie licenses.
@@ -1651,7 +1829,8 @@ async def razorpay_webhook(
             plan=order.plan,
             customer_email=order.customer_email,
             company_name=order.company_name,
-            expires_at=default_expiry_for_plan(order.plan),
+            expires_at=expiry_for(order.plan, order.billing_period or "annual"),
+            billing_period=order.billing_period or "annual",
             notes=f"razorpay order {order.razorpay_order_id} "
                   f"payment {rp_payment_id}",
         )
