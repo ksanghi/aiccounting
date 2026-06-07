@@ -1475,15 +1475,26 @@ class CashFlowPlanningPage(_ReportBase):
         super()._build_shell()
         from PySide6.QtWidgets import QSplitter, QComboBox  # local — page-only
         self._QComboBox = QComboBox
-        split = QSplitter(Qt.Orientation.Vertical)
+        # Side-by-side: tick a party on the LEFT, watch the forecast react on
+        # the RIGHT. The worklist gets the full window height for its rows.
+        split = QSplitter(Qt.Orientation.Horizontal)
 
         ws = QFrame(); ws.setObjectName("card")
         wl = QVBoxLayout(ws); wl.setContentsMargins(12, 10, 12, 10); wl.setSpacing(4)
         wl.addWidget(self._mini("PLAN THE BIG ITEMS  (≈80% of receipts & payments)"))
-        self._ws = _make_table(
-            ["Party", "Direction", "Outstanding", "Expect by"], stretch_cols=[0])
+        self._ws = _make_table(["Party", "Direction", "Outstanding", "Expect by"])
+        wh = self._ws.horizontalHeader()
+        # Party doesn't need a wide column — cap it and elide long names; let
+        # the "Expect by" combo column take the slack.
+        wh.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self._ws.setColumnWidth(0, 170)
+        wh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        wh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        wh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._ws.setTextElideMode(Qt.TextElideMode.ElideRight)
         wl.addWidget(self._ws, 1)
         self._tail_lbl = QLabel("")
+        self._tail_lbl.setWordWrap(True)
         self._tail_lbl.setStyleSheet(
             f"color:{THEME['text_secondary']}; font-size:11px;")
         wl.addWidget(self._tail_lbl)
@@ -1497,7 +1508,9 @@ class CashFlowPlanningPage(_ReportBase):
             stretch_cols=[0])
         fl.addWidget(self._fc, 1)
         split.addWidget(fc)
-        split.setSizes([300, 300])
+        split.setSizes([560, 520])
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 1)
         self._body.addWidget(split, 1)
         self._periods = []
 

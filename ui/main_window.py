@@ -156,7 +156,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{branding.PRODUCT_NAME} — {self._company_name}")
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
-        self.setStyleSheet(get_stylesheet())
+        # Style at the APPLICATION level only — a window-level stylesheet would
+        # shadow the app one and force a second full re-polish on every theme
+        # toggle. main.py already sets this at boot; this is a safety net.
+        app = QApplication.instance()
+        if app is not None and not app.styleSheet():
+            app.setStyleSheet(get_stylesheet())
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
@@ -216,12 +221,9 @@ class MainWindow(QMainWindow):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self._nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._nav_scroll.setStyleSheet(
-            f"QScrollArea {{ background: {THEME['bg_sidebar']}; border: none; }}"
-        )
 
         nav_host = QWidget()
-        nav_host.setStyleSheet(f"background: {THEME['bg_sidebar']};")
+        self._nav_host = nav_host
         nav_outer = QVBoxLayout(nav_host)
         nav_outer.setContentsMargins(0, 0, 0, 0)
         nav_outer.setSpacing(0)
@@ -241,101 +243,39 @@ class MainWindow(QMainWindow):
         self._nav_scroll.setWidget(nav_host)
         sidebar_layout.addWidget(self._nav_scroll, 1)
 
-        # Dark / light theme toggle (shared base → RHQ inherits it)
+        # Secondary sidebar buttons. These (and the nav containers above) carry
+        # inline, theme-coloured styles that the global stylesheet does NOT
+        # cover, so _apply_chrome_theme() (re)applies them — including on every
+        # dark/light toggle. Refs are stored so the toggle can re-skin them.
         theme_btn = QPushButton(self._theme_btn_label())
         theme_btn.setObjectName("theme_toggle")
         theme_btn.setFixedHeight(36)
-        theme_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                border-radius: 7px;
-                padding: 0px 14px;
-                text-align: left;
-                font-size: 12px;
-                color: {THEME['text_secondary']};
-                height: 36px;
-                min-height: 36px;
-                max-height: 36px;
-            }}
-            QPushButton:hover {{
-                background-color: {THEME['bg_hover']};
-                color: {THEME['text_primary']};
-            }}
-        """)
         theme_btn.clicked.connect(self._toggle_theme)
         sidebar_layout.addWidget(theme_btn)
         self._theme_btn = theme_btn
 
-        # Setup wizard (re-run the licence-aware quick setup)
         setup_btn = QPushButton("  ⚙   Setup")
         setup_btn.setFixedHeight(36)
-        setup_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; border: none; border-radius: 7px;
-                padding: 0px 14px; text-align: left; font-size: 12px;
-                color: {THEME['text_secondary']};
-                height: 36px; min-height: 36px; max-height: 36px;
-            }}
-            QPushButton:hover {{
-                background-color: {THEME['bg_hover']}; color: {THEME['text_primary']};
-            }}
-        """)
         setup_btn.clicked.connect(self.open_setup_wizard)
         sidebar_layout.addWidget(setup_btn)
+        self._setup_btn = setup_btn
 
-        # Switch company button (just above calc)
         switch_btn = QPushButton("  🔄   Switch Company…")
         switch_btn.setFixedHeight(36)
-        switch_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                border-radius: 7px;
-                padding: 0px 14px;
-                text-align: left;
-                font-size: 12px;
-                color: {THEME['text_secondary']};
-                height: 36px;
-                min-height: 36px;
-                max-height: 36px;
-            }}
-            QPushButton:hover {{
-                background-color: {THEME['bg_hover']};
-                color: {THEME['text_primary']};
-            }}
-        """)
         switch_btn.clicked.connect(self.change_company)
         sidebar_layout.addWidget(switch_btn)
+        self._switch_btn = switch_btn
 
-        # Calc button at bottom
         calc_btn = QPushButton("  ⌨   Calculator   (Alt+C)")
         calc_btn.setFixedHeight(36)
-        calc_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                border-radius: 7px;
-                padding: 0px 14px;
-                text-align: left;
-                font-size: 12px;
-                color: {THEME['text_secondary']};
-                height: 36px;
-                min-height: 36px;
-                max-height: 36px;
-            }}
-            QPushButton:hover {{
-                background-color: {THEME['bg_hover']};
-                color: {THEME['text_primary']};
-            }}
-        """)
         calc_btn.clicked.connect(self._show_calculator)
         sidebar_layout.addWidget(calc_btn)
+        self._calc_btn = calc_btn
 
         # Version label
         ver = QLabel("v1.0  |  Python + SQLite")
-        ver.setStyleSheet(f"color:{THEME['text_dim']}; font-size:9px; padding:8px 16px;")
         sidebar_layout.addWidget(ver)
+        self._ver_lbl = ver
 
         root.addWidget(self._sidebar)
 
@@ -348,12 +288,12 @@ class MainWindow(QMainWindow):
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self._all_co_label = QLabel("")
-        self._all_co_label.setStyleSheet(
-            f"color:{THEME['text_dim']}; font-size:10px; padding-right:10px;"
-        )
         self.status.addPermanentWidget(self._all_co_label)
         self._refresh_all_co_total()
         self.status.showMessage(f"  {self._company_name}  |  Ready")
+
+        # Paint the inline-styled chrome for the current theme.
+        self._apply_chrome_theme()
 
     # ── Theme toggle ───────────────────────────────────────────────────────────
 
@@ -361,20 +301,67 @@ class MainWindow(QMainWindow):
         from ui.theme import get_theme_mode
         return "  ☀   Light Mode" if get_theme_mode() == "dark" else "  🌙   Dark Mode"
 
+    def _sidebar_btn_qss(self) -> str:
+        """QSS for the transparent secondary sidebar buttons, in current THEME."""
+        return f"""
+            QPushButton {{
+                background: transparent; border: none; border-radius: 7px;
+                padding: 0px 14px; text-align: left; font-size: 12px;
+                color: {THEME['text_secondary']};
+                height: 36px; min-height: 36px; max-height: 36px;
+            }}
+            QPushButton:hover {{
+                background-color: {THEME['bg_hover']};
+                color: {THEME['text_primary']};
+            }}
+        """
+
+    def _apply_chrome_theme(self) -> None:
+        """(Re)apply the inline-styled sidebar chrome to the current THEME.
+        These widgets aren't reachable by the global stylesheet's selectors,
+        so they must be repainted explicitly — at build and on every toggle,
+        otherwise dark mode leaves the sidebar/buttons white."""
+        self._nav_scroll.setStyleSheet(
+            f"QScrollArea {{ background: {THEME['bg_sidebar']}; border: none; }}"
+        )
+        self._nav_host.setStyleSheet(f"background: {THEME['bg_sidebar']};")
+        btn_qss = self._sidebar_btn_qss()
+        for b in (self._theme_btn, self._setup_btn,
+                  self._switch_btn, self._calc_btn):
+            b.setStyleSheet(btn_qss)
+        self._ver_lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:9px; padding:8px 16px;"
+        )
+        self._all_co_label.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; padding-right:10px;"
+        )
+
     def _toggle_theme(self) -> None:
         """Flip light/dark, persist the choice, and re-skin the running app.
-        Shared base method → RHQ inherits the same switch."""
+        Shared base method → RHQ inherits the same switch.
+
+        Speed: ONE global re-polish (app stylesheet), not two — and the whole
+        re-skin runs with window repaints suspended. Correctness: the inline-
+        styled chrome and the per-state nav buttons are repainted explicitly,
+        since the global stylesheet doesn't reach them."""
         from ui.theme import get_theme_mode, set_theme_mode, get_stylesheet
         from core.config import set_theme_mode as persist_theme_mode
         new = "light" if get_theme_mode() == "dark" else "dark"
         set_theme_mode(new)          # update live THEME dict
         persist_theme_mode(new)      # remember across restarts
-        app = QApplication.instance()
-        if app is not None:
-            app.setStyleSheet(get_stylesheet())
-        self.setStyleSheet(get_stylesheet())
-        if hasattr(self, "_theme_btn"):
-            self._theme_btn.setText(self._theme_btn_label())
+
+        self.setUpdatesEnabled(False)
+        try:
+            app = QApplication.instance()
+            if app is not None:
+                app.setStyleSheet(get_stylesheet())
+            self._apply_chrome_theme()
+            for idx, (_lbl, _icon, _w, btn) in enumerate(self._pages):
+                btn._update_style(idx == self._current_idx)
+            if hasattr(self, "_theme_btn"):
+                self._theme_btn.setText(self._theme_btn_label())
+        finally:
+            self.setUpdatesEnabled(True)
 
     # ── Page registration ─────────────────────────────────────────────────────
 

@@ -24,17 +24,22 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
     QTableWidget, QTableWidgetItem, QFrame, QFileDialog, QComboBox,
-    QHeaderView, QAbstractItemView, QMessageBox, QPlainTextEdit, QCheckBox,
+    QHeaderView, QAbstractItemView, QMessageBox, QPlainTextEdit,
+    QLineEdit, QFormLayout, QScrollArea,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer
 from PySide6.QtGui import QColor, QDesktopServices
 
 from ui.theme import THEME, VOUCHER_COLOURS
 from ui.widgets import make_label
+from ui.document_review import DocumentPreview
 from core import doc_inbox
 from core.doc_inbox import DocInbox
 from core import email_fetcher as ef
 from ai.doc_classifier import DOC_TYPES as _CLS_TYPES
+
+# Voucher types the AI emits (and that we can post as a simple 2-line entry).
+_VOUCHER_TYPES = ["PAYMENT", "RECEIPT", "JOURNAL", "CONTRA"]
 
 # Human labels for the six classifier doc-types (queue + override combo).
 DOC_TYPE_LABELS = {
@@ -127,8 +132,16 @@ class DocumentInboxPage(QWidget):
         self._inbox = DocInbox(self._conn, engine.company_id, self._company_name)
         self._proc_thread = None
         self._email_thread = None
+        self._batch_thread = None
         self._current_id = None
-        self._drafts = []
+        self._drafts = []                 # drafts for the doc on screen
+        self._drafts_by_doc = {}          # doc_id -> [draft dicts] (session memory)
+        self._posted_keys = set()         # (doc_id, idx) already posted this session
+        self._draft_idx = 0               # which draft is showing in the panel
+        self._dr_new = False              # current Dr ledger needs creating
+        self._cr_new = False              # current Cr ledger needs creating
+        self._batch = []                  # process-all work list
+        self._batch_i = 0
         self._build_ui()
         self.refresh()
         self._update_email_button()
@@ -191,13 +204,13 @@ class DocumentInboxPage(QWidget):
 
         split = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left — queue
+        # ── Pane 1 — queue ──────────────────────────────────────────────────
         self._queue = QTableWidget()
         self._queue.setColumnCount(4)
         self._queue.setHorizontalHeaderLabels(["Document", "Type", "Status", "Conf"])
         qh = self._queue.horizontalHeader()
         qh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for c, w in {1: 120, 2: 90, 3: 55}.items():
+        for c, w in {1: 110, 2: 84, 3: 50}.items():
             qh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
             self._queue.setColumnWidth(c, w)
         self._queue.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -209,12 +222,16 @@ class DocumentInboxPage(QWidget):
         self._queue.itemSelectionChanged.connect(self._on_select)
         split.addWidget(self._queue)
 
-        # Right — detail
+        # ── Pane 2 — in-app document preview ────────────────────────────────
+        self._preview = DocumentPreview()
+        split.addWidget(self._preview)
+
+        # ── Pane 3 — actions + editable voucher review ──────────────────────
         detail = QFrame()
         detail.setObjectName("card")
         dl = QVBoxLayout(detail)
         dl.setContentsMargins(16, 14, 16, 14)
-        dl.setSpacing(10)
+        dl.setSpacing(8)
 
         self._name_lbl = QLabel("Select a document")
         self._name_lbl.setStyleSheet(
@@ -230,11 +247,11 @@ class DocumentInboxPage(QWidget):
         )
         dl.addWidget(self._ai_lbl)
 
-        # Type override
+        # Type override (classification)
         type_row = QHBoxLayout()
         type_row.addWidget(make_label("Document type"))
         self._type_combo = QComboBox()
-        self._type_combo.setFixedHeight(30)
+        self._type_combo.setFixedHeight(28)
         for key in _CLS_TYPES:
             self._type_combo.addItem(DOC_TYPE_LABELS.get(key, key), key)
         type_row.addWidget(self._type_combo, 1)
@@ -242,22 +259,26 @@ class DocumentInboxPage(QWidget):
 
         # Action buttons
         act_row = QHBoxLayout()
-        self._open_doc_btn = QPushButton("👁  View Document")
-        self._open_doc_btn.setFixedHeight(32)
-        self._open_doc_btn.clicked.connect(self._view_document)
         self._process_btn = QPushButton("⚡  Process with AI")
         self._process_btn.setObjectName("btn_primary")
-        self._process_btn.setFixedHeight(32)
+        self._process_btn.setFixedHeight(30)
         self._process_btn.setToolTip(
-            "One AI pass on your own key — reads the document, decides its "
-            "type, and drafts the voucher(s) for you to accept or reject."
+            "One AI pass on your own key — reads this document, decides its "
+            "type, and drafts the voucher(s) for you to review and approve."
         )
         self._process_btn.clicked.connect(self._process)
+        self._process_all_btn = QPushButton("⚡⚡  Process All")
+        self._process_all_btn.setFixedHeight(30)
+        self._process_all_btn.setToolTip(
+            "Read every pending document in the background, so the drafts are "
+            "ready and you just review & approve down the queue."
+        )
+        self._process_all_btn.clicked.connect(self._process_all)
         self._reject_btn = QPushButton("✕  Reject")
-        self._reject_btn.setFixedHeight(32)
+        self._reject_btn.setFixedHeight(30)
         self._reject_btn.clicked.connect(self._reject)
-        act_row.addWidget(self._open_doc_btn)
         act_row.addWidget(self._process_btn)
+        act_row.addWidget(self._process_all_btn)
         act_row.addWidget(self._reject_btn)
         dl.addLayout(act_row)
 
@@ -268,36 +289,135 @@ class DocumentInboxPage(QWidget):
         )
         dl.addWidget(self._detail_status)
 
-        # Draft review table (after extraction)
-        dl.addWidget(make_label("Extracted draft(s)"))
-        self._drafts_tbl = QTableWidget()
-        self._drafts_tbl.setColumnCount(7)
-        self._drafts_tbl.setHorizontalHeaderLabels(
-            ["✓", "Date", "Type", "Dr", "Cr", "Amount", "Conf"]
+        # Divider
+        rule = QFrame()
+        rule.setFrameShape(QFrame.Shape.HLine)
+        rule.setStyleSheet(f"color:{THEME['border']};")
+        dl.addWidget(rule)
+
+        # ── Proposed voucher (editable, one at a time) ──────────────────────
+        nav = QHBoxLayout()
+        vh = QLabel("Proposed voucher")
+        vh.setStyleSheet(
+            f"font-size:12px;font-weight:bold;color:{THEME['text_primary']};"
         )
-        dh = self._drafts_tbl.horizontalHeader()
-        dh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        dh.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        for c, w in {0: 28, 1: 85, 2: 80, 5: 95, 6: 50}.items():
-            dh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
-            self._drafts_tbl.setColumnWidth(c, w)
-        self._drafts_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._drafts_tbl.verticalHeader().setVisible(False)
-        self._drafts_tbl.setShowGrid(False)
-        dl.addWidget(self._drafts_tbl, 1)
+        nav.addWidget(vh)
+        nav.addStretch()
+        self._prev_btn = QPushButton("‹")
+        self._prev_btn.setFixedSize(28, 24)
+        self._prev_btn.clicked.connect(lambda: self._step_draft(-1))
+        self._draft_counter = QLabel("")
+        self._draft_counter.setStyleSheet(
+            f"color:{THEME['text_secondary']};font-size:11px;"
+        )
+        self._next_btn = QPushButton("›")
+        self._next_btn.setFixedSize(28, 24)
+        self._next_btn.clicked.connect(lambda: self._step_draft(1))
+        nav.addWidget(self._prev_btn)
+        nav.addWidget(self._draft_counter)
+        nav.addWidget(self._next_btn)
+        dl.addLayout(nav)
 
-        self._post_btn = QPushButton("✓  Accept & Post Selected")
-        self._post_btn.setObjectName("btn_primary")
-        self._post_btn.setFixedHeight(34)
-        self._post_btn.setEnabled(False)
-        self._post_btn.clicked.connect(self._post)
-        dl.addWidget(self._post_btn)
+        self._voucher_box = QFrame()
+        form = QFormLayout(self._voucher_box)
+        form.setContentsMargins(0, 4, 0, 4)
+        form.setSpacing(6)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        split.addWidget(detail)
-        split.setSizes([420, 520])
+        self._f_type = QComboBox()
+        self._f_type.addItems(_VOUCHER_TYPES)
+        self._f_type.setFixedHeight(28)
+        form.addRow(make_label("Type"), self._f_type)
+
+        self._f_date = QLineEdit()
+        self._f_date.setPlaceholderText("YYYY-MM-DD")
+        self._f_date.setFixedHeight(28)
+        form.addRow(make_label("Date"), self._f_date)
+
+        self._f_dr = QComboBox()
+        self._f_dr.setEditable(True)
+        self._f_dr.setFixedHeight(28)
+        self._f_dr.currentTextChanged.connect(lambda _: self._refresh_new_flags())
+        form.addRow(make_label("Debit (Dr)"), self._f_dr)
+        self._f_dr_group = QComboBox()
+        self._f_dr_group.setFixedHeight(26)
+        self._dr_new_row = make_label("⚠ create Dr under")
+        self._dr_new_row.setStyleSheet(f"color:{THEME['warning']};font-size:11px;")
+        form.addRow(self._dr_new_row, self._f_dr_group)
+
+        self._f_cr = QComboBox()
+        self._f_cr.setEditable(True)
+        self._f_cr.setFixedHeight(28)
+        self._f_cr.currentTextChanged.connect(lambda _: self._refresh_new_flags())
+        form.addRow(make_label("Credit (Cr)"), self._f_cr)
+        self._f_cr_group = QComboBox()
+        self._f_cr_group.setFixedHeight(26)
+        self._cr_new_row = make_label("⚠ create Cr under")
+        self._cr_new_row.setStyleSheet(f"color:{THEME['warning']};font-size:11px;")
+        form.addRow(self._cr_new_row, self._f_cr_group)
+
+        self._f_amount = QLineEdit()
+        self._f_amount.setFixedHeight(28)
+        form.addRow(make_label("Amount"), self._f_amount)
+
+        self._f_narration = QLineEdit()
+        self._f_narration.setFixedHeight(28)
+        form.addRow(make_label("Narration"), self._f_narration)
+
+        self._f_reference = QLineEdit()
+        self._f_reference.setFixedHeight(28)
+        form.addRow(make_label("Reference"), self._f_reference)
+
+        self._f_conf = QLabel("")
+        self._f_conf.setStyleSheet(f"font-size:11px;color:{THEME['text_secondary']};")
+        form.addRow(make_label("AI confidence"), self._f_conf)
+
+        dl.addWidget(self._voucher_box)
+
+        dl.addWidget(make_label("Source line the AI read"))
+        self._f_source = QPlainTextEdit()
+        self._f_source.setReadOnly(True)
+        self._f_source.setFixedHeight(54)
+        self._f_source.setStyleSheet(
+            f"QPlainTextEdit {{ background:{THEME['bg_input']}; "
+            f"border:1px solid {THEME['border']}; border-radius:6px; "
+            f"color:{THEME['text_secondary']}; font-size:11px; }}"
+        )
+        dl.addWidget(self._f_source)
+
+        # Approve row
+        appr = QHBoxLayout()
+        self._approve_btn = QPushButton("✓  Approve & Post → Next")
+        self._approve_btn.setObjectName("btn_primary")
+        self._approve_btn.setFixedHeight(34)
+        self._approve_btn.clicked.connect(self._approve_current)
+        self._skip_btn = QPushButton("Skip ▸")
+        self._skip_btn.setFixedHeight(34)
+        self._skip_btn.clicked.connect(lambda: self._step_draft(1))
+        appr.addWidget(self._approve_btn, 1)
+        appr.addWidget(self._skip_btn)
+        dl.addLayout(appr)
+
+        dl.addStretch()
+
+        # Wrap the detail pane in a scroll area so the voucher form is never
+        # clipped on shorter windows — it scrolls instead of squeezing.
+        detail_scroll = QScrollArea()
+        detail_scroll.setWidgetResizable(True)
+        detail_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        detail_scroll.setWidget(detail)
+        detail_scroll.setMinimumWidth(360)
+        split.addWidget(detail_scroll)
+
+        split.setSizes([200, 430, 560])      # voucher pane gets the most room
+        split.setStretchFactor(0, 0)
+        split.setStretchFactor(1, 1)
+        split.setStretchFactor(2, 1)
         layout.addWidget(split, 1)
 
         self._set_detail_enabled(False)
+        self._show_voucher_panel(False)
 
     # ── Queue ───────────────────────────────────────────────────────────────
     def refresh(self):
@@ -336,11 +456,12 @@ class DocumentInboxPage(QWidget):
 
     def _on_select(self):
         doc = self._selected_doc()
-        self._drafts_tbl.setRowCount(0)
         self._drafts = []
-        self._post_btn.setEnabled(False)
+        self._draft_idx = 0
         if not doc:
             self._set_detail_enabled(False)
+            self._show_voucher_panel(False)
+            self._preview.clear()
             self._name_lbl.setText("Select a document")
             self._ai_lbl.setText("")
             return
@@ -350,14 +471,23 @@ class DocumentInboxPage(QWidget):
         )
         self._name_lbl.setText(doc["stored_name"])
 
+        # In-app preview — render the document right here, no external window.
+        self._preview.show_file(doc["stored_path"])
+
         dt = doc.get("doc_type") or "other"
         idx = self._type_combo.findData(dt)
         self._type_combo.setCurrentIndex(max(0, idx))
 
-        # No AI on select — the accountant reads the doc, then clicks
-        # "Process with AI" (one call) when ready. This avoids spending the
-        # customer's key just to browse the queue.
         self._render_ai_summary(doc)
+
+        # If we already extracted drafts for this doc this session, show them
+        # so the reviewer can pick up where they left off without re-spending.
+        self._drafts = list(self._drafts_by_doc.get(doc["id"], []))
+        if self._drafts:
+            self._show_voucher_panel(True)
+            self._show_draft(0)
+        else:
+            self._show_voucher_panel(False)
 
     def _render_ai_summary(self, doc: dict):
         meta = {}
@@ -376,8 +506,8 @@ class DocumentInboxPage(QWidget):
             return
         if doc["status"] == "PENDING":
             self._ai_lbl.setText(
-                "Open it with “View Document”, then “Process with AI” to "
-                "draft the voucher(s)."
+                "It's shown on the left. Click “Process with AI” to draft the "
+                "voucher(s) for review."
             )
             return
         # CLASSIFIED/APPROVED — show the summary the single pass produced.
@@ -388,11 +518,11 @@ class DocumentInboxPage(QWidget):
             if v:
                 line.append(f"{lbl}: {v}")
         self._ai_lbl.setText("   ·   ".join(line) if line
-                             else "Processed — review the drafts below.")
+                             else "Processed — review and approve each voucher.")
 
     def _set_detail_enabled(self, on: bool):
-        for w in (self._type_combo, self._process_btn, self._reject_btn,
-                  self._open_doc_btn):
+        for w in (self._type_combo, self._process_btn, self._process_all_btn,
+                  self._reject_btn):
             w.setEnabled(on)
 
     # ── Ingest actions ──────────────────────────────────────────────────────
@@ -418,11 +548,6 @@ class DocumentInboxPage(QWidget):
 
     def _open_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._inbox.store_dir)))
-
-    def _view_document(self):
-        doc = self._selected_doc()
-        if doc and Path(doc["stored_path"]).exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(doc["stored_path"]))
 
     # ── Email feeder ────────────────────────────────────────────────────────
     def _email_configured(self) -> bool:
@@ -509,11 +634,8 @@ class DocumentInboxPage(QWidget):
         elif manual:
             self._count_lbl.setText("No new email attachments.")
 
-    # ── Process (single AI pass: classify + extract) ────────────────────────
-    def _process(self):
-        doc = self._selected_doc()
-        if not doc:
-            return
+    # ── AI readiness / helpers ──────────────────────────────────────────────
+    def _ai_ready(self) -> bool:
         from core.ai_routing import routing, ROUTE_LOCKED
         if routing.resolve("document_inbox") == ROUTE_LOCKED:
             QMessageBox.information(
@@ -521,20 +643,46 @@ class DocumentInboxPage(QWidget):
                 "The Document Inbox runs on your own Anthropic key. Add it in "
                 "Settings → AI / Anthropic Key."
             )
-            return
-        try:
-            ledger_names = [l["name"] for l in self._tree.get_all_ledgers()]
-        except Exception:
-            ledger_names = []
+            return False
+        return True
 
+    def _ledger_names(self) -> list:
+        try:
+            return [l["name"] for l in self._tree.get_all_ledgers()]
+        except Exception:
+            return []
+
+    def _group_names(self) -> list:
+        try:
+            rows = self._engine.db.execute(
+                "SELECT name FROM account_groups WHERE company_id=? ORDER BY name",
+                (self._engine.company_id,),
+            ).fetchall()
+            return [r["name"] for r in rows]
+        except Exception:
+            return ["Sundry Creditors", "Sundry Debtors", "Indirect Expenses"]
+
+    def _charge(self, doc_id: int, result):
+        try:
+            from ai.credit_manager import CreditManager
+            d = self._inbox.get(doc_id)
+            CreditManager().deduct(result.local_pages, result.claude_pages,
+                                   d["stored_name"] if d else "inbox document")
+        except Exception:
+            pass
+
+    # ── Process one document (AI pass: classify + extract) ──────────────────
+    def _process(self):
+        doc = self._selected_doc()
+        if not doc or not self._ai_ready():
+            return
         self._detail_status.setText("Reading the document…")
         self._process_btn.setEnabled(False)
-        self._drafts_tbl.setRowCount(0)
+        self._show_voucher_panel(False)
         self._drafts = []
-        self._post_btn.setEnabled(False)
 
         self._proc_thread = ProcessThread(
-            doc["id"], doc["stored_path"], ledger_names, self._company_name
+            doc["id"], doc["stored_path"], self._ledger_names(), self._company_name
         )
         self._proc_thread.done.connect(self._on_processed)
         self._proc_thread.error.connect(self._on_process_error)
@@ -549,147 +697,327 @@ class DocumentInboxPage(QWidget):
     def _on_processed(self, doc_id: int, auto: dict, result):
         self._process_btn.setEnabled(True)
         doc_type = auto.get("doc_type", "other")
-        summary = auto.get("summary", {})
         vouchers = auto.get("vouchers", []) or []
 
-        # Persist the classification + summary in one shot.
         self._inbox.set_classified(
-            doc_id, doc_type, auto.get("confidence", 0.0), summary
+            doc_id, doc_type, auto.get("confidence", 0.0), auto.get("summary", {})
         )
+        self._charge(doc_id, result)
+        self._drafts_by_doc[doc_id] = vouchers
+
         if self._current_id == doc_id:
-            idx = self._type_combo.findData(doc_type)
-            self._type_combo.setCurrentIndex(max(0, idx))
-            self._inbox.get(doc_id) and self._render_ai_summary(self._inbox.get(doc_id))
-
-        # Charge the page cost like the reader does.
-        try:
-            from ai.credit_manager import CreditManager
             d = self._inbox.get(doc_id)
-            CreditManager().deduct(result.local_pages, result.claude_pages,
-                                   d["stored_name"] if d else "inbox document")
-        except Exception:
-            pass
+            if d:
+                idx = self._type_combo.findData(doc_type)
+                self._type_combo.setCurrentIndex(max(0, idx))
+                self._render_ai_summary(d)
+            self._present_drafts(doc_type, vouchers, auto.get("confidence", 0.0))
+        self.refresh()
 
+    def _present_drafts(self, doc_type: str, vouchers: list, conf: float):
         if doc_type == "bank_statement":
             self._detail_status.setText(
-                "Detected a bank statement → import it in Bank Reconciliation "
-                "(📂 opens the file). One-click hand-off is coming next."
+                "Detected a bank statement → import it in Bank Reconciliation. "
+                "Not posted from here."
             )
+            self._show_voucher_panel(False)
             return
         if doc_type == "other":
             self._detail_status.setText(
                 "Detected 'Other' — nothing to post. Held for manual tagging."
             )
+            self._show_voucher_panel(False)
             return
         if not vouchers:
             self._detail_status.setText(
-                "No transactions found — view the document or reject it."
+                "No transactions found — check the document on the left, or reject it."
+            )
+            self._show_voucher_panel(False)
+            return
+        self._drafts = list(vouchers)
+        self._detail_status.setText(
+            f"{DOC_TYPE_LABELS.get(doc_type, doc_type)} ({conf*100:.0f}%) — "
+            f"{len(vouchers)} voucher(s). Review & approve each one."
+        )
+        self._show_voucher_panel(True)
+        self._show_draft(0)
+
+    # ── Voucher review panel ────────────────────────────────────────────────
+    def _show_voucher_panel(self, on: bool):
+        for w in (self._voucher_box, self._f_source, self._approve_btn,
+                  self._skip_btn, self._prev_btn, self._next_btn,
+                  self._draft_counter):
+            w.setVisible(on)
+
+    def _populate_ledger_combos(self):
+        names = sorted(self._ledger_names())
+        self._ledger_set = set(names)
+        for combo in (self._f_dr, self._f_cr):
+            cur = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(names)
+            combo.setCurrentText(cur)
+            combo.blockSignals(False)
+        groups = self._group_names()
+        for gc in (self._f_dr_group, self._f_cr_group):
+            cur = gc.currentText()
+            gc.clear()
+            gc.addItems(groups)
+            if cur:
+                gc.setCurrentText(cur)
+
+    def _show_draft(self, idx: int):
+        if not self._drafts:
+            self._show_voucher_panel(False)
+            return
+        idx = max(0, min(idx, len(self._drafts) - 1))
+        self._draft_idx = idx
+        v = self._drafts[idx]
+
+        self._populate_ledger_combos()
+
+        self._draft_counter.setText(f"{idx + 1} / {len(self._drafts)}")
+        self._prev_btn.setEnabled(idx > 0)
+        self._next_btn.setEnabled(idx < len(self._drafts) - 1)
+
+        vtype = v.get("voucher_type", "JOURNAL")
+        if vtype not in _VOUCHER_TYPES:
+            vtype = "JOURNAL"
+        self._f_type.setCurrentText(vtype)
+        self._f_date.setText(str(v.get("date", "") or ""))
+        self._f_dr.setCurrentText((v.get("dr_ledger", "") or "").replace(" (NEW)", "").strip())
+        self._f_cr.setCurrentText((v.get("cr_ledger", "") or "").replace(" (NEW)", "").strip())
+        try:
+            self._f_amount.setText(f"{float(v.get('amount', 0) or 0):.2f}")
+        except (TypeError, ValueError):
+            self._f_amount.setText("0.00")
+        self._f_narration.setText(v.get("narration", "") or "")
+        self._f_reference.setText(v.get("reference", "") or "")
+
+        conf = float(v.get("confidence", 0) or 0)
+        self._f_conf.setText(f"{conf*100:.0f}%")
+        self._f_conf.setStyleSheet(
+            "font-size:11px;color:" + (
+                THEME["success"] if conf >= 0.9 else
+                THEME["warning"] if conf >= 0.7 else THEME["danger"]
+            ) + ";"
+        )
+        self._f_source.setPlainText(v.get("raw_line", "") or v.get("narration", "") or "")
+
+        posted = (self._current_id, idx) in self._posted_keys
+        self._approve_btn.setEnabled(not posted)
+        self._approve_btn.setText(
+            "✓ Posted" if posted else "✓  Approve & Post → Next"
+        )
+
+        self._refresh_new_flags()
+        # Pre-guess a group for any ledger that will be created.
+        if self._dr_new:
+            self._guess_group(self._f_dr_group, "Indirect Expenses")
+        if self._cr_new:
+            self._guess_group(self._f_cr_group, "Sundry Creditors")
+
+    def _guess_group(self, combo, name: str):
+        i = combo.findText(name)
+        if i >= 0:
+            combo.setCurrentIndex(i)
+
+    def _step_draft(self, delta: int):
+        if self._drafts:
+            self._show_draft(self._draft_idx + delta)
+
+    def _refresh_new_flags(self):
+        s = getattr(self, "_ledger_set", set())
+        dr = self._f_dr.currentText().strip()
+        cr = self._f_cr.currentText().strip()
+        self._dr_new = bool(dr) and dr not in s
+        self._cr_new = bool(cr) and cr not in s
+        self._dr_new_row.setVisible(self._dr_new)
+        self._f_dr_group.setVisible(self._dr_new)
+        self._cr_new_row.setVisible(self._cr_new)
+        self._f_cr_group.setVisible(self._cr_new)
+
+    def _ensure_ledger(self, name: str, group: str | None) -> int:
+        name = name.replace(" (NEW)", "").strip()
+        existing = {l["name"]: l["id"] for l in self._tree.get_all_ledgers()}
+        if name in existing:
+            return existing[name]
+        grp = (group or "").strip()
+        if grp not in set(self._group_names()):
+            grp = "Sundry Creditors"
+        return self._tree.add_ledger(name, grp)
+
+    # ── Approve & post the voucher on screen ────────────────────────────────
+    def _approve_current(self):
+        if not self._drafts:
+            return
+        idx = self._draft_idx
+        if (self._current_id, idx) in self._posted_keys:
+            self._step_to_next_unposted()
+            return
+
+        vtype = self._f_type.currentText().strip() or "JOURNAL"
+        date = self._f_date.text().strip()
+        dr_name = self._f_dr.currentText().strip()
+        cr_name = self._f_cr.currentText().strip()
+        narr = self._f_narration.text().strip()
+        ref = self._f_reference.text().strip()
+        try:
+            amount = float(self._f_amount.text().replace(",", "").strip() or 0)
+        except ValueError:
+            QMessageBox.warning(self, "Check amount", "Amount must be a number.")
+            return
+        if not date or not dr_name or not cr_name or amount <= 0:
+            QMessageBox.warning(
+                self, "Incomplete",
+                "Date, both ledgers and a positive amount are needed before posting."
             )
             return
 
-        self._drafts = vouchers
-        self._fill_drafts(vouchers)
-        conf = auto.get("confidence", 0.0)
-        self._detail_status.setText(
-            f"{DOC_TYPE_LABELS.get(doc_type, doc_type)} ({conf*100:.0f}%) — "
-            f"{len(vouchers)} draft(s). Check against the document, then accept."
-        )
-        self._post_btn.setEnabled(True)
+        try:
+            dr_id = self._ensure_ledger(
+                dr_name, self._f_dr_group.currentText() if self._dr_new else None)
+            cr_id = self._ensure_ledger(
+                cr_name, self._f_cr_group.currentText() if self._cr_new else None)
+        except Exception as e:
+            QMessageBox.warning(self, "Ledger problem", str(e))
+            return
 
-    def _fill_drafts(self, vouchers: list):
-        self._drafts_tbl.setRowCount(len(vouchers))
-        for r, v in enumerate(vouchers):
-            conf = float(v.get("confidence", 0))
-            chk = QCheckBox()
-            chk.setChecked(conf >= 0.7)
-            self._drafts_tbl.setCellWidget(r, 0, chk)
-            vtype = v.get("voucher_type", "")
-            vals = [
-                v.get("date", ""), vtype,
-                v.get("dr_ledger", ""), v.get("cr_ledger", ""),
-                f"Rs.{float(v.get('amount', 0)):,.2f}", f"{conf*100:.0f}%",
-            ]
-            for c, val in enumerate(vals, 1):
-                item = QTableWidgetItem(str(val))
-                if c == 2:
-                    item.setForeground(QColor(
-                        VOUCHER_COLOURS.get(vtype, THEME["text_secondary"])))
-                if c == 6:
-                    item.setForeground(QColor(
-                        THEME["success"] if conf >= 0.9 else
-                        THEME["warning"] if conf >= 0.7 else THEME["danger"]))
-                self._drafts_tbl.setItem(r, c, item)
-
-    # ── Post ────────────────────────────────────────────────────────────────
-    def _post(self):
         from core.voucher_engine import (
             VoucherEngine, VoucherDraft, VoucherLine, VoucherValidationError
         )
-        ledger_map = {l["name"]: l["id"] for l in self._tree.get_all_ledgers()}
         engine = VoucherEngine(self._engine.db, self._engine.company_id)
-        posted, skipped, errors, first_vid = 0, 0, [], None
+        try:
+            if vtype == "PAYMENT":
+                draft = engine.build_payment(date, dr_id, cr_id, amount, narr, ref)
+            elif vtype == "RECEIPT":
+                draft = engine.build_receipt(date, cr_id, dr_id, amount, narr, ref)
+            elif vtype == "CONTRA":
+                draft = engine.build_contra(date, cr_id, dr_id, amount, narr)
+            else:
+                draft = VoucherDraft(
+                    voucher_type="JOURNAL", voucher_date=date,
+                    narration=narr, reference=ref,
+                    lines=[VoucherLine(ledger_id=dr_id, dr_amount=amount),
+                           VoucherLine(ledger_id=cr_id, cr_amount=amount)],
+                )
+            draft.source = "AI_DOC"
+            vid = engine.post(draft)
+        except VoucherValidationError as e:
+            QMessageBox.warning(self, "Could not post", "; ".join(e.errors))
+            return
+        except Exception as e:
+            QMessageBox.warning(self, "Could not post", str(e))
+            return
 
-        for r in range(self._drafts_tbl.rowCount()):
-            chk = self._drafts_tbl.cellWidget(r, 0)
-            if not chk or not chk.isChecked():
-                continue
-            v = self._drafts[r]
-            vtype = v.get("voucher_type", "JOURNAL")
-            dr_name = v.get("dr_ledger", "").replace(" (NEW)", "").strip()
-            cr_name = v.get("cr_ledger", "").replace(" (NEW)", "").strip()
-            dr_id, cr_id = ledger_map.get(dr_name), ledger_map.get(cr_name)
-            if not dr_id or not cr_id:
-                errors.append(f"Row {r+1}: ledger not found — '{dr_name}' / '{cr_name}'")
-                skipped += 1
-                continue
-            try:
-                amount = float(v.get("amount", 0))
-                date, narr, ref = v.get("date", ""), v.get("narration", ""), v.get("reference", "")
-                if vtype == "PAYMENT":
-                    draft = engine.build_payment(date, dr_id, cr_id, amount, narr, ref)
-                elif vtype == "RECEIPT":
-                    draft = engine.build_receipt(date, cr_id, dr_id, amount, narr, ref)
-                elif vtype == "CONTRA":
-                    draft = engine.build_contra(date, cr_id, dr_id, amount, narr)
-                else:
-                    draft = VoucherDraft(
-                        voucher_type="JOURNAL", voucher_date=date,
-                        narration=narr, reference=ref,
-                        lines=[VoucherLine(ledger_id=dr_id, dr_amount=amount),
-                               VoucherLine(ledger_id=cr_id, cr_amount=amount)],
-                    )
-                draft.source = "AI_DOC"
-                vid = engine.post(draft)
-                first_vid = first_vid or (vid if isinstance(vid, int) else None)
-                posted += 1
-            except VoucherValidationError as e:
-                errors.append(f"Row {r+1}: {'; '.join(e.errors)}")
-                skipped += 1
-            except Exception as e:
-                errors.append(f"Row {r+1}: {e}")
-                skipped += 1
+        try:
+            from core.license_manager import LicenseManager
+            LicenseManager().record_transaction_posted("ai_voucher", count=1)
+        except Exception:
+            pass
 
-        if posted:
-            try:
-                from core.license_manager import LicenseManager
-                LicenseManager().record_transaction_posted("ai_voucher", count=posted)
-            except Exception:
-                pass
-            if self._current_id:
-                self._inbox.mark_posted(self._current_id, voucher_id=first_vid)
-                self.refresh()
+        self._posted_keys.add((self._current_id, idx))
+        self._detail_status.setText(
+            f"✓ Posted voucher {idx + 1} of {len(self._drafts)}."
+        )
 
-        msg = f"Posted: {posted}\nSkipped: {skipped}"
-        if errors:
-            msg += "\n\nIssues:\n" + "\n".join(errors[:10])
-        if posted:
-            QMessageBox.information(self, "Done", msg)
-            self._drafts_tbl.setRowCount(0)
-            self._drafts = []
-            self._post_btn.setEnabled(False)
-            self._detail_status.setText(f"Posted {posted} voucher(s).")
+        # All drafts for this document handled → mark the doc posted, move on.
+        if all((self._current_id, i) in self._posted_keys
+               for i in range(len(self._drafts))):
+            self._inbox.mark_posted(
+                self._current_id, voucher_id=vid if isinstance(vid, int) else None)
+            self.refresh()
+            self._advance_to_next_doc()
         else:
-            QMessageBox.warning(self, "Nothing posted", msg)
+            self._step_to_next_unposted()
+
+    def _step_to_next_unposted(self):
+        n = len(self._drafts)
+        for off in range(1, n + 1):
+            j = (self._draft_idx + off) % n
+            if (self._current_id, j) not in self._posted_keys:
+                self._show_draft(j)
+                return
+        self._show_draft(self._draft_idx)   # refresh "Posted" state
+
+    def _advance_to_next_doc(self):
+        sel = self._queue.selectionModel().selectedRows()
+        cur_row = sel[0].row() if sel else -1
+        n = self._queue.rowCount()
+        for off in range(1, n + 1):
+            r = (cur_row + off) % n
+            item = self._queue.item(r, 0)
+            if not item:
+                continue
+            d = self._inbox.get(item.data(Qt.ItemDataRole.UserRole))
+            if d and d["status"] in ("PENDING", "CLASSIFIED", "APPROVED", "ERROR"):
+                if r != cur_row:
+                    self._queue.selectRow(r)
+                return
+        self._detail_status.setText("All caught up — no more documents to review. ✓")
+
+    # ── Process every pending document in the background ────────────────────
+    def _process_all(self):
+        if not self._ai_ready():
+            return
+        pending = [d for d in self._inbox.list()
+                   if d["status"] in ("PENDING", "ERROR")]
+        if not pending:
+            self._detail_status.setText("Nothing pending to process.")
+            return
+        self._batch = pending
+        self._batch_i = 0
+        self._process_all_btn.setEnabled(False)
+        self._process_btn.setEnabled(False)
+        self._run_batch_next()
+
+    def _run_batch_next(self):
+        if self._batch_i >= len(self._batch):
+            self._process_all_btn.setEnabled(True)
+            self._process_btn.setEnabled(True)
+            self._detail_status.setText(
+                f"Processed {len(self._batch)} document(s). "
+                f"Review & approve down the queue."
+            )
+            self.refresh()
+            self._advance_to_next_doc_from_top()
+            return
+        d = self._batch[self._batch_i]
+        self._count_lbl.setText(
+            f"Processing {self._batch_i + 1} of {len(self._batch)}…"
+        )
+        self._batch_thread = ProcessThread(
+            d["id"], d["stored_path"], self._ledger_names(), self._company_name
+        )
+        self._batch_thread.done.connect(self._on_batch_done)
+        self._batch_thread.error.connect(self._on_batch_error)
+        self._batch_thread.start()
+
+    def _on_batch_done(self, doc_id: int, auto: dict, result):
+        self._inbox.set_classified(
+            doc_id, auto.get("doc_type", "other"),
+            auto.get("confidence", 0.0), auto.get("summary", {})
+        )
+        self._charge(doc_id, result)
+        self._drafts_by_doc[doc_id] = auto.get("vouchers", []) or []
+        self._batch_i += 1
+        self._run_batch_next()
+
+    def _on_batch_error(self, doc_id: int, msg: str):
+        self._inbox.mark_error(doc_id, msg)
+        self._batch_i += 1
+        self._run_batch_next()
+
+    def _advance_to_next_doc_from_top(self):
+        for r in range(self._queue.rowCount()):
+            item = self._queue.item(r, 0)
+            if not item:
+                continue
+            d = self._inbox.get(item.data(Qt.ItemDataRole.UserRole))
+            if d and d["status"] in ("CLASSIFIED", "APPROVED", "PENDING", "ERROR"):
+                self._queue.selectRow(r)
+                return
 
     def _reject(self):
         doc = self._selected_doc()
@@ -698,3 +1026,4 @@ class DocumentInboxPage(QWidget):
         self._inbox.mark_rejected(doc["id"])
         self.refresh()
         self._detail_status.setText("Rejected.")
+        self._advance_to_next_doc()
