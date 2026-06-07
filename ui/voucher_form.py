@@ -1082,9 +1082,11 @@ class VoucherEntryPage(QWidget):
         # Bill-wise allocation — only for single receipt/payment on PRO+. The
         # stored allocations are party+amount specific, so reset on type switch.
         if hasattr(self, "_alloc_btn"):
+            from core.user_prefs import prefs as _prefs
             self._alloc_btn.setVisible(
                 vtype in ("PAYMENT", "RECEIPT")
                 and self._has_feature("bill_wise_refs")
+                and bool(_prefs.get("bill_wise_enabled", True))
             )
             self._reset_allocations()
 

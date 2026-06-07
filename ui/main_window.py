@@ -140,6 +140,9 @@ class MainWindow(QMainWindow):
         # Backup reminder — fires 2 s after window opens (non-blocking)
         QTimer.singleShot(2000, self._check_backup_reminder)
 
+        # First-run setup wizard (licence-aware) — once, after the window shows.
+        QTimer.singleShot(900, self._maybe_setup_wizard)
+
     # ── Window setup ──────────────────────────────────────────────────────────
 
     def _setup_window(self):
@@ -264,6 +267,23 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(theme_btn)
         self._theme_btn = theme_btn
 
+        # Setup wizard (re-run the licence-aware quick setup)
+        setup_btn = QPushButton("  ⚙   Setup")
+        setup_btn.setFixedHeight(36)
+        setup_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; border: none; border-radius: 7px;
+                padding: 0px 14px; text-align: left; font-size: 12px;
+                color: {THEME['text_secondary']};
+                height: 36px; min-height: 36px; max-height: 36px;
+            }}
+            QPushButton:hover {{
+                background-color: {THEME['bg_hover']}; color: {THEME['text_primary']};
+            }}
+        """)
+        setup_btn.clicked.connect(self.open_setup_wizard)
+        sidebar_layout.addWidget(setup_btn)
+
         # Switch company button (just above calc)
         switch_btn = QPushButton("  🔄   Switch Company…")
         switch_btn.setFixedHeight(36)
@@ -386,6 +406,25 @@ class MainWindow(QMainWindow):
                 self._select_page(idx)
                 return True
         return False
+
+    def _maybe_setup_wizard(self) -> None:
+        try:
+            from core.user_prefs import prefs
+            if not prefs.get("setup_wizard_done"):
+                self.open_setup_wizard()
+        except Exception:
+            pass
+
+    def open_setup_wizard(self) -> None:
+        """Run the licence-aware Quick Setup wizard. Called on first launch and
+        from the sidebar 'Setup' button."""
+        try:
+            from ui.setup_wizard import SetupWizard
+            slug = self.db.path.stem
+            SetupWizard(self.db, self.company_id, slug, self.license_mgr, self).exec()
+        except Exception:
+            import traceback
+            print("setup wizard error:\n" + traceback.format_exc())
 
     def _register_home_page(self) -> None:
         """Register the AHQ accounting Home as a real page (so navigation
