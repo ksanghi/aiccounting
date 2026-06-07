@@ -69,3 +69,6 @@ docs/*.html
 File exchange/
 # Installer binaries served by the marketing site (regenerated on build)
 marketing/downloads/
+
+# build logs
+build/*.log
