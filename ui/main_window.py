@@ -588,6 +588,19 @@ class MainWindow(QMainWindow):
                 self._locked_page("trial_balance", "STANDARD", "Financial Reports"),
             )
 
+        # ── Bill-wise Outstanding (Tally "Against Reference") — PRO+ ──
+        if lmgr.has_feature("bill_wise_refs"):
+            from ui.bill_wise_report_page import BillWiseOutstandingPage
+            self.register_page(
+                "Bill-wise Outstanding", "🧾",
+                BillWiseOutstandingPage(ReportsEngine(self.db, self.company_id)),
+            )
+        else:
+            self.register_page(
+                "Bill-wise Outstanding", "🧾",
+                self._locked_page("bill_wise_refs", "PRO", "Bill-wise Outstanding"),
+            )
+
         # ── Bank Reconciliation — STANDARD+ ──
         if lmgr.has_feature("bank_reconciliation"):
             from ui.bank_reconciliation_page import BankReconciliationPage

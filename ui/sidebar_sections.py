@@ -118,6 +118,7 @@ _LABEL_TO_SECTION: list[tuple[str, str]] = [
     ("Rcpt",             "Reports"),
     ("Aging",            "Reports"),
     ("Ageing",           "Reports"),
+    ("Bill-wise",        "Reports"),
     ("GST",              "Tax"),
     ("TDS",              "Tax"),
     ("HSN",              "Tax"),

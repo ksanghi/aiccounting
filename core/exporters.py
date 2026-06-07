@@ -240,6 +240,23 @@ class ExcelExporter:
         self._set_widths(ws, [30,14,14,14,14,16])
         wb.save(path)
 
+    def bill_wise_aging(self, data: dict, company: dict, path: str):
+        wb, ws = self._wb("Bill-wise Outstanding")
+        r = self._header(ws, company,
+                         f"Bill-wise Outstanding ({data['group']}) as on {data['as_of']}")
+        r = self._col_hdrs(ws, r, ["Party", "Bill No", "Bill Date",
+                                   "Age (days)", "Bill Amount", "Pending"])
+        for d in data["rows"]:
+            ws.append([d["party"], d["bill_number"], d["bill_date"],
+                       d["age_days"], d["bill_amount"], d["pending_amount"]])
+        b = data["buckets"]
+        ws.append([])
+        ws.append(["Buckets", "0-30", b["b0_30"], "31-60", b["b31_60"], ""])
+        ws.append(["", "61-90", b["b61_90"], "90+", b["b90p"], ""])
+        ws.append(["TOTAL", "", "", "", "", data["total"]])
+        self._set_widths(ws, [28,16,14,12,16,16])
+        wb.save(path)
+
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
@@ -537,4 +554,22 @@ class PDFExporter:
         tbl = self._Table(rows, colWidths=cw)
         tbl.setStyle(self._tbl_style())
         elems.append(tbl)
+        doc.build(elems)
+
+    def bill_wise_aging(self, data: dict, company: dict, path: str):
+        cm = self._cm
+        doc = self._doc(path, wide=True)
+        elems = self._heading(
+            company,
+            f"Bill-wise Outstanding ({data['group']}) as on {data['as_of']}")
+        rows = [["Party", "Bill No", "Bill Date", "Age", "Bill Amt", "Pending"]]
+        for d in data["rows"]:
+            rows.append([(d["party"] or "")[:22], (d["bill_number"] or "")[:14],
+                         d["bill_date"], str(d["age_days"]),
+                         _fmt(d["bill_amount"]), _fmt(d["pending_amount"])])
+        rows.append(["TOTAL", "", "", "", "", _fmt(data["total"])])
+        cw = [4.6*cm, 3*cm, 2.6*cm, 1.6*cm, 3*cm, 3*cm]
+        t = self._Table(rows, colWidths=cw)
+        t.setStyle(self._tbl_style())
+        elems.append(t)
         doc.build(elems)
