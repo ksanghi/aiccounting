@@ -1281,6 +1281,23 @@ class VoucherEngine:
                 ),
             )
 
+        # Bill-wise: re-sync open-item effects after an edit — reverse the old
+        # bills/allocations this voucher had, then re-apply from the new draft
+        # (SALES/PURCHASE re-create the bill; RECEIPT/PAYMENT re-allocate from
+        # draft.allocations, or leave on-account if none). Best-effort: the edit
+        # is already committed, so a failure here can never undo it.
+        try:
+            from core.bill_wise import BillWiseEngine
+            bw = BillWiseEngine(self.db, self.company_id)
+            bw.reverse_for_voucher(voucher_id)
+            bw.on_voucher_posted(voucher_id, draft)
+            self.db.commit()
+        except Exception:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
         return PostedVoucher(
             voucher_id=voucher_id,
             voucher_number=old["voucher_number"],

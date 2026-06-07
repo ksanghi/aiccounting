@@ -1451,6 +1451,14 @@ class VoucherEntryPage(QWidget):
                         vdate, dr_id, cr_id, amount, narration, reference
                     )
 
+            # Bill-wise: attach allocations chosen in the dialog — applies to
+            # BOTH create and edit. Guarded to the current party + amount so a
+            # changed party/amount after filling the dialog is ignored.
+            if (vtype in ("RECEIPT", "PAYMENT") and self._pending_allocations
+                    and self._alloc_for == (self.field1_ledger.selected_id,
+                                            self.amount_edit.value())):
+                draft.allocations = self._pending_allocations
+
             if self._edit_voucher_id:
                 # EDIT mode — replace the existing voucher in place
                 posted = self.engine.update_voucher(self._edit_voucher_id, draft)
@@ -1479,14 +1487,6 @@ class VoucherEntryPage(QWidget):
                 if hasattr(win, "return_from_voucher_edit"):
                     win.return_from_voucher_edit()
                 return
-
-            # Bill-wise: attach the allocations chosen in the dialog, but only
-            # if they still match the current party + amount (guards against a
-            # party/amount change after the dialog was filled).
-            if (vtype in ("RECEIPT", "PAYMENT") and self._pending_allocations
-                    and self._alloc_for == (self.field1_ledger.selected_id,
-                                            self.amount_edit.value())):
-                draft.allocations = self._pending_allocations
 
             posted = self.engine.post(draft)
 
