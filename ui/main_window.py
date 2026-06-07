@@ -186,6 +186,15 @@ class MainWindow(QMainWindow):
             )
         )
         logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        logo_lbl.setToolTip("Go to Home")
+
+        def _logo_click(ev, _self=self):
+            if ev.button() == Qt.MouseButton.LeftButton:
+                _self.select_page_by_label("Home")
+        logo_lbl.mousePressEvent = _logo_click
+        self._logo_lbl = logo_lbl
+
         co_lbl = QLabel(self._company_name[:26])
         co_lbl.setObjectName("company_text")
         co_lbl.setWordWrap(True)
@@ -368,6 +377,33 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(widget)
         self._pages.append((label, icon, widget, btn))
 
+    def select_page_by_label(self, label: str) -> bool:
+        """Switch to the page whose register-time label equals `label`.
+        Returns True on success. Used by the app-logo click (→ Home) and
+        HomePage's quick-action tiles."""
+        for idx, (lbl, _, _, _) in enumerate(self._pages):
+            if lbl == label:
+                self._select_page(idx)
+                return True
+        return False
+
+    def _register_home_page(self) -> None:
+        """Register the AHQ accounting Home as a real page (so navigation
+        and the logo-click work) but WITHOUT a sidebar menu link — Home is
+        reached by clicking the app logo. regroup_into_sections() drops the
+        Home nav button; we also hide it defensively. RWA HQ overrides this
+        with its own society Home."""
+        try:
+            from ui.home_page import HomePage
+        except Exception:
+            return
+        page = HomePage(self.db, self.company_id, self.tree)
+        self.register_page("Home", "🏠", page)
+        try:
+            self._pages[-1][-1].hide()
+        except Exception:
+            pass
+
     def _build_pages(self):
         import traceback
         try:
@@ -481,6 +517,13 @@ class MainWindow(QMainWindow):
         from core.reports_engine import ReportsEngine
 
         lmgr = self.license_mgr
+
+        # Home (AHQ only) — registered FIRST so it's index 0 and the app
+        # lands here on open. It has NO sidebar link; reach it via the app
+        # logo. RWA HQ registers its own society Home in its __init__, so
+        # skip here for subclasses to avoid a double registration.
+        if self.__class__.__name__ == "MainWindow":
+            self._register_home_page()
 
         # Country pack (A13): the licensed country selects which tax
         # screens exist. India ships "gst"/"tds"; a non-India pack omits

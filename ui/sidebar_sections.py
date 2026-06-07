@@ -167,6 +167,11 @@ def regroup_into_sections(window) -> None:
     for entry in pages:
         # MainWindow stores (label, icon, widget, button) tuples.
         label, btn = entry[0], entry[-1]
+        # Home has no sidebar link — it's reached via the app logo. Drop its
+        # nav button entirely rather than bucketing it into a section.
+        if (label or "").strip().lower() == "home":
+            btn.setParent(None)
+            continue
         sec = section_for_label(label)
         buckets.setdefault(sec, []).append(btn)
 
