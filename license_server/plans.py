@@ -162,3 +162,40 @@ def price_for(product: str, plan: str, country: str = "IN") -> int | None:
     # which reads pricing.xlsx — this function returns None so callers
     # know to fall through to that path.
     return None
+
+
+def price_paise_for(product: str, plan: str, country: str = "IN",
+                    period: str = "annual") -> int | None:
+    """Authoritative price in PAISE for (product, plan, country, period).
+
+    The single price source for the period-aware checkout + upgrade math.
+    Returns None when not priced: AHQ has NO monthly tier; RWA/tradeHQ are
+    INR-only; tradeHQ has no monthly. Server never trusts a client price.
+    """
+    product = (product or "accgenie").lower()
+    plan    = (plan or "").upper()
+    period  = (period or "annual").lower()
+    country = (country or "IN").upper()
+
+    if product == "rwagenie":
+        if country != "IN":
+            return None
+        table = (PLAN_PRICES_RWA_MONTHLY_INR if period == "monthly"
+                 else PLAN_PRICES_RWA_INR)
+        amt = table.get(plan)
+        return int(round(amt * 100)) if amt and amt > 0 else None
+
+    if product == "tradehq":
+        if period == "monthly" or country != "IN":
+            return None
+        amt = PLAN_PRICES_THQ_INR.get(plan)
+        return int(round(amt * 100)) if amt and amt > 0 else None
+
+    # accgenie — annual only (no monthly tier); multi-country via pricing.xlsx.
+    if period == "monthly":
+        return None
+    try:
+        from license_server.services.pricing_lookup import resolve_price
+        return resolve_price(plan, country)["amount_paise"]
+    except Exception:
+        return None

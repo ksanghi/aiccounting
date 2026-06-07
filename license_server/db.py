@@ -56,6 +56,9 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str]] = [
     # SMS wallet support (post-2026-05-17). Legacy orders are all tier_purchase.
     ("orders",    "kind",              "TEXT NOT NULL DEFAULT 'tier_purchase'", "'tier_purchase'"),
     ("orders",    "wallet_license_id", "INTEGER",                                ""),
+    # Monthly/annual terms (post-2026-06-07). Legacy rows are all annual.
+    ("licenses",  "billing_period",    "TEXT NOT NULL DEFAULT 'annual'",        "'annual'"),
+    ("orders",    "billing_period",    "TEXT NOT NULL DEFAULT 'annual'",        "'annual'"),
 ]
 
 

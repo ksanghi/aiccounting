@@ -22,6 +22,11 @@ class License(Base):
                                                      server_default="accgenie",
                                                      index=True)
     plan:           Mapped[str]      = mapped_column(String(16))
+    # 'annual' | 'monthly' — the term this license was sold on. Drives expiry
+    # length + the upgrade balance math. Backfilled to 'annual' on existing
+    # rows via db._apply_additive_columns().
+    billing_period: Mapped[str]      = mapped_column(String(12), default="annual",
+                                                     server_default="annual")
     customer_email: Mapped[str]      = mapped_column(String(256), default="")
     company_name:   Mapped[str]      = mapped_column(String(256), default="")
     expires_at:     Mapped[date]     = mapped_column(Date)
@@ -229,6 +234,8 @@ class Order(Base):
                                                           server_default="accgenie",
                                                           index=True)
     plan:                Mapped[str]      = mapped_column(String(16))
+    billing_period:      Mapped[str]      = mapped_column(String(12), default="annual",
+                                                          server_default="annual")
     amount_paise:        Mapped[int]      = mapped_column(Integer)
     currency:            Mapped[str]      = mapped_column(String(8), default="INR")
     country_code:        Mapped[str]      = mapped_column(String(4), default="IN")
