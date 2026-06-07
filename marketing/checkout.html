@@ -130,11 +130,14 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
   <!-- Checkout form -->
   <div class="card" id="checkout-form">
     <h1>Choose a plan</h1>
-    <div class="subtitle">Prices in INR, billed annually. Get your licence key by email within seconds of payment.</div>
+    <div class="subtitle">Prices in INR. Get your licence key by email within seconds of payment.</div>
 
     <!-- Product toggle — buttons rendered from CATALOG so adding a new
          product is just one entry, no markup change required. -->
     <div class="product-toggle" role="tablist" id="prod-toggle"></div>
+
+    <!-- Billing-period toggle (shown only for products that offer monthly) -->
+    <div class="product-toggle" id="period-toggle" style="margin-top:8px;display:none;"></div>
 
     <!-- Plans grid (populated by JS based on selected product) -->
     <div class="plans" id="plans"></div>
@@ -225,11 +228,11 @@ const CATALOG = {
     plans: [
       { code: "FREE",     inr: 0,     name: "Free",
         desc: "Up to 300 flats, flat ledger, notices, polls, visitor pass — no card needed" },
-      { code: "STANDARD", inr: 2999,  name: "Standard",
+      { code: "STANDARD", inr: 2999,  inr_monthly: 330,  name: "Standard",
         desc: "Up to 1,000 flats, auto-billing & late fees, facilities booking, asset register" },
-      { code: "PRO",      inr: 5999,  name: "Pro",
+      { code: "PRO",      inr: 5999,  inr_monthly: 660,  name: "Pro",
         desc: "Up to 2,500 flats + WhatsApp invoices, document storage, vendor management" },
-      { code: "PREMIUM",  inr: 14999, name: "Premium",
+      { code: "PREMIUM",  inr: 14999, inr_monthly: 1650, name: "Premium",
         desc: "Unlimited flats, multi-block / phase, priority email support" },
     ],
   },
@@ -256,6 +259,7 @@ const PRODUCT_ALIASES = {
 let state = {
   product: "accgenie",
   plan:    "PRO",    // sensible default
+  period:  "annual", // annual | monthly (monthly only where a plan has inr_monthly)
 };
 
 // ── URL → preselection ──────────────────────────────────────────────────────
@@ -280,12 +284,27 @@ function renderToggle() {
   `).join("");
 }
 
+function hasMonthly(prod) {
+  return CATALOG[prod].plans.some(p => p.inr_monthly != null && p.inr_monthly > 0);
+}
 function selectProduct(prod) {
   state.product = prod;
   // Don't reset plan — it's the same code (STANDARD/PRO/PREMIUM) across catalogs.
+  if (!hasMonthly(prod)) state.period = "annual";  // AHQ / tradeHQ are annual-only
   renderToggle();
+  renderPeriodToggle();
   renderPlans();
 }
+function renderPeriodToggle() {
+  const el = document.getElementById("period-toggle");
+  if (!el) return;
+  if (!hasMonthly(state.product)) { el.style.display = "none"; state.period = "annual"; return; }
+  el.style.display = "";
+  el.innerHTML = [["annual","Annual"],["monthly","Monthly"]].map(([k,l]) =>
+    `<button class="${state.period===k?'active':''}" onclick="selectPeriod('${k}')">${l}</button>`
+  ).join("");
+}
+function selectPeriod(p) { state.period = p; renderPeriodToggle(); renderPlans(); }
 
 function selectPlan(code) {
   state.plan = code;
@@ -295,18 +314,21 @@ function selectPlan(code) {
 function renderPlans() {
   const container = document.getElementById("plans");
   const plans = CATALOG[state.product].plans;
-  container.innerHTML = plans.map(p => `
+  const monthly = state.period === "monthly";
+  container.innerHTML = plans.map(p => {
+    const price = (monthly && p.inr_monthly != null) ? p.inr_monthly : p.inr;
+    const per   = monthly ? "/ month" : "/ year";
+    const priceHtml = p.inr === 0
+      ? "Free <span class=\"per\">forever</span>"
+      : "₹" + price.toLocaleString("en-IN") + " <span class=\"per\">" + per + "</span>";
+    return `
     <div class="plan-card ${state.plan === p.code ? "selected" : ""}"
          onclick="selectPlan('${p.code}')">
       <div class="plan-name">${p.name}</div>
-      <div class="plan-price">${
-        p.inr === 0
-          ? "Free <span class=\"per\">forever</span>"
-          : "₹" + p.inr.toLocaleString("en-IN") + " <span class=\"per\">/ year</span>"
-      }</div>
+      <div class="plan-price">${priceHtml}</div>
       <div class="plan-desc">${p.desc}</div>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
   // Pay button reflects whether this plan needs Razorpay.
   const cur = (plans.find(p => p.code === state.plan) || plans[0]);
   const btn = document.getElementById("pay-btn");
@@ -371,6 +393,7 @@ async function startCheckout() {
       body:    JSON.stringify({
         product:        state.product,
         plan:           state.plan,
+        billing_period: state.period,
         country_code:   "IN",
         customer_email: email,
         customer_name:  name,
@@ -411,7 +434,7 @@ async function startCheckout() {
     amount:    body.amount_paise,
     currency:  body.currency,
     name:      CATALOG[state.product].razorpayName,
-    description: `${body.plan_name || state.plan} licence · 1 year`,
+    description: `${body.plan_name || state.plan} licence · ${state.period === "monthly" ? "1 month" : "1 year"}`,
     prefill:   {
       name:    name,
       email:   email,
@@ -446,6 +469,7 @@ async function startCheckout() {
 
 // Initial render — toggle first so the active button matches state.product
 renderToggle();
+renderPeriodToggle();
 renderPlans();
 </script>
 </body>
