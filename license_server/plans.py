@@ -164,12 +164,10 @@ def price_for(product: str, plan: str, country: str = "IN") -> int | None:
     return None
 
 
-# Company policy (2026-06-07): a MONTHLY term is offered on EVERY product, priced
-# at 11% of the annual price (so annual stays the better value). This matches the
-# RWA HQ sheet, where the explicit monthly column already equals round(annual*0.11)
-# — STD 2999->330, PRO 5999->660, PREM 14999->1650. Applying the same rule to AHQ
-# + tradeHQ keeps one policy and avoids per-product monthly columns.
-MONTHLY_FACTOR = 0.11
+# Monthly terms were REMOVED 2026-06-07 — too much overhead (separate volume
+# limits, churn, support) for the benefit. ALL licences are ANNUAL.
+# price_paise_for keeps a `period` arg for signature stability but only prices
+# 'annual'; a 'monthly' request returns None.
 
 
 def _annual_paise(product: str, plan: str, country: str) -> int | None:
@@ -205,11 +203,6 @@ def price_paise_for(product: str, plan: str, country: str = "IN",
     period  = (period or "annual").lower()
     country = (country or "IN").upper()
 
-    annual = _annual_paise(product, plan, country)
-    if annual is None:
-        return None
-    if period == "monthly":
-        # Round to whole rupees (matches the RWA sheet + the checkout page's
-        # Math.round(inr*0.11), so the charge equals the displayed price).
-        return int(round((annual / 100) * MONTHLY_FACTOR)) * 100
-    return annual
+    if (period or "annual").lower() == "monthly":
+        return None  # monthly removed 2026-06-07 — annual-only
+    return _annual_paise(product, plan, country)
