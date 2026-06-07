@@ -81,6 +81,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://apps.ai-consultants.in",
+        "https://aic.ai-consultants.in",
         "https://license.ai-consultants.in",
         "http://localhost:8000",
         "http://localhost:5173",
