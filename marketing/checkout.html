@@ -142,6 +142,10 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
     <!-- Plans grid (populated by JS based on selected product) -->
     <div class="plans" id="plans"></div>
 
+    <div style="text-align:center;margin-top:6px;font-size:13px;">
+      <a href="upgrade.html" style="color:#0EA5A5;text-decoration:none;">Already have a licence? Upgrade your plan →</a>
+    </div>
+
     <div style="height:24px;"></div>
 
     <div class="field">
@@ -290,7 +294,6 @@ function hasMonthly(prod) {
 function selectProduct(prod) {
   state.product = prod;
   // Don't reset plan — it's the same code (STANDARD/PRO/PREMIUM) across catalogs.
-  if (!hasMonthly(prod)) state.period = "annual";  // AHQ / tradeHQ are annual-only
   renderToggle();
   renderPeriodToggle();
   renderPlans();
@@ -298,8 +301,7 @@ function selectProduct(prod) {
 function renderPeriodToggle() {
   const el = document.getElementById("period-toggle");
   if (!el) return;
-  if (!hasMonthly(state.product)) { el.style.display = "none"; state.period = "annual"; return; }
-  el.style.display = "";
+  el.style.display = "";   // monthly is offered on EVERY product (policy)
   el.innerHTML = [["annual","Annual"],["monthly","Monthly"]].map(([k,l]) =>
     `<button class="${state.period===k?'active':''}" onclick="selectPeriod('${k}')">${l}</button>`
   ).join("");
@@ -316,7 +318,11 @@ function renderPlans() {
   const plans = CATALOG[state.product].plans;
   const monthly = state.period === "monthly";
   container.innerHTML = plans.map(p => {
-    const price = (monthly && p.inr_monthly != null) ? p.inr_monthly : p.inr;
+    // Monthly = 11% of annual on every product (policy); RWA carries explicit
+    // inr_monthly that equals the same figure.
+    const price = monthly
+      ? (p.inr_monthly != null ? p.inr_monthly : Math.round(p.inr * 0.11))
+      : p.inr;
     const per   = monthly ? "/ month" : "/ year";
     const priceHtml = p.inr === 0
       ? "Free <span class=\"per\">forever</span>"

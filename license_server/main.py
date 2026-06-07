@@ -1458,16 +1458,17 @@ def checkout_create_order(
     # {amount_paise, currency, plan_code, ...} dict so the rest of this
     # handler stays product-agnostic.
     from license_server.plans import price_paise_for
+    paise = price_paise_for(product, plan, country, period)
+    if not paise:
+        product_label = {"rwagenie": "RWA HQ", "tradehq": "tradeHQ"}.get(
+            product, "Accounts HQ")
+        extra = " (monthly)" if period == "monthly" else ""
+        return CheckoutCreateResponse(
+            ok=False,
+            error=(f"{product_label} {plan}{extra} is not priced for sale "
+                   f"in {country} yet."),
+        )
     if product in ("rwagenie", "tradehq"):
-        paise = price_paise_for(product, plan, country, period)
-        if not paise:
-            product_label = "tradeHQ" if product == "tradehq" else "RWAGenie"
-            extra = " (monthly)" if period == "monthly" else ""
-            return CheckoutCreateResponse(
-                ok=False,
-                error=(f"{product_label} {plan}{extra} is not priced for sale "
-                       f"in {country} yet."),
-            )
         price = {
             "plan_code":      plan,
             "plan_name":      plan.title(),
@@ -1477,15 +1478,21 @@ def checkout_create_order(
             "country_code":   country,
         }
     else:
-        # AHQ (accgenie): annual only, multi-country via pricing.xlsx.
-        if period == "monthly":
-            return CheckoutCreateResponse(
-                ok=False,
-                error="Monthly billing isn't available for this plan — choose annual.")
+        # accgenie — name/currency/symbol from resolve_price (multi-country),
+        # amount from the period-aware price_paise_for (annual or 11% monthly).
         try:
-            price = resolve_price(plan, country)
+            base = resolve_price(plan, country)
         except PricingError as e:
             return CheckoutCreateResponse(ok=False, error=str(e))
+        sym = base.get("currency_symbol", "")
+        price = {
+            "plan_code":      base["plan_code"],
+            "plan_name":      base["plan_name"],
+            "currency":       base["currency"],
+            "amount_paise":   paise,
+            "amount_display": f"{sym} {paise/100:,.2f}".strip(),
+            "country_code":   base["country_code"],
+        }
 
     # Create the Razorpay order. The 'notes' field gets stored alongside
     # the order and echoed back in the webhook payload — useful for

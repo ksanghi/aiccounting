@@ -164,38 +164,52 @@ def price_for(product: str, plan: str, country: str = "IN") -> int | None:
     return None
 
 
+# Company policy (2026-06-07): a MONTHLY term is offered on EVERY product, priced
+# at 11% of the annual price (so annual stays the better value). This matches the
+# RWA HQ sheet, where the explicit monthly column already equals round(annual*0.11)
+# — STD 2999->330, PRO 5999->660, PREM 14999->1650. Applying the same rule to AHQ
+# + tradeHQ keeps one policy and avoids per-product monthly columns.
+MONTHLY_FACTOR = 0.11
+
+
+def _annual_paise(product: str, plan: str, country: str) -> int | None:
+    """Annual price in paise for (product, plan, country), or None if unpriced."""
+    if product == "rwagenie":
+        if country != "IN":
+            return None
+        amt = PLAN_PRICES_RWA_INR.get(plan)
+        return int(round(amt * 100)) if amt and amt > 0 else None
+    if product == "tradehq":
+        if country != "IN":
+            return None
+        amt = PLAN_PRICES_THQ_INR.get(plan)
+        return int(round(amt * 100)) if amt and amt > 0 else None
+    # accgenie — multi-country via pricing.xlsx.
+    try:
+        from license_server.services.pricing_lookup import resolve_price
+        return resolve_price(plan, country)["amount_paise"]
+    except Exception:
+        return None
+
+
 def price_paise_for(product: str, plan: str, country: str = "IN",
                     period: str = "annual") -> int | None:
     """Authoritative price in PAISE for (product, plan, country, period).
 
     The single price source for the period-aware checkout + upgrade math.
-    Returns None when not priced: AHQ has NO monthly tier; RWA/tradeHQ are
-    INR-only; tradeHQ has no monthly. Server never trusts a client price.
+    Monthly = round(annual * MONTHLY_FACTOR) on EVERY product (policy). Returns
+    None when the annual isn't priced. Server never trusts a client price.
     """
     product = (product or "accgenie").lower()
     plan    = (plan or "").upper()
     period  = (period or "annual").lower()
     country = (country or "IN").upper()
 
-    if product == "rwagenie":
-        if country != "IN":
-            return None
-        table = (PLAN_PRICES_RWA_MONTHLY_INR if period == "monthly"
-                 else PLAN_PRICES_RWA_INR)
-        amt = table.get(plan)
-        return int(round(amt * 100)) if amt and amt > 0 else None
-
-    if product == "tradehq":
-        if period == "monthly" or country != "IN":
-            return None
-        amt = PLAN_PRICES_THQ_INR.get(plan)
-        return int(round(amt * 100)) if amt and amt > 0 else None
-
-    # accgenie — annual only (no monthly tier); multi-country via pricing.xlsx.
+    annual = _annual_paise(product, plan, country)
+    if annual is None:
+        return None
     if period == "monthly":
-        return None
-    try:
-        from license_server.services.pricing_lookup import resolve_price
-        return resolve_price(plan, country)["amount_paise"]
-    except Exception:
-        return None
+        # Round to whole rupees (matches the RWA sheet + the checkout page's
+        # Math.round(inr*0.11), so the charge equals the displayed price).
+        return int(round((annual / 100) * MONTHLY_FACTOR)) * 100
+    return annual
