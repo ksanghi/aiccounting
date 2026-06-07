@@ -152,8 +152,26 @@ CREATE TABLE IF NOT EXISTS bill_references (
     bill_date       TEXT NOT NULL,
     bill_amount     REAL NOT NULL,
     pending_amount  REAL NOT NULL,
-    voucher_id      INTEGER REFERENCES vouchers(id)
+    voucher_id      INTEGER REFERENCES vouchers(id),
+    ref_type        TEXT NOT NULL DEFAULT 'BILL',   -- BILL / ADVANCE
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_bill_refs_party
+    ON bill_references(company_id, ledger_id, pending_amount);
+
+-- ── Bill Allocations (bill-wise settlements: receipt/payment → bill) ──────────
+CREATE TABLE IF NOT EXISTS bill_allocations (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id    INTEGER NOT NULL REFERENCES companies(id),
+    bill_ref_id   INTEGER REFERENCES bill_references(id),   -- NULL = on-account
+    voucher_id    INTEGER NOT NULL REFERENCES vouchers(id),
+    ledger_id     INTEGER NOT NULL REFERENCES ledgers(id),
+    amount        REAL NOT NULL,
+    alloc_type    TEXT NOT NULL DEFAULT 'AGAINST',  -- AGAINST / ON_ACCOUNT / NEW / ADVANCE
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bill_alloc_voucher
+    ON bill_allocations(company_id, voucher_id);
 
 -- ── Financial Years ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS financial_years (
@@ -390,6 +408,11 @@ _ADDITIVE_COLUMNS = [
     ("companies",     "tan",                           "TEXT"),
     ("companies",     "gst_username",                  "TEXT"),
     ("ledgers",       "hsn_code",                      "TEXT"),
+    # Bill-wise referencing — added to the scaffold table for existing DBs.
+    # (ALTER defaults must be constant, so created_at is nullable here; fresh
+    #  DBs get datetime('now') from the SCHEMA above.)
+    ("bill_references", "ref_type",                    "TEXT NOT NULL DEFAULT 'BILL'"),
+    ("bill_references", "created_at",                  "TEXT"),
 ]
 
 

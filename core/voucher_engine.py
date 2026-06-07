@@ -65,6 +65,10 @@ class VoucherDraft:
     reference:      str                     = ""
     source:         str                     = "MANUAL"   # MANUAL / AI_DOC / VERBAL
     ai_confidence:  float | None            = None
+    # Bill-wise referencing (optional). For RECEIPT/PAYMENT the UI attaches the
+    # allocation lines here; the engine's post() hands them to BillWiseEngine.
+    # Each item: {"bill_ref_id": int|None, "amount": float, "alloc_type": str}.
+    allocations:    list                    = field(default_factory=list)
 
     @property
     def total_dr(self) -> float:
@@ -1118,6 +1122,20 @@ class VoucherEngine:
 
             self.db.commit()
 
+            # Bill-wise referencing — best-effort, NEVER breaks a post. The
+            # voucher is already committed; a failure here at worst skips a
+            # bill record. Gated at the UI/report layer by the licence flag.
+            try:
+                from core.bill_wise import BillWiseEngine
+                BillWiseEngine(self.db, self.company_id).on_voucher_posted(
+                    voucher_id, draft)
+                self.db.commit()
+            except Exception:
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+
             return PostedVoucher(
                 voucher_id=voucher_id,
                 voucher_number=vno,
@@ -1304,6 +1322,19 @@ class VoucherEngine:
             ),
         )
         self.db.commit()
+
+        # Bill-wise: reverse this voucher's open-item effects (restore pending
+        # on bills it settled, drop bills it created). Best-effort.
+        try:
+            from core.bill_wise import BillWiseEngine
+            BillWiseEngine(self.db, self.company_id).reverse_for_voucher(voucher_id)
+            self.db.commit()
+        except Exception:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+
         # Count toward the license txn counter — cancellation. Weight
         # defaults to 0 in v1 ("you used the slot when you posted"),
         # so this is a no-op until pricing.xlsx changes it. Wiring the
