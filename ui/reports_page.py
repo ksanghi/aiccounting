@@ -1462,49 +1462,113 @@ class PayablesAgingPage(_ReportBase):
 # ── Cash-Flow Planning (aging-based, monthly-horizon buckets) ────────────────
 
 class CashFlowPlanningPage(_ReportBase):
-    """Projected cash position by horizon: receivables (in) vs payables (out),
-    aging buckets read as a forward timeline. Aging-only — no recurring flows."""
+    """Assisted cash-flow planning. Tick the period you expect each BIG open item
+    to settle (Pareto — only the ~80% items need a tick; the small 20% tail
+    auto-spreads); the forecast projects your cash position. Posting stays
+    automatic — this is a separate planning worksheet."""
     TITLE    = "Cash-Flow Planning"
-    SUBTITLE = "Projected position by horizon — receivables in vs payables out (aging-based)"
+    SUBTITLE = "Tick when you expect each big receipt/payment — see your projected cash"
     AS_OF    = True
+    HORIZON  = 4   # months (8 half-month periods)
 
     def _build_shell(self):
         super()._build_shell()
-        self._table = _make_table(
-            ["Horizon", "Expected In", "Expected Out", "Net",
-             "Cumulative Position"],
-            stretch_cols=[0],
-        )
-        self._body.addWidget(self._table, 1)
+        from PySide6.QtWidgets import QSplitter, QComboBox  # local — page-only
+        self._QComboBox = QComboBox
+        split = QSplitter(Qt.Orientation.Vertical)
+
+        ws = QFrame(); ws.setObjectName("card")
+        wl = QVBoxLayout(ws); wl.setContentsMargins(12, 10, 12, 10); wl.setSpacing(4)
+        wl.addWidget(self._mini("PLAN THE BIG ITEMS  (≈80% of receipts & payments)"))
+        self._ws = _make_table(
+            ["Party", "Direction", "Outstanding", "Expect by"], stretch_cols=[0])
+        wl.addWidget(self._ws, 1)
+        self._tail_lbl = QLabel("")
+        self._tail_lbl.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px;")
+        wl.addWidget(self._tail_lbl)
+        split.addWidget(ws)
+
+        fc = QFrame(); fc.setObjectName("card")
+        fl = QVBoxLayout(fc); fl.setContentsMargins(12, 10, 12, 10); fl.setSpacing(4)
+        fl.addWidget(self._mini("PROJECTED CASH POSITION"))
+        self._fc = _make_table(
+            ["Period", "Expected In", "Expected Out", "Net", "Projected Cash"],
+            stretch_cols=[0])
+        fl.addWidget(self._fc, 1)
+        split.addWidget(fc)
+        split.setSizes([300, 300])
+        self._body.addWidget(split, 1)
+        self._periods = []
+
+    def _mini(self, text):
+        l = QLabel(text)
+        l.setStyleSheet(
+            f"font-size:10px; font-weight:bold; letter-spacing:1px; "
+            f"color:{THEME['text_secondary']};")
+        return l
 
     def refresh(self):
         as_of = self._dates()
-        self._data = self.rpt.cash_flow_planning(as_of)
-        buckets = self._data["buckets"]
-        t = self._table
-        t.setRowCount(len(buckets) + 1)
-        for i, d in enumerate(buckets):
-            net_col = THEME["success"] if d["net"] >= 0 else THEME["danger"]
-            cum_col = THEME["success"] if d["cumulative"] >= 0 else THEME["danger"]
+        self._periods = self.rpt.cashflow_periods(as_of, self.HORIZON)
+        items = self.rpt.cashflow_open_items(as_of)
+        exp = self.rpt.cashflow_get_expectations()
+        rows = ([("IN", it) for it in items["in"]["vital"]] +
+                [("OUT", it) for it in items["out"]["vital"]])
+
+        t = self._ws
+        t.setRowCount(len(rows))
+        for r, (kind, it) in enumerate(rows):
+            t.setItem(r, 0, _item(it["party"]))
+            t.setItem(r, 1, _item("Receipt" if kind == "IN" else "Payment",
+                                  colour=THEME["success"] if kind == "IN"
+                                  else THEME["danger"]))
+            t.setItem(r, 2, _item(_fmt(it["amount"]), right=True))
+            combo = self._QComboBox()
+            combo.addItem("— not scheduled —", "")
+            for p in self._periods:
+                combo.addItem(p["label"], p["start"])
+            idx = combo.findData(exp.get((it["ledger_id"], kind), ""))
+            combo.setCurrentIndex(max(0, idx))
+            combo.currentIndexChanged.connect(
+                lambda _i, lid=it["ledger_id"], k=kind, c=combo:
+                self._on_assign(lid, k, c))
+            t.setCellWidget(r, 3, combo)
+
+        self._tail_lbl.setText(
+            f"Small items (~20% tail) auto-spread evenly — receipts "
+            f"{_fmt(items['in']['tail'])}, payments {_fmt(items['out']['tail'])}.")
+        self._render_forecast(as_of)
+
+    def _on_assign(self, ledger_id, kind, combo):
+        self.rpt.cashflow_set_expectation(ledger_id, kind, combo.currentData() or None)
+        self._render_forecast(self._dates())
+
+    def _render_forecast(self, as_of):
+        self._data = self.rpt.cashflow_forecast(as_of, self.HORIZON)
+        rows = self._data["rows"]
+        t = self._fc
+        t.setRowCount(len(rows) + 1)
+        t.setItem(0, 0, _item("Opening cash", bold=True))
+        for c in (1, 2, 3):
+            t.setItem(0, c, _item(""))
+        t.setItem(0, 4, _item(_fmt(self._data["opening"]), right=True, bold=True))
+        for i, d in enumerate(rows, start=1):
+            cl_col = THEME["danger"] if d["closing"] < 0 else THEME["text_primary"]
             t.setItem(i, 0, _item(d["label"]))
             t.setItem(i, 1, _item(_fmt(d["inflow"]),  right=True))
             t.setItem(i, 2, _item(_fmt(d["outflow"]), right=True))
-            t.setItem(i, 3, _item(_fmt(d["net"]),     right=True, colour=net_col))
-            t.setItem(i, 4, _item(_fmt(d["cumulative"]), right=True,
-                                  bold=True, colour=cum_col))
-        i = len(buckets)
-        np = self._data["net_position"]
-        np_col = THEME["success"] if np >= 0 else THEME["danger"]
-        t.setItem(i, 0, _item("NET POSITION", bold=True))
-        t.setItem(i, 1, _item(_fmt(self._data["total_in"]),  right=True, bold=True))
-        t.setItem(i, 2, _item(_fmt(self._data["total_out"]), right=True, bold=True))
-        t.setItem(i, 3, _item(_fmt(np), right=True, bold=True, colour=np_col))
-        t.setItem(i, 4, _item(""))
-        self._status.setText(
-            f"As on {as_of}  |  Receivable {_fmt(self._data['total_in'])}  −  "
-            f"Payable {_fmt(self._data['total_out'])}  =  Net {_fmt(np)}  "
-            f"(aging-based, no recurring flows)"
-        )
+            t.setItem(i, 3, _item(_fmt(d["net"]), right=True,
+                                  colour=THEME["success"] if d["net"] >= 0
+                                  else THEME["danger"]))
+            t.setItem(i, 4, _item(_fmt(d["closing"]), right=True, bold=True,
+                                  colour=cl_col))
+        un_in, un_out = self._data["unscheduled_in"], self._data["unscheduled_out"]
+        msg = f"As on {as_of}  |  opening cash {_fmt(self._data['opening'])}"
+        if un_in or un_out:
+            msg += (f"   ⚠ unscheduled: receipts {_fmt(un_in)}, "
+                    f"payments {_fmt(un_out)} — tick them above")
+        self._status.setText(msg)
 
     def _do_excel(self, exp, path):
         exp.cash_flow(self._data, self.rpt.get_company(), path)

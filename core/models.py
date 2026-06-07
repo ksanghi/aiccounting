@@ -173,6 +173,20 @@ CREATE TABLE IF NOT EXISTS bill_allocations (
 CREATE INDEX IF NOT EXISTS idx_bill_alloc_voucher
     ON bill_allocations(company_id, voucher_id);
 
+-- ── Cash-flow expectations (assisted forecast: party → expected period) ────────
+-- The user ticks which half-month period they expect each open receivable to
+-- arrive / each payable to go out. Posting stays automatic; this is a separate
+-- planning worksheet. One row per (party ledger, direction).
+CREATE TABLE IF NOT EXISTS cashflow_expectations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id),
+    ledger_id    INTEGER NOT NULL REFERENCES ledgers(id),
+    kind         TEXT NOT NULL,            -- IN (receivable) / OUT (payable)
+    period_start TEXT NOT NULL,            -- ISO date of the chosen half-month period
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(company_id, ledger_id, kind)
+);
+
 -- ── Financial Years ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS financial_years (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

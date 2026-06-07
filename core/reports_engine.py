@@ -11,7 +11,7 @@ prior FY's net profit into Retained Earnings. The FY boundary comes from
 `companies.fy_start`. For a single-FY book the prior-year figures are
 all zero, so the output is identical to the pre-A9 behaviour.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from .models import Database
 from core.fy import fy_start_year, fy_bounds
@@ -525,42 +525,164 @@ class ReportsEngine:
             "totals": {k: round(v, 2) for k, v in totals.items()},
         }
 
-    def cash_flow_planning(self, as_of: str) -> dict:
-        """Aging-only cash-flow projection in monthly-horizon buckets.
+    # ── Assisted cash-flow planning (semi-automatic worksheet) ──────────────
+    # Posting stays automatic. The user ticks which half-month period they
+    # expect each BIG open item to settle (Pareto: only the items that make up
+    # ~80% of receipts/payments need a tick — the small 20% tail auto-spreads).
+    # The forecast then projects the cash position period-by-period.
 
-        Reuses the receivables (expected IN) and payables (expected OUT) aging
-        buckets as a forward timeline — i.e. the age of an outstanding item is
-        read as roughly when it should clear. No recurring flows are modelled
-        (aging-only, by design). Returns per-bucket inflow/outflow/net + a
-        running cumulative cash position, plus headline totals.
-        """
-        rec = self.receivables_aging(as_of)["totals"]
-        pay = self.payables_aging(as_of)["totals"]
-        order = [
-            ("b0_30",  "This month (0–30 days)"),
-            ("b31_60", "Next month (31–60 days)"),
-            ("b61_90", "In 2–3 months (61–90 days)"),
-            ("b90p",   "Beyond 90 days (overdue)"),
-        ]
-        buckets: list[dict] = []
-        cum = 0.0
-        for key, label in order:
-            inflow  = round(rec.get(key, 0.0), 2)
-            outflow = round(pay.get(key, 0.0), 2)
+    def _opening_cash(self, as_of: str) -> float:
+        """Current cash + bank balance as of a date (Dr positive)."""
+        row = self.db.execute(
+            """SELECT COALESCE(SUM(
+                   COALESCE(l.opening_balance,0) *
+                     (CASE l.opening_type WHEN 'Dr' THEN 1 ELSE -1 END)
+                   + COALESCE(t.net, 0)), 0) AS cash
+               FROM ledgers l
+               LEFT JOIN (
+                   SELECT vl.ledger_id AS lid,
+                          SUM(vl.dr_amount - vl.cr_amount) AS net
+                     FROM voucher_lines vl
+                     JOIN vouchers v ON v.id = vl.voucher_id
+                    WHERE v.company_id = ? AND v.is_cancelled = 0
+                      AND v.voucher_date <= ?
+                    GROUP BY vl.ledger_id
+               ) t ON t.lid = l.id
+               WHERE l.company_id = ? AND l.active = 1
+                 AND (l.is_bank = 1 OR l.is_cash = 1)""",
+            (self.company_id, as_of, self.company_id),
+        ).fetchone()
+        return round((row["cash"] if row else 0.0) or 0.0, 2)
+
+    @staticmethod
+    def _pareto(items: list[dict], frac: float = 0.8) -> dict:
+        """Split items into the 'vital few' (cumulative >= frac of total, biggest
+        first) + the small tail amount. items: [{ledger_id, party, amount}]."""
+        items = sorted(items, key=lambda x: x["amount"], reverse=True)
+        total = round(sum(i["amount"] for i in items), 2)
+        vital, acc = [], 0.0
+        for it in items:
+            vital.append(it)
+            acc += it["amount"]
+            if total <= 0 or acc >= frac * total - 0.01:
+                break
+        return {"vital": vital, "tail": round(total - acc, 2), "total": total}
+
+    def cashflow_open_items(self, as_of: str) -> dict:
+        """Open receivables (IN) + payables (OUT) by party, Pareto-split."""
+        rows = self.db.execute(
+            """SELECT l.id, l.name, g.name AS grp, l.opening_balance,
+                      l.opening_type,
+                      COALESCE(SUM(CASE WHEN v.id IS NOT NULL
+                                   THEN vl.dr_amount - vl.cr_amount ELSE 0 END), 0) AS moved
+                 FROM ledgers l
+                 JOIN account_groups g ON l.group_id = g.id
+                 LEFT JOIN voucher_lines vl ON vl.ledger_id = l.id
+                 LEFT JOIN vouchers v ON v.id = vl.voucher_id
+                      AND v.is_cancelled = 0 AND v.voucher_date <= ?
+                WHERE l.company_id = ? AND l.active = 1
+                  AND g.name IN ('Sundry Debtors', 'Sundry Creditors')
+                GROUP BY l.id""",
+            (as_of, self.company_id),
+        ).fetchall()
+        inc, out = [], []
+        for r in rows:
+            ob = (r["opening_balance"] or 0.0) * (1 if r["opening_type"] == "Dr" else -1)
+            net = round(ob + (r["moved"] or 0.0), 2)
+            if r["grp"] == "Sundry Debtors" and net > 0.01:
+                inc.append({"ledger_id": r["id"], "party": r["name"], "amount": net})
+            elif r["grp"] == "Sundry Creditors" and net < -0.01:
+                out.append({"ledger_id": r["id"], "party": r["name"], "amount": round(-net, 2)})
+        return {"in": self._pareto(inc), "out": self._pareto(out)}
+
+    def cashflow_periods(self, as_of: str, months: int = 4) -> list[dict]:
+        """Upcoming half-month periods (1–15, 16–end) for `months` months."""
+        d0 = date.fromisoformat(as_of)
+        periods = []
+        for k in range(months):
+            mm = d0.month + k
+            yy = d0.year + (mm - 1) // 12
+            mm = (mm - 1) % 12 + 1
+            nextm = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
+            halves = [(date(yy, mm, 1), date(yy, mm, 15)),
+                      (date(yy, mm, 16), nextm - timedelta(days=1))]
+            for s, e in halves:
+                if e >= d0:
+                    periods.append({
+                        "start": s.isoformat(), "end": e.isoformat(),
+                        "label": f"{s.day}–{e.day} {s.strftime('%b %y')}",
+                    })
+        return periods
+
+    def cashflow_get_expectations(self) -> dict:
+        rows = self.db.execute(
+            "SELECT ledger_id, kind, period_start FROM cashflow_expectations "
+            "WHERE company_id = ?", (self.company_id,),
+        ).fetchall()
+        return {(r["ledger_id"], r["kind"]): r["period_start"] for r in rows}
+
+    def cashflow_set_expectation(self, ledger_id: int, kind: str,
+                                 period_start: str | None) -> None:
+        if not period_start:
+            self.db.execute(
+                "DELETE FROM cashflow_expectations "
+                "WHERE company_id=? AND ledger_id=? AND kind=?",
+                (self.company_id, ledger_id, kind))
+        else:
+            self.db.execute(
+                """INSERT INTO cashflow_expectations
+                   (company_id, ledger_id, kind, period_start)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(company_id, ledger_id, kind)
+                   DO UPDATE SET period_start = excluded.period_start,
+                                 updated_at = datetime('now')""",
+                (self.company_id, ledger_id, kind, period_start))
+        self.db.commit()
+
+    def cashflow_forecast(self, as_of: str, months: int = 4) -> dict:
+        """Project the cash position period-by-period from the user's expected
+        periods. Vital-few items land in their ticked period (or 'unscheduled'
+        until ticked); the small ~20% tail spreads evenly across the horizon."""
+        opening = self._opening_cash(as_of)
+        items = self.cashflow_open_items(as_of)
+        periods = self.cashflow_periods(as_of, months)
+        exp = self.cashflow_get_expectations()
+
+        pmap = {p["start"]: {"label": p["label"], "in": 0.0, "out": 0.0}
+                for p in periods}
+        order = [p["start"] for p in periods]
+        unsched_in = unsched_out = 0.0
+        for it in items["in"]["vital"]:
+            ps = exp.get((it["ledger_id"], "IN"))
+            if ps in pmap:
+                pmap[ps]["in"] += it["amount"]
+            else:
+                unsched_in += it["amount"]
+        for it in items["out"]["vital"]:
+            ps = exp.get((it["ledger_id"], "OUT"))
+            if ps in pmap:
+                pmap[ps]["out"] += it["amount"]
+            else:
+                unsched_out += it["amount"]
+
+        n = len(order) or 1
+        tail_in = items["in"]["tail"] / n
+        tail_out = items["out"]["tail"] / n
+
+        rows, closing = [], opening
+        for ps in order:
+            b = pmap[ps]
+            inflow = round(b["in"] + tail_in, 2)
+            outflow = round(b["out"] + tail_out, 2)
             net = round(inflow - outflow, 2)
-            cum = round(cum + net, 2)
-            buckets.append({
-                "label": label, "inflow": inflow, "outflow": outflow,
-                "net": net, "cumulative": cum,
-            })
-        total_in  = round(sum(rec.values()), 2)
-        total_out = round(sum(pay.values()), 2)
+            closing = round(closing + net, 2)
+            rows.append({"label": b["label"], "inflow": inflow,
+                         "outflow": outflow, "net": net, "closing": closing})
         return {
-            "as_of": as_of,
-            "buckets": buckets,
-            "total_in": total_in,
-            "total_out": total_out,
-            "net_position": round(total_in - total_out, 2),
+            "as_of": as_of, "opening": opening, "rows": rows,
+            "unscheduled_in": round(unsched_in, 2),
+            "unscheduled_out": round(unsched_out, 2),
+            "tail_in": items["in"]["tail"], "tail_out": items["out"]["tail"],
         }
 
     # ── 4 & 5. Cash Book / Bank Book ─────────────────────────────────────────

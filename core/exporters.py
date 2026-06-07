@@ -275,15 +275,14 @@ class ExcelExporter:
     def cash_flow(self, data: dict, company: dict, path: str):
         wb, ws = self._wb("Cash-Flow Planning")
         r = self._header(ws, company,
-                         f"Cash-Flow Planning (aging-based) as on {data['as_of']}")
-        r = self._col_hdrs(ws, r, ["Horizon", "Expected In", "Expected Out",
-                                   "Net", "Cumulative"])
-        for d in data["buckets"]:
+                         f"Cash-Flow Planning (assisted) as on {data['as_of']}")
+        r = self._col_hdrs(ws, r, ["Period", "Expected In", "Expected Out",
+                                   "Net", "Projected Cash"])
+        ws.append(["Opening cash", "", "", "", data["opening"]])
+        for d in data["rows"]:
             ws.append([d["label"], d["inflow"], d["outflow"], d["net"],
-                       d["cumulative"]])
-        ws.append(["NET POSITION", data["total_in"], data["total_out"],
-                   data["net_position"], ""])
-        self._set_widths(ws, [30,16,16,16,16])
+                       d["closing"]])
+        self._set_widths(ws, [22,16,16,16,16])
         wb.save(path)
 
 
@@ -626,13 +625,12 @@ class PDFExporter:
         cm = self._cm
         doc = self._doc(path, wide=True)
         elems = self._heading(
-            company, f"Cash-Flow Planning (aging-based) as on {data['as_of']}")
-        rows = [["Horizon", "Expected In", "Expected Out", "Net", "Cumulative"]]
-        for d in data["buckets"]:
+            company, f"Cash-Flow Planning (assisted) as on {data['as_of']}")
+        rows = [["Period", "Expected In", "Expected Out", "Net", "Projected Cash"]]
+        rows.append(["Opening cash", "", "", "", _fmt(data["opening"])])
+        for d in data["rows"]:
             rows.append([d["label"], _fmt(d["inflow"]), _fmt(d["outflow"]),
-                         _fmt(d["net"]), _fmt(d["cumulative"])])
-        rows.append(["NET POSITION", _fmt(data["total_in"]),
-                     _fmt(data["total_out"]), _fmt(data["net_position"]), ""])
+                         _fmt(d["net"]), _fmt(d["closing"])])
         cw = [5.5*cm, 3.2*cm, 3.2*cm, 3.2*cm, 3.4*cm]
         tbl = self._Table(rows, colWidths=cw)
         tbl.setStyle(self._tbl_style())
