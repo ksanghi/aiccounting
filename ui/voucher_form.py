@@ -426,6 +426,11 @@ class VoucherEntryPage(QWidget):
         self._create_callback         = None
         self._create_banner_text: str = ""
         self._create_prefill          = None
+        # Bill-wise allocation state (RECEIPT/PAYMENT). Set via the allocation
+        # dialog; applied to the draft in _post. _alloc_for guards that the
+        # stored allocations still match the current party + amount.
+        self._pending_allocations: list = []
+        self._alloc_for = None
         self._build_ui()
         self._wire_shortcuts()
 
@@ -948,6 +953,32 @@ class VoucherEntryPage(QWidget):
         self._multi_party_btn.clicked.connect(self._open_multi_party_dialog)
         inner.addWidget(self._multi_party_btn)
 
+        # ── Bill-wise allocation row (RECEIPT/PAYMENT, PRO+) ──
+        self._alloc_btn = QPushButton("🧾  Allocate to bills…  (Against Reference)")
+        self._alloc_btn.setMinimumHeight(40)
+        self._alloc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._alloc_btn.setToolTip(
+            "Settle this receipt/payment against the party's specific open "
+            "invoices (bill-by-bill). Anything not allocated posts on-account.")
+        self._alloc_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {THEME['accent_dim']};
+                border: 1.5px dashed {THEME['accent']};
+                border-radius: 8px;
+                color: {THEME['accent']};
+                padding: 8px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {THEME['accent']}22;
+                border-style: solid;
+            }}
+        """)
+        self._alloc_btn.clicked.connect(self._open_alloc_dialog)
+        self._alloc_btn.setVisible(False)
+        inner.addWidget(self._alloc_btn)
+
         self._smart_layout.addWidget(frame)
         self._smart_layout.addStretch()
 
@@ -1048,6 +1079,14 @@ class VoucherEntryPage(QWidget):
             vtype in ("PAYMENT", "RECEIPT")
             and self._has_feature("multi_party_voucher")
         )
+        # Bill-wise allocation — only for single receipt/payment on PRO+. The
+        # stored allocations are party+amount specific, so reset on type switch.
+        if hasattr(self, "_alloc_btn"):
+            self._alloc_btn.setVisible(
+                vtype in ("PAYMENT", "RECEIPT")
+                and self._has_feature("bill_wise_refs")
+            )
+            self._reset_allocations()
 
         # Remove old field widgets from their row layouts
         if self.field1_ledger is not None:
@@ -1264,6 +1303,44 @@ class VoucherEntryPage(QWidget):
                 f"color:{THEME['danger']}; font-size:12px; font-weight:bold;"
             )
 
+    def _reset_allocations(self) -> None:
+        self._pending_allocations = []
+        self._alloc_for = None
+        if hasattr(self, "_alloc_btn"):
+            self._alloc_btn.setText("🧾  Allocate to bills…  (Against Reference)")
+
+    def _open_alloc_dialog(self) -> None:
+        party_id = self.field1_ledger.selected_id if self.field1_ledger else None
+        amount = self.amount_edit.value()
+        if not party_id:
+            QMessageBox.warning(self, "Select a party",
+                "Choose the party first, then allocate against their bills.")
+            return
+        if amount <= 0:
+            QMessageBox.warning(self, "Enter an amount",
+                "Enter the receipt/payment amount before allocating.")
+            return
+        try:
+            from ui.bill_allocation_dialog import BillAllocationDialog
+            party_name = (self.field1_ledger.text()
+                          if hasattr(self.field1_ledger, "text") else "")
+            dlg = BillAllocationDialog(
+                self.engine.db, self.engine.company_id,
+                party_id, party_name, amount, self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                self._pending_allocations = dlg.allocations()
+                self._alloc_for = (party_id, amount)
+                n = sum(1 for a in self._pending_allocations if a.get("bill_ref_id"))
+                tot = sum(a["amount"] for a in self._pending_allocations
+                          if a.get("bill_ref_id"))
+                if n:
+                    self._alloc_btn.setText(
+                        f"🧾  {n} bill(s) allocated · ₹{tot:,.2f}  (edit)")
+                else:
+                    self._alloc_btn.setText("🧾  On-account (no bill)  (edit)")
+        except Exception as e:
+            QMessageBox.critical(self, "Allocation error", str(e))
+
     def _get_date_str(self) -> str:
         return self.date_edit.date().toString("yyyy-MM-dd")
 
@@ -1402,6 +1479,14 @@ class VoucherEntryPage(QWidget):
                 if hasattr(win, "return_from_voucher_edit"):
                     win.return_from_voucher_edit()
                 return
+
+            # Bill-wise: attach the allocations chosen in the dialog, but only
+            # if they still match the current party + amount (guards against a
+            # party/amount change after the dialog was filled).
+            if (vtype in ("RECEIPT", "PAYMENT") and self._pending_allocations
+                    and self._alloc_for == (self.field1_ledger.selected_id,
+                                            self.amount_edit.value())):
+                draft.allocations = self._pending_allocations
 
             posted = self.engine.post(draft)
 
@@ -1712,6 +1797,7 @@ class VoucherEntryPage(QWidget):
         self.narration_edit.clear()
         self.reference_edit.clear()
         self.amount_edit.setValue(0)
+        self._reset_allocations()
         try:
             self.field1_ledger.clear()
             self.field2_ledger.clear()
