@@ -54,7 +54,17 @@
   .value-rotator .vr-word.swap { opacity: 0; transform: translateY(6px); }
   .eyebrow { display: inline-block; background: rgba(14,165,165,0.08); color: var(--accent); border: 1px solid rgba(14,165,165,0.2); padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
   h1 { font-size: clamp(36px, 5vw, 60px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; max-width: 860px; margin: 0 auto 14px; }
-  h1 .grad { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  h1 .grad { background: linear-gradient(110deg, var(--accent) 0%, var(--accent-2) 32%, var(--accent-rwa) 64%, var(--accent) 100%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 7s linear infinite; }
+  @keyframes shimmer { to { background-position: 220% 0; } }
+  /* Scroll-reveal — sections & cards ease in (progressive enhancement; instant on browsers without scroll-timelines) */
+  @media (prefers-reduced-motion: no-preference) {
+    .section-head, .intent, .wcard, .pcard {
+      animation: revealUp 0.6s ease both;
+      animation-timeline: view();
+      animation-range: entry 2% cover 24%;
+    }
+  }
+  @keyframes revealUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
   .hero p.lead { font-size: clamp(17px, 1.4vw, 21px); color: var(--ink-mute); max-width: 700px; margin: 0 auto 24px; }
   .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .btn-primary, .btn-ghost { display: inline-block; padding: 14px 26px; border-radius: 10px; font-size: 15px; font-weight: 600; transition: transform 0.06s ease, box-shadow 0.2s ease; }

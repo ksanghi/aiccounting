@@ -46,10 +46,34 @@
 
   /* ── Hero ──────────────────────────────────────── */
   .hero {
+    position: relative; overflow: hidden;
     background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%);
     padding: 80px 24px 60px;
     text-align: center;
   }
+  .hero::before {
+    content: ""; position: absolute; inset: -30% -10% auto -10%; height: 620px;
+    background:
+      radial-gradient(42% 55% at 22% 30%, rgba(14,165,165,0.20), transparent 70%),
+      radial-gradient(40% 52% at 80% 18%, rgba(0,212,170,0.18), transparent 70%),
+      radial-gradient(46% 50% at 60% 75%, rgba(245,165,36,0.12), transparent 72%);
+    filter: blur(8px); z-index: 0; pointer-events: none;
+  }
+  .hero > * { position: relative; z-index: 1; }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero::before { animation: heroAurora 16s ease-in-out infinite alternate; }
+    .hero > .eyebrow { animation: heroIn 0.7s ease both; }
+    .hero > h1 { animation: heroIn 0.7s ease 0.06s both; }
+    .hero > p.lead { animation: heroIn 0.7s ease 0.12s both; }
+    .hero > .cta-row { animation: heroIn 0.7s ease 0.18s both; }
+    .hero > .hero-note { animation: heroIn 0.7s ease 0.24s both; }
+    .hero > .hero-mock { animation: heroIn 0.9s ease 0.30s both; }
+  }
+  @keyframes heroAurora {
+    0%   { transform: translate3d(0,0,0) scale(1); }
+    100% { transform: translate3d(0,-14px,0) scale(1.06); }
+  }
+  @keyframes heroIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
   .eyebrow {
     display: inline-block;
     background: rgba(14, 165, 165, 0.08);
@@ -68,10 +92,15 @@
     margin: 0 auto 22px;
   }
   h1 .grad {
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    background: linear-gradient(110deg, var(--accent) 0%, var(--accent-2) 34%, var(--accent-warm) 64%, var(--accent) 100%);
+    background-size: 220% 100%;
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent;
   }
+  @media (prefers-reduced-motion: no-preference) {
+    h1 .grad { animation: shimmer 7s linear infinite; }
+  }
+  @keyframes shimmer { to { background-position: 220% 0; } }
   .hero p.lead {
     font-size: clamp(17px, 1.4vw, 21px);
     color: var(--ink-mute);
@@ -118,7 +147,7 @@
   .mock-side .section { color: #6B7A99; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin: 14px 0 8px; }
   .mock-side .item { padding: 7px 8px; border-radius: 6px; color: rgba(255,255,255,0.7); cursor: default; }
   .mock-side .item.active { background: rgba(14, 165, 165, 0.18); color: white; }
-  .mock-main { padding: 24px 28px; color: rgba(255,255,255,0.92); display: flex; flex-direction: column; }
+  .mock-main { position: relative; overflow: hidden; padding: 24px 28px; color: rgba(255,255,255,0.92); display: flex; flex-direction: column; }
   .mock-h { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
   .mock-sub { font-size: 12px; color: #6B7A99; margin-bottom: 18px; }
   .mock-row { display: grid; grid-template-columns: 90px 1fr 100px 100px; gap: 12px; padding: 9px 0;
@@ -135,6 +164,44 @@
     display: flex; align-items: center; gap: 8px;
   }
   .mock-ai-toast .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); }
+
+  /* ── Live mock: the voucher posts itself ─────────── */
+  /* The .playing class is added by JS. Without JS the mock stays fully visible (static), so there is never hidden content. */
+  .mock-incoming {
+    position: absolute; top: 18px; right: 22px; z-index: 4;
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px; padding: 6px 10px; font-size: 11px; color: rgba(255,255,255,0.9);
+    opacity: 0; pointer-events: none;
+  }
+  .mock-incoming .pdf { width: 14px; height: 16px; border-radius: 2px; background: linear-gradient(135deg,#F5A524,#E0791A); }
+  .mock-scan {
+    position: absolute; left: 0; right: 0; top: -60px; height: 56px; z-index: 3;
+    background: linear-gradient(180deg, transparent, rgba(0,212,170,0.28), transparent);
+    opacity: 0; pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-mock.playing .mock-row:not(.head) { opacity: 0; transform: translateY(8px);
+      transition: opacity .4s ease, transform .4s ease; }
+    .hero-mock.playing .mock-row:not(.head).show { opacity: 1; transform: none; }
+    .hero-mock.playing .mock-ai-toast { opacity: 0; transform: translateY(8px);
+      transition: opacity .45s ease, transform .45s ease; }
+    .hero-mock.playing .mock-ai-toast.show { opacity: 1; transform: none; }
+    .hero-mock.playing .mock-incoming { transition: opacity .35s ease; }
+    .hero-mock.playing .mock-incoming.show { opacity: 1; }
+    .hero-mock.playing .mock-scan.run { animation: mockScan 0.95s ease forwards; }
+  }
+  @keyframes mockScan { 0% { top: -60px; opacity: 0.9; } 100% { top: 320px; opacity: 0; } }
+
+  /* ── Scroll-reveal (progressive enhancement; instant where scroll-timelines are unsupported) ── */
+  @media (prefers-reduced-motion: no-preference) {
+    .pillars h2, .pillar-card, .feature-row, .price-card, .final h2, .final .cta-row, .stats-grid {
+      animation: revealUp 0.6s ease both;
+      animation-timeline: view();
+      animation-range: entry 2% cover 22%;
+    }
+  }
+  @keyframes revealUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
 
   /* ── Pillars (Easy / Intelligent / Quick) ───────── */
   .pillars { padding: 90px 24px; background: white; }
@@ -368,6 +435,8 @@
         <div class="item">Balance Sheet</div>
       </div>
       <div class="mock-main">
+        <div class="mock-incoming"><span class="pdf"></span>INV-0241.pdf</div>
+        <div class="mock-scan"></div>
         <div class="mock-h">Sales · INV-0241</div>
         <div class="mock-sub">15 May 2026 · Acme Traders Pvt Ltd</div>
         <div class="mock-row head">
@@ -672,5 +741,47 @@
   <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
 </footer>
 
+<script>
+/* Live hero mock — the voucher posts itself. Degrades to the static screenshot if JS or motion is off. */
+(function () {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var mock = document.querySelector('.hero-mock');
+  if (!mock) return;
+  var rows = mock.querySelectorAll('.mock-row:not(.head)');
+  var toast = mock.querySelector('.mock-ai-toast');
+  var incoming = mock.querySelector('.mock-incoming');
+  var scan = mock.querySelector('.mock-scan');
+  if (!rows.length) return;
+  mock.classList.add('playing');
+  var timers = [];
+  function clearAll(){ timers.forEach(clearTimeout); timers = []; }
+  function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
+  function reset(){
+    for (var i = 0; i < rows.length; i++) rows[i].classList.remove('show');
+    if (toast) toast.classList.remove('show');
+    if (incoming) incoming.classList.remove('show');
+    if (scan) scan.classList.remove('run');
+  }
+  function play(){
+    clearAll(); reset();
+    void mock.offsetWidth;                          // reflow so re-added classes re-animate
+    at(300,  function(){ if (incoming) incoming.classList.add('show'); });
+    at(780,  function(){ if (scan) scan.classList.add('run'); });
+    for (var i = 0; i < rows.length; i++) {
+      (function(r, idx){ at(1150 + idx * 420, function(){ r.classList.add('show'); }); })(rows[i], i);
+    }
+    at(1150 + rows.length * 420 + 260, function(){ if (toast) toast.classList.add('show'); });
+    at(6400, play);                                 // loop
+  }
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if (e.isIntersecting) play(); else clearAll(); });
+    }, { threshold: 0.25 });
+    io.observe(mock);
+  } else {
+    play();
+  }
+})();
+</script>
 </body>
 </html>
