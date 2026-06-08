@@ -771,6 +771,17 @@ class LedgerSearchEdit(QWidget):
         self._ledger_map = {l["name"]: l for l in ledgers}
         self._model.setStringList(sorted(self._ledger_map.keys()))
 
+    def select_by_name(self, name: str) -> bool:
+        """Programmatically select a ledger by name (report drill-down).
+        Returns True if the name matches a real ledger."""
+        ldg = self._ledger_map.get((name or "").strip())
+        if not ldg:
+            return False
+        self.search.setText(ldg["name"])
+        self._selected_id = ldg["id"]
+        self.ledger_selected.emit(ldg["id"], ldg["name"], ldg)
+        return True
+
     def _on_text_changed(self, text: str):
         if text not in self._ledger_map:
             self._selected_id = None

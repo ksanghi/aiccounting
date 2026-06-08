@@ -537,6 +537,34 @@ class MainWindow(QMainWindow):
                 self._select_page(idx)
                 return
 
+    def open_ledger_account(self, ledger_name: str,
+                            from_date: str | None = None,
+                            to_date: str | None = None) -> None:
+        """Tally-style drill-down: from a summary report (Balance Sheet / P&L /
+        Trial Balance) jump to the Ledger Account for `ledger_name`, set the
+        period, refresh, and show it. From there a voucher is one more
+        double-click away. No-op if the row isn't a real ledger (group header
+        / synthetic line)."""
+        page = None
+        for label, _icon, widget, _btn in self._pages:
+            if label == "Ledger Account":
+                page = widget
+                break
+        if page is None or not hasattr(page, "_ledger_picker"):
+            return
+        if not page._ledger_picker.select_by_name(ledger_name):
+            return
+        from PySide6.QtCore import QDate
+        if to_date and hasattr(page, "to_date"):
+            page.to_date.setDate(QDate.fromString(to_date, "yyyy-MM-dd"))
+        if from_date and hasattr(page, "from_date"):
+            page.from_date.setDate(QDate.fromString(from_date, "yyyy-MM-dd"))
+        page.refresh()
+        for idx, (label, _i, _w, _b) in enumerate(self._pages):
+            if label == "Ledger Account":
+                self._select_page(idx)
+                return
+
     def _build_pages_inner(self):
         from ui.voucher_form     import VoucherEntryPage
         from ui.daybook          import DayBookPage, LedgerBalancePage

@@ -719,7 +719,8 @@ class ReportsEngine:
             opening = round((ob_dr + (ob_txn["dr"] or 0)) - (ob_cr + (ob_txn["cr"] or 0)), 2)
 
             lines = self.db.execute(
-                """SELECT v.voucher_date, v.voucher_number, v.voucher_type,
+                """SELECT v.id AS voucher_id,
+                          v.voucher_date, v.voucher_number, v.voucher_type,
                           v.narration, v.reference,
                           vl.dr_amount, vl.cr_amount, vl.cleared_date,
                           (SELECT l2.name
@@ -756,6 +757,7 @@ class ReportsEngine:
                 if party and (line["contra_n"] or 0) > 1:
                     party = f"{party}  (+{line['contra_n'] - 1})"
                 transactions.append({
+                    "voucher_id":   line["voucher_id"],
                     "date":         line["voucher_date"],
                     "voucher_no":   line["voucher_number"],
                     "voucher_type": line["voucher_type"],

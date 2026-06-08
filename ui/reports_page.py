@@ -350,6 +350,12 @@ class TrialBalancePage(_ReportBase):
             stretch_cols=[1]
         )
         self._body.addWidget(self._table, 1)
+        self._table.cellDoubleClicked.connect(self._drill)
+
+    def _drill(self, row, _col):
+        it = self._table.item(row, 1)            # col 1 = ledger name
+        if it is not None and hasattr(self.window(), "open_ledger_account"):
+            self.window().open_ledger_account(it.text(), None, self._dates())
 
     def refresh(self):
         as_of = self._dates()
@@ -460,6 +466,16 @@ class ProfitLossPage(_ReportBase):
         net_row.addWidget(self._net_lbl)
         self._body.addWidget(net_bar)
 
+        self._inc_table.cellDoubleClicked.connect(self._drill)
+        self._exp_table.cellDoubleClicked.connect(self._drill)
+
+    def _drill(self, row, _col):
+        t = self.sender()
+        it = t.item(row, 0) if t is not None else None   # col 0 = ledger name
+        if it is not None and hasattr(self.window(), "open_ledger_account"):
+            fd, td = self._dates()
+            self.window().open_ledger_account(it.text(), fd, td)
+
     def _fill_table(self, table, rows, amount_col=2):
         table.setRowCount(len(rows))
         for i, d in enumerate(rows):
@@ -534,6 +550,14 @@ class BalanceSheetPage(_ReportBase):
                 self._lib_total = total_lbl
 
         self._body.addWidget(splitter, 1)
+        self._ast_table.cellDoubleClicked.connect(self._drill)
+        self._lib_table.cellDoubleClicked.connect(self._drill)
+
+    def _drill(self, row, _col):
+        t = self.sender()
+        it = t.item(row, 0) if t is not None else None   # col 0 = ledger name
+        if it is not None and hasattr(self.window(), "open_ledger_account"):
+            self.window().open_ledger_account(it.text(), None, self._dates())
 
     def _extra_filters(self, row):
         row.addWidget(make_label("Format"))
@@ -703,6 +727,7 @@ class _LedgerBookPage(_ReportBase):
             r = t.rowCount()
             t.insertRow(r)
             t.setItem(r, 0, _item(tx["date"]))
+            t.item(r, 0).setData(Qt.ItemDataRole.UserRole, tx.get("voucher_id"))
             t.setItem(r, 1, _item(tx["voucher_no"]))
             t.setItem(r, 2, _item(tx["voucher_type"].replace("_"," ")))
             t.setItem(r, 3, _item(tx.get("party", "")))
@@ -725,6 +750,7 @@ class _LedgerBookPage(_ReportBase):
         # a column header has clearly asked for that trade-off.
         make_sortable(t)
         self._register_filter_target(t)
+        t.cellDoubleClicked.connect(self._on_book_drill)
 
         # KEY FIX: size the inner table to fit ALL its rows. Without this
         # Qt sizes the table to its default minimum (~80 px ≈ 2-3 rows)
@@ -752,6 +778,14 @@ class _LedgerBookPage(_ReportBase):
 
         insert_pos = self._scroll_layout.count() - 1
         self._scroll_layout.insertWidget(insert_pos, frame)
+
+    def _on_book_drill(self, row, _col):
+        t = self.sender()
+        it = t.item(row, 0) if t is not None else None
+        vid = it.data(Qt.ItemDataRole.UserRole) if it is not None else None
+        win = self.window()
+        if vid and hasattr(win, "open_voucher_for_edit"):
+            win.open_voucher_for_edit(vid)
 
     def refresh(self):
         fd, td = self._dates()
