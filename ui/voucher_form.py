@@ -418,6 +418,8 @@ class VoucherEntryPage(QWidget):
         self._journal_rows: list[VoucherLineRow] = []
         # Edit-mode state — set via load_voucher_for_edit()
         self._edit_voucher_id: int | None = None
+        self._locked = False   # True when editing a bank-reconciled voucher:
+        #                        date + amounts freeze, party + narration stay editable.
         self._edit_voucher_number: str = ""
         # Create-mode state — set via prefill_for_create() for posting from
         # other pages (Ledger Reconciliation etc.). on_post_callback runs
@@ -1461,6 +1463,39 @@ class VoucherEntryPage(QWidget):
                                             self.amount_edit.value())):
                 draft.allocations = self._pending_allocations
 
+            if self._edit_voucher_id and self._locked:
+                # LOCKED edit — re-point party ledgers + narration only; date
+                # and amounts are frozen so the bank reconciliation holds.
+                ledger_changes, line_notes = {}, {}
+                for row in self._journal_rows:
+                    lid = getattr(row, "_line_id", None)
+                    if lid is None:
+                        continue
+                    line_notes[lid] = row.narration.text().strip()
+                    if (not getattr(row, "_cleared", False)
+                            and row.ledger_id
+                            and row.ledger_id != getattr(row, "_orig_ledger_id", None)):
+                        ledger_changes[lid] = row.ledger_id
+                self.engine.update_voucher_constrained(
+                    self._edit_voucher_id,
+                    ledger_changes=ledger_changes,
+                    narration=narration,
+                    reference=reference,
+                    line_narrations=line_notes,
+                )
+                QMessageBox.information(
+                    self, "Updated",
+                    f"✎  {self._edit_voucher_number} updated "
+                    f"(party / details).\nDate & amount unchanged — "
+                    f"reconciliation preserved.",
+                )
+                self._exit_edit_mode()
+                self._clear()
+                win = self.window()
+                if hasattr(win, "return_from_voucher_edit"):
+                    win.return_from_voucher_edit()
+                return
+
             if self._edit_voucher_id:
                 # EDIT mode — replace the existing voucher in place
                 posted = self.engine.update_voucher(self._edit_voucher_id, draft)
@@ -1675,13 +1710,9 @@ class VoucherEntryPage(QWidget):
                 f"Voucher {v['voucher_number']} is cancelled.",
             )
             return False
-        if any((l.get("cleared_date") or "") for l in v["lines"]):
-            QMessageBox.warning(
-                self, "Cannot edit",
-                f"Voucher {v['voucher_number']} has bank-reconciled lines.\n"
-                "Unmatch in Bank Reconciliation first.",
-            )
-            return False
+        # Bank-reconciled lines no longer BLOCK editing — they lock date +
+        # amount (constrained edit) while party + narration stay editable.
+        self._locked = any((l.get("cleared_date") or "") for l in v["lines"])
 
         # Reset any in-progress state
         self._edit_voucher_id     = voucher_id
@@ -1714,11 +1745,29 @@ class VoucherEntryPage(QWidget):
                 row.type_toggle.setCurrentIndex(1)        # Cr
                 row.amount_edit.setValue(float(line["cr_amount"] or 0))
             row.narration.setText(line.get("line_narration") or "")
+            # Remember the original line so a constrained (locked) save can
+            # re-point only the party ledgers without delete+reinsert.
+            row._line_id        = line["id"]
+            row._orig_ledger_id = line["ledger_id"]
+            row._cleared        = bool((line.get("cleared_date") or ""))
         self._update_balance_journal()
 
+        # Locked (bank-reconciled): freeze date + every amount/side, and freeze
+        # the reconciled line's own ledger; leave party ledgers + narration open.
+        if self._locked:
+            self.date_edit.setEnabled(False)
+            for row in self._journal_rows:
+                row.amount_edit.setEnabled(False)
+                row.type_toggle.setEnabled(False)
+                if getattr(row, "_cleared", False):
+                    row.ledger_search.setEnabled(False)
+
         # Show edit banner + relabel post button
+        _lock_note = ("   🔒 Bank-reconciled — date & amount locked; "
+                      "change party / details only") if self._locked else ""
         self._edit_banner_label.setText(
-            f"✎ Editing  {v['voucher_number']}  ·  {v['voucher_type'].replace('_',' ')}"
+            f"✎ Editing  {v['voucher_number']}  ·  "
+            f"{v['voucher_type'].replace('_',' ')}{_lock_note}"
         )
         self._edit_banner.setVisible(True)
         # Real voucher loaded — Delete is meaningful here.
@@ -1735,6 +1784,10 @@ class VoucherEntryPage(QWidget):
         """Drop edit-mode flags + restore chrome + post-button label."""
         self._edit_voucher_id     = None
         self._edit_voucher_number = ""
+        # Clear the reconciliation lock + re-enable the date field for the
+        # next (create / unlocked) entry.
+        self._locked = False
+        self.date_edit.setEnabled(True)
         self._edit_banner.setVisible(False)
         self._post_btn.setText("Post Voucher  (Ctrl+S)")
         self._header_strip.setVisible(True)

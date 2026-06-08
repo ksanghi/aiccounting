@@ -1307,6 +1307,129 @@ class VoucherEngine:
             lines=list(draft.lines),
         )
 
+    def is_voucher_locked(self, voucher_id: int) -> bool:
+        """True if any line is bank-reconciled (cleared_date set).
+
+        A *locked* voucher is editable only in constrained mode: re-point the
+        party ledger and change narration; date + amounts stay frozen so the
+        reconciliation (and the Dr/Cr balance) holds. An *unlocked* voucher is
+        fully editable via update_voucher().
+        """
+        conn = self.db.connect()
+        row = conn.execute(
+            """SELECT COUNT(*) AS c FROM voucher_lines
+                WHERE voucher_id=? AND cleared_date IS NOT NULL
+                  AND cleared_date <> ''""",
+            (voucher_id,),
+        ).fetchone()
+        return bool(row and row["c"])
+
+    def update_voucher_constrained(
+        self,
+        voucher_id: int,
+        *,
+        ledger_changes: "dict[int, int] | None" = None,
+        narration: "str | None" = None,
+        reference: "str | None" = None,
+        line_narrations: "dict[int, str] | None" = None,
+    ) -> None:
+        """Reconciliation-safe edit of a (possibly bank-reconciled) voucher.
+
+        ONLY re-points the ledger on non-cleared lines and updates the header
+        narration/reference + per-line narration. It NEVER changes any amount,
+        the date, or a bank-reconciled line — and it updates rows in place
+        (no delete+reinsert), so `cleared_date` and the Dr/Cr balance are
+        preserved by construction. Audit-logged.
+
+        Use this when `is_voucher_locked()` is True. For an unlocked voucher,
+        the full editor (`update_voucher`) applies instead.
+        """
+        ledger_changes = {int(k): int(v) for k, v in (ledger_changes or {}).items()}
+        line_narrations = line_narrations or {}
+        conn = self.db.connect()
+        old = conn.execute(
+            "SELECT * FROM vouchers WHERE id=? AND company_id=?",
+            (voucher_id, self.company_id),
+        ).fetchone()
+        if not old:
+            raise ValueError(f"Voucher {voucher_id} not found.")
+        if old["is_cancelled"]:
+            raise ValueError("Voucher is cancelled and cannot be edited.")
+
+        old_lines = {
+            r["id"]: dict(r) for r in conn.execute(
+                "SELECT * FROM voucher_lines WHERE voucher_id=?",
+                (voucher_id,),
+            ).fetchall()
+        }
+
+        # Validate every requested ledger re-point BEFORE writing anything.
+        for line_id, new_ledger in ledger_changes.items():
+            line = old_lines.get(line_id)
+            if line is None:
+                raise ValueError(f"Line {line_id} is not on voucher {voucher_id}.")
+            if (line.get("cleared_date") or ""):
+                raise ValueError(
+                    "Can't change the reconciled (bank) line's ledger — "
+                    "re-point the other (party) line instead."
+                )
+            led = conn.execute(
+                "SELECT id FROM ledgers WHERE id=? AND company_id=?",
+                (new_ledger, self.company_id),
+            ).fetchone()
+            if led is None:
+                raise ValueError(f"Ledger {new_ledger} not found.")
+
+        def _line_snap(rows):
+            return {k: {"ledger_id": v["ledger_id"],
+                        "line_narration": v.get("line_narration")}
+                    for k, v in rows.items()}
+
+        with self.db:
+            for line_id, new_ledger in ledger_changes.items():
+                conn.execute(
+                    "UPDATE voucher_lines SET ledger_id=? WHERE id=? AND voucher_id=?",
+                    (new_ledger, line_id, voucher_id),
+                )
+            for line_id, note in line_narrations.items():
+                conn.execute(
+                    "UPDATE voucher_lines SET line_narration=? WHERE id=? AND voucher_id=?",
+                    ((note or None), int(line_id), voucher_id),
+                )
+            sets, params = [], []
+            if narration is not None:
+                sets.append("narration=?"); params.append(narration or "")
+            if reference is not None:
+                sets.append("reference=?"); params.append(reference or "")
+            if sets:
+                sets.append("updated_at=datetime('now')")
+                params.append(voucher_id)
+                conn.execute(
+                    f"UPDATE vouchers SET {', '.join(sets)} WHERE id=?",
+                    tuple(params),
+                )
+            new_lines = {
+                r["id"]: dict(r) for r in conn.execute(
+                    "SELECT * FROM voucher_lines WHERE voucher_id=?",
+                    (voucher_id,),
+                ).fetchall()
+            }
+            conn.execute(
+                """INSERT INTO audit_log
+                   (company_id, user_id, action, table_name, record_id,
+                    old_data, new_data)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    self.company_id, self.user_id, "EDIT_CONSTRAINED",
+                    "vouchers", voucher_id,
+                    json.dumps({"narration": old["narration"], "reference": old["reference"],
+                                "lines": _line_snap(old_lines)}, default=str),
+                    json.dumps({"narration": narration if narration is not None else old["narration"],
+                                "reference": reference if reference is not None else old["reference"],
+                                "lines": _line_snap(new_lines)}, default=str),
+                ),
+            )
+
     def cancel_voucher(self, voucher_id: int, reason: str = "") -> None:
         """Mark a voucher as cancelled (soft delete, preserves audit trail)."""
         conn = self.db.connect()
