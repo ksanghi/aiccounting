@@ -193,6 +193,13 @@
   }
   @keyframes mockScan { 0% { top: -60px; opacity: 0.9; } 100% { top: 320px; opacity: 0; } }
 
+  /* Feature demos play the switch when scrolled into view (JS adds .playing; static otherwise) */
+  @media (prefers-reduced-motion: no-preference) {
+    .feature-vis.playing .vis-line { opacity: 0; transform: translateY(6px);
+      transition: opacity .4s ease, transform .4s ease; }
+    .feature-vis.playing .vis-line.show { opacity: 1; transform: none; }
+  }
+
   /* ── Scroll-reveal (progressive enhancement; instant where scroll-timelines are unsupported) ── */
   @media (prefers-reduced-motion: no-preference) {
     .pillars h2, .pillar-card, .feature-row, .price-card, .final h2, .final .cta-row, .stats-grid {
@@ -407,18 +414,19 @@
 
 <!-- ── Hero ────────────────────────────────────────────────────────── -->
 <section class="hero">
-  <div class="eyebrow">Made for Indian businesses · GST &amp; TDS built in</div>
+  <div class="eyebrow">For Indian businesses on Tally &amp; QuickBooks</div>
   <h1>The accounting app that <span class="grad">posts itself</span>.</h1>
   <p class="lead">
-    Drop in a bill, a bank statement, or a one-line voice note —
-    Accounts HQ turns it into a balanced voucher. GST split, TDS applied,
-    ledgers picked. You review and approve.
+    In Tally, every voucher is yours to type. In QuickBooks, your books sit
+    on someone else's server. Accounts HQ posts the entries <em>for</em> you —
+    drop in a bill and the voucher is already there, GST split, both sides
+    balanced — while your books stay in a file on your own machine.
   </p>
   <div class="cta-row">
     <a class="btn-primary" href="#pricing">Start free — no card</a>
     <a class="btn-ghost" href="#how">See it work</a>
   </div>
-  <p class="hero-note">Demo plan unlocks every feature for your first 50 transactions.</p>
+  <p class="hero-note">Free to start — and your Tally books come over in minutes.</p>
 
   <div class="hero-mock" aria-hidden="true">
     <div class="hero-mock-inner">
@@ -456,7 +464,7 @@
         </div>
         <div class="mock-ai-toast">
           <span class="dot"></span>
-          AI filled 4 lines from the invoice PDF · 0.4 sec
+          AI filled 4 lines from the invoice PDF — ready to approve
         </div>
       </div>
     </div>
@@ -466,38 +474,37 @@
 <!-- ── Pillars ─────────────────────────────────────────────────────── -->
 <section class="pillars" id="how">
   <div class="container">
-    <div class="section-eyebrow">Why Accounts HQ</div>
-    <h2>Easy. Intelligent. Quick.</h2>
+    <div class="section-eyebrow">Why owners switch</div>
+    <h2>Less typing. No jargon. Your data stays yours.</h2>
     <p class="section-lead">
-      Three things every Indian small business owner needs from accounting
-      software — and never got from Tally.
+      The three things Tally and QuickBooks never gave Indian business owners.
     </p>
     <div class="pillar-grid">
       <div class="pillar-card">
         <div class="pillar-icon pi-1">✨</div>
-        <h3>Easy</h3>
+        <h3>What took a journal entry now takes a glance.</h3>
         <p>
-          Type <b>"12 may"</b> and the date field reads it. Hit a Sales row
-          and the GST splits itself. Wrong side? Press F5 to flip. Built for
-          owners — not chartered accountants.
+          The voucher you'd hand-key in Tally fills itself the moment a bill,
+          a bank statement, or a spoken line comes in. The same double-entry
+          runs underneath — you just don't type it any more.
         </p>
       </div>
       <div class="pillar-card">
         <div class="pillar-icon pi-2">🧠</div>
-        <h3>Intelligent</h3>
+        <h3>No accounting degree required.</h3>
         <p>
-          Upload a PDF invoice. Paste a bank statement. Speak a one-line
-          entry. Accounts HQ picks the right ledgers, applies GST and TDS,
-          and gives you a balanced voucher to approve.
+          Tally and QuickBooks assume you already speak debits and credits.
+          Here you say <b>"paid the electricity bill, 2,400"</b> and the
+          ledgers, the side, and the GST sort themselves out.
         </p>
       </div>
       <div class="pillar-card">
-        <div class="pillar-icon pi-3">⚡</div>
-        <h3>Quick</h3>
+        <div class="pillar-icon pi-3">🔒</div>
+        <h3>Your books stay on your machine.</h3>
         <p>
-          Single keystrokes for everything: <b>T</b> for today, <b>Y</b>
-          for yesterday, <b>F4</b> for the calendar, <b>F2</b> to edit.
-          Most users post a voucher in under 12 seconds.
+          Not our cloud, not a subscription holding your data hostage. A file
+          on your own computer — opens instantly, works with no internet, and
+          nobody but you can ever see your numbers.
         </p>
       </div>
     </div>
@@ -508,16 +515,16 @@
 <section class="stats">
   <div class="stats-grid">
     <div>
-      <div class="stat-num">12 sec</div>
-      <div class="stat-label">Average time to post a voucher</div>
-    </div>
-    <div>
-      <div class="stat-num">0.4 sec</div>
-      <div class="stat-label">AI fill time per invoice</div>
-    </div>
-    <div>
       <div class="stat-num">8</div>
-      <div class="stat-label">Voucher types · GST · TDS</div>
+      <div class="stat-label">Voucher types — GST &amp; TDS automatic</div>
+    </div>
+    <div>
+      <div class="stat-num">5</div>
+      <div class="stat-label">GST rates split for you, every time</div>
+    </div>
+    <div>
+      <div class="stat-num">Offline</div>
+      <div class="stat-label">Works with no internet, no cloud</div>
     </div>
     <div>
       <div class="stat-num">100%</div>
@@ -529,10 +536,11 @@
 <!-- ── Feature deep-dives ──────────────────────────────────────────── -->
 <section class="features" id="features">
   <div class="container">
-    <div class="section-eyebrow">Built for the real work</div>
-    <h2>Not just data entry. Decisions.</h2>
+    <div class="section-eyebrow">What it does for you</div>
+    <h2>The work Tally and QuickBooks leave to you.</h2>
     <p class="section-lead">
-      Every feature exists because somebody got tired of doing it by hand.
+      Four jobs that used to eat your evening — each one now done before you
+      sit down to check it.
     </p>
 
     <!-- Row 1: AI Document Reader -->
@@ -558,19 +566,19 @@
         <div class="vis-line"><span class="vis-key">Total →</span> Rs. 82,600 <span class="vis-val-ok">balanced ✓</span></div>
         <div class="vis-line"><span class="vis-key">GSTIN →</span> 06AAACA1234B1Z9</div>
         <div class="vis-line"><span class="vis-key">Tax →</span> CGST 9% + SGST 9% <span class="vis-val-mute">(intra-state)</span></div>
-        <div class="vis-line vis-val-ok">→ Voucher draft ready · 0.4 sec</div>
+        <div class="vis-line vis-val-ok">→ Voucher draft ready to approve</div>
       </div>
     </div>
 
     <!-- Row 2: Bank Reconciliation -->
     <div class="feature-row reverse">
       <div class="feature-text">
-        <h3>Bank reconciliation that ends in 3 clicks</h3>
+        <h3>Bank reconciliation that matches itself</h3>
         <p>
           Drop in any Indian bank's statement — HDFC, ICICI, SBI, Axis,
           Kotak — and Accounts HQ matches each line against your ledger.
           Cleared cheques flagged, unmatched entries highlighted, opening
-          and closing balances verified.
+          and closing balances verified. The reconciliation Tally leaves to you.
         </p>
         <ul>
           <li>Works on PDF and Excel (.xls and .xlsx)</li>
@@ -591,11 +599,11 @@
     <!-- Row 3: GST and TDS -->
     <div class="feature-row">
       <div class="feature-text">
-        <h3>GST and TDS, done — not "supported"</h3>
+        <h3>GST and TDS, worked out for you</h3>
         <p>
-          State codes drive CGST+SGST vs. IGST automatically. TDS sections
-          apply themselves above the threshold. Returns ready for filing —
-          GSTR-1, GSTR-3B summaries, TDS deduction reports.
+          State codes decide CGST+SGST vs. IGST on their own. TDS sections
+          apply themselves above the threshold. Every figure stays traceable
+          and every ledger export is audit-ready — your accountant will thank you.
         </p>
         <ul>
           <li>All standard GST rates (0%, 5%, 12%, 18%, 28%)</li>
@@ -699,7 +707,7 @@
       <div class="price-card">
         <div class="price-name">Premium</div>
         <div class="price-amt">₹9,999<span class="small">/ year</span></div>
-        <div class="price-tag">For multi-branch &amp; CA firms.</div>
+        <div class="price-tag">For multi-branch businesses.</div>
         <ul class="price-feats">
           <li>100,000 transactions / year</li>
           <li>10 users</li>
@@ -708,7 +716,7 @@
           <li>Audit export</li>
           <li>API access</li>
         </ul>
-        <a class="price-btn" href="#">Talk to us</a>
+        <a class="price-btn" href="#">Start 30-day trial</a>
       </div>
 
     </div>
@@ -719,8 +727,8 @@
 <section class="final">
   <h2>Stop typing journal entries.</h2>
   <p>
-    Try Accounts HQ free for 50 vouchers. Every feature unlocked. Your data
-    stays on your machine — we never see it.
+    Free to start, and your Tally books migrate in minutes. Every entry posts
+    itself. Your data never leaves your machine — not even to us.
   </p>
   <div class="cta-row">
     <a class="btn-primary" href="#">Download for Windows</a>
@@ -780,6 +788,24 @@
     io.observe(mock);
   } else {
     play();
+  }
+
+  // Each feature demo fills itself when it scrolls into view — the manual job, doing itself.
+  var vises = document.querySelectorAll('.feature-vis');
+  if (vises.length && 'IntersectionObserver' in window) {
+    var vio = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        var v = e.target, lines = v.querySelectorAll('.vis-line');
+        v.classList.add('playing');
+        for (var i = 0; i < lines.length; i++) lines[i].classList.remove('show');
+        void v.offsetWidth;
+        for (var j = 0; j < lines.length; j++) {
+          (function(l, idx){ setTimeout(function(){ l.classList.add('show'); }, 150 + idx * 260); })(lines[j], j);
+        }
+      });
+    }, { threshold: 0.4 });
+    for (var k = 0; k < vises.length; k++) vio.observe(vises[k]);
   }
 })();
 </script>
