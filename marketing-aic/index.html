@@ -36,11 +36,11 @@
   .nav-cta:hover { background: #0C8E8E; }
 
   /* ── Hero ──────────────────────────────────────── */
-  .hero { background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%); padding: 80px 24px 56px; text-align: center; }
-  .eyebrow { display: inline-block; background: rgba(14,165,165,0.08); color: var(--accent); border: 1px solid rgba(14,165,165,0.2); padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 24px; }
-  h1 { font-size: clamp(36px, 5vw, 60px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; max-width: 860px; margin: 0 auto 22px; }
+  .hero { background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%); padding: 48px 24px 36px; text-align: center; }
+  .eyebrow { display: inline-block; background: rgba(14,165,165,0.08); color: var(--accent); border: 1px solid rgba(14,165,165,0.2); padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+  h1 { font-size: clamp(36px, 5vw, 60px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; max-width: 860px; margin: 0 auto 14px; }
   h1 .grad { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .hero p.lead { font-size: clamp(17px, 1.4vw, 21px); color: var(--ink-mute); max-width: 700px; margin: 0 auto 36px; }
+  .hero p.lead { font-size: clamp(17px, 1.4vw, 21px); color: var(--ink-mute); max-width: 700px; margin: 0 auto 24px; }
   .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .btn-primary, .btn-ghost { display: inline-block; padding: 14px 26px; border-radius: 10px; font-size: 15px; font-weight: 600; transition: transform 0.06s ease, box-shadow 0.2s ease; }
   .btn-primary { background: var(--accent); color: white; box-shadow: 0 8px 22px -8px rgba(14,165,165,0.6); }
@@ -49,21 +49,35 @@
   .btn-ghost:hover { border-color: var(--ink); }
 
   /* ── Sections ──────────────────────────────────── */
-  .section { max-width: 1120px; margin: 0 auto; padding: 76px 24px; }
-  .section-head { text-align: center; max-width: 660px; margin: 0 auto 48px; }
-  .section-head h2 { font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -0.02em; font-weight: 800; margin-bottom: 14px; }
+  .section { max-width: 1120px; margin: 0 auto; padding: 46px 24px; }
+  .section-head { text-align: center; max-width: 660px; margin: 0 auto 28px; }
+  .section-head h2 { font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -0.02em; font-weight: 800; margin-bottom: 10px; }
   .section-head p { color: var(--ink-mute); font-size: 17px; }
 
   /* ── Products (deep-blue band, logos on navy) ──── */
-  .products-band { background: linear-gradient(180deg, #0B1220 0%, #0F1A2E 100%); border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .products-band .section-head h2 { color: #fff; }
-  .products-band .section-head p { color: #94A3B8; }
+  .products-band { background: linear-gradient(180deg, #F6F9FC 0%, #E9EFF6 100%); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .products-band .section-head h2 { color: var(--ink); }
+  .products-band .section-head p { color: #5A6B8B; }
   .products { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .pcard { display: flex; flex-direction: column; background: #0f1629; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 26px 24px; transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
-  .pcard:hover { transform: translateY(-3px); box-shadow: 0 26px 52px -24px rgba(0,0,0,0.65); border-color: rgba(252,211,77,0.55); }
-  .pcard img.logo { height: 38px; width: auto; margin-bottom: 20px; }
+  .pcard { display: flex; flex-direction: column; background: #16203A; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 26px 24px; box-shadow: 0 14px 30px -18px rgba(0,0,0,0.8); transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+  .pcard:hover { transform: translateY(-3px); box-shadow: 0 30px 56px -22px rgba(0,0,0,0.75); border-color: rgba(252,211,77,0.6); }
+  .pcard img.logo { height: 34px; width: auto; max-width: 100%; object-fit: contain; margin-bottom: 20px; }
   .pcard .job { color: #E2E8F0; font-weight: 600; font-size: 15.5px; line-height: 1.45; flex: 1; margin-bottom: 18px; }
-  .pcard .go { font-weight: 700; font-size: 14px; color: #fcd34d; }
+  .pcard .go { display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; padding: 9px 16px; border-radius: 10px; background: rgba(252,211,77,0.12); border: 1px solid rgba(252,211,77,0.45); color: #fcd34d; font-weight: 700; font-size: 13.5px; letter-spacing: 0.2px; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease; }
+  .pcard:hover .go { background: #fcd34d; color: #0B1220; border-color: #fcd34d; transform: translateX(2px); }
+  /* Intent strip — "I want to…" job chips */
+  .intent { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; max-width: 900px; margin: 0 auto 22px; }
+  .intent .intent-lead { color: var(--accent); font-weight: 800; font-size: 15px; margin-right: 2px; }
+  .chip { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--line); color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer; box-shadow: 0 1px 2px rgba(15,23,42,0.05); transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease; }
+  .chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); transform: translateY(-1px); }
+  /* Outcome-led tile content */
+  .pcard { scroll-margin-top: 90px; }
+  .pcard .hook { color: #fff; font-weight: 800; font-size: 16.5px; line-height: 1.35; margin-bottom: 14px; }
+  .pcard .jobs { list-style: none; margin: 0 0 18px; padding: 0; flex: 1; }
+  .pcard .jobs li { color: #94A3B8; font-size: 13.5px; line-height: 1.5; padding-left: 19px; position: relative; margin-bottom: 5px; }
+  .pcard .jobs li::before { content: "✓"; position: absolute; left: 0; color: #fcd34d; font-weight: 700; }
+  @keyframes pulseCard { 0% { box-shadow: 0 0 0 0 rgba(252,211,77,0.55); } 100% { box-shadow: 0 0 0 16px rgba(252,211,77,0); } }
+  .pcard.pulse { border-color: #fcd34d !important; animation: pulseCard 1s ease-out 2; }
 
   /* ── Why grid ──────────────────────────────────── */
   .why { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -74,7 +88,7 @@
   .wcard .ic { font-size: 22px; margin-bottom: 10px; }
 
   /* ── Final CTA ─────────────────────────────────── */
-  .final { background: linear-gradient(135deg, #0F172A 0%, #0B1220 100%); color: white; text-align: center; padding: 76px 24px; }
+  .final { background: linear-gradient(135deg, #0F172A 0%, #0B1220 100%); color: white; text-align: center; padding: 48px 24px; }
   .final h2 { color: white; font-size: clamp(26px, 3vw, 36px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 14px; }
   .final p { color: #CBD5E1; max-width: 560px; margin: 0 auto 30px; font-size: 17px; }
 
@@ -109,12 +123,49 @@
 
 <!-- Hero / Welcome -->
 <section class="hero">
-  <span class="eyebrow">Software for Indian businesses</span>
-  <h1>Welcome to <span class="grad">AI Consultants</span></h1>
-  <p class="lead">A family of focused apps for how India actually runs a business — your <b>books</b>, your <b>society</b>, your <b>investments</b>. Each one built deep for its job. All built for India.</p>
+  <span class="eyebrow">Welcome to AI Consultants</span>
+  <h1>Intelligent software for <span class="grad">Micro and Small Businesses</span></h1>
+  <p class="lead">We bring our Chairman’s years of experience running businesses into smart apps built for the Micro and Small businesses and organisations that have mostly been left out of automation’s benefits.</p>
   <div class="cta-row">
     <a class="btn-primary" href="#products">What do you want to do?</a>
     <a class="btn-ghost" href="contact.html">Talk to us</a>
+  </div>
+</section>
+
+<!-- What we stand for -->
+<section class="why">
+  <div class="section">
+    <div class="section-head">
+      <h2>What we stand for</h2>
+      <p>We build for the Micro and Small businesses automation usually skips — by doing a few things deliberately differently.</p>
+    </div>
+    <div class="why-grid">
+      <div class="wcard">
+        <div class="ic">🎯</div>
+        <h4>Built for one job, not a thousand</h4>
+        <p>Each app does a single domain deeply, so it works the day you install it — no month-long setup, no consultant, no 200 settings you’ll never touch. Generic software makes you fit its way of working; ours fits yours, out of the box.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">👌</div>
+        <h4>So simple it needs no manual</h4>
+        <p>If your team can use WhatsApp, they can use our apps. We design for the person at the counter, not the IT department — clear screens, sensible defaults, nothing to “learn”.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">🤖</div>
+        <h4>AI doing the boring work</h4>
+        <p>We put AI exactly where it earns its keep — reading a bill, drafting an entry, catching a mismatch — so you review and approve instead of typing. The machine does the grunt work; you stay in control.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">🔁</div>
+        <h4>We rethink the workflow, not just digitise it</h4>
+        <p>Most software just moves your paper process onto a screen. We question every step, drop the ones that waste your time, and use technology the efficient way — so the work actually gets lighter, not just computerised.</p>
+      </div>
+      <div class="wcard">
+        <div class="ic">💸</div>
+        <h4>Priced to change the maths</h4>
+        <p>We’re not chasing “cheapest on the list” — we’re making automation cost so little that a Micro or Small business finally says yes. Start free, stay free until it’s clearly worth more, then pay only the difference. No per-seat traps, no surprise bills.</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -122,77 +173,79 @@
 <section class="products-band">
   <div class="section" id="products">
     <div class="section-head">
-      <h2>What are you here to do today?</h2>
-      <p>Pick the job in front of you — each one is its own app, built end to end for it.</p>
+      <h2>What are you here to get done?</h2>
+      <p>Start with the job in front of you — tap it and we’ll take you to the app built for it.</p>
     </div>
+
+    <!-- Intent strip — start from the job, not the product -->
+    <div class="intent">
+      <span class="intent-lead">I want to…</span>
+      <a class="chip" href="#app-accountshq">file GST &amp; TDS</a>
+      <a class="chip" href="#app-accountshq">chase collections</a>
+      <a class="chip" href="#app-accountshq">see my cash flow</a>
+      <a class="chip" href="#app-accountshq">read bills with AI</a>
+      <a class="chip" href="#app-rwahq">collect society dues</a>
+      <a class="chip" href="#app-rwahq">issue visitor passes</a>
+      <a class="chip" href="#app-tradehq">track family investments</a>
+      <a class="chip" href="#app-bookshq">keep simple books</a>
+    </div>
+
     <div class="products">
-      <a class="pcard" href="accountshq.html">
+      <a class="pcard" id="app-accountshq" href="accountshq.html">
         <img class="logo" src="img/accountshq.png" alt="Accounts HQ">
-        <div class="job">Run my books, GST &amp; TDS.</div>
+        <div class="hook">Stay on top of the money — without an accountant on call.</div>
+        <ul class="jobs">
+          <li>File GST &amp; TDS</li>
+          <li>See cash flow &amp; who owes you</li>
+          <li>Read bills &amp; invoices with AI</li>
+          <li>Reconcile the bank in minutes</li>
+        </ul>
         <span class="go">Explore Accounts HQ →</span>
       </a>
-      <a class="pcard" href="rwahq/">
+      <a class="pcard" id="app-rwahq" href="rwahq/">
         <img class="logo" src="img/rwahq.png" alt="RWA HQ">
-        <div class="job">Manage my apartment or plot society.</div>
+        <div class="hook">Run the society — not your WhatsApp.</div>
+        <ul class="jobs">
+          <li>Bill &amp; collect maintenance</li>
+          <li>Gate visitor passes</li>
+          <li>Notices, polls &amp; complaints</li>
+          <li>A free app for every resident</li>
+        </ul>
         <span class="go">Explore RWA HQ →</span>
       </a>
-      <a class="pcard" href="tradehq.html">
+      <a class="pcard" id="app-tradehq" href="tradehq.html">
         <img class="logo" src="img/tradehq.png" alt="tradeHQ">
-        <div class="job">See my family’s investments in one place.</div>
+        <div class="hook">The family’s entire wealth on one screen.</div>
+        <ul class="jobs">
+          <li>Every broker in one place</li>
+          <li>Track gains, income &amp; cash</li>
+          <li>Auto-pull holdings</li>
+          <li>Plan the big money moves</li>
+        </ul>
         <span class="go">Explore tradeHQ →</span>
       </a>
-      <a class="pcard" href="hoahq.html">
+      <a class="pcard" id="app-hoahq" href="hoahq.html">
         <img class="logo" src="img/hoahq.png" alt="HOA HQ">
-        <div class="job">Run my homeowners association.</div>
+        <div class="hook">Your homeowners association, on autopilot.</div>
+        <ul class="jobs">
+          <li>Dues &amp; collections</li>
+          <li>Owner records</li>
+          <li>Notices &amp; voting</li>
+          <li>Resident app</li>
+        </ul>
         <span class="go">Explore HOA HQ →</span>
       </a>
-      <a class="pcard" href="bookshq.html">
+      <a class="pcard" id="app-bookshq" href="bookshq.html">
         <img class="logo" src="img/bookshq.png" alt="Books HQ">
-        <div class="job">Keep simple books for my small business.</div>
+        <div class="hook">Just clean books — nothing to learn.</div>
+        <ul class="jobs">
+          <li>Record sales &amp; expenses</li>
+          <li>Simple GST</li>
+          <li>Know your profit</li>
+          <li>No accounting jargon</li>
+        </ul>
         <span class="go">Explore Books HQ →</span>
       </a>
-    </div>
-  </div>
-</section>
-
-<!-- Why AI Consultants -->
-<section class="why">
-  <div class="section">
-    <div class="section-head">
-      <h2>Why AI Consultants?</h2>
-      <p>Three small, sharp apps from one team — instead of one bloated suite that does everything badly.</p>
-    </div>
-    <div class="why-grid">
-      <div class="wcard">
-        <div class="ic">🇮🇳</div>
-        <h4>Built for India, not adapted to it</h4>
-        <p>GST, TDS, society bye-laws, the way Indian businesses really work — baked in from the start, not bolted on for a foreign product.</p>
-      </div>
-      <div class="wcard">
-        <div class="ic">🤖</div>
-        <h4>AI that does the work</h4>
-        <p>Drop a bill and get a voucher. Talk, and we post. The software handles the typing so you handle the decisions.</p>
-      </div>
-      <div class="wcard">
-        <div class="ic">🔒</div>
-        <h4>Your data stays yours</h4>
-        <p>The heavy apps run on your own machine — your books and your members never leave it. The cloud stays thin and carries only what you choose to share.</p>
-      </div>
-      <div class="wcard">
-        <div class="ic">📈</div>
-        <h4>Pay only when you grow</h4>
-        <p>Start free and stay free until it’s clearly worth more. Honest, grow-as-you-go pricing — no per-seat traps, no surprise bills.</p>
-      </div>
-      <div class="wcard">
-        <div class="ic">🧩</div>
-        <h4>One team behind all of it</h4>
-        <p>Same people, same support, one login across every HQ app. When you grow into the next one, nothing to relearn.</p>
-      </div>
-      <div class="wcard">
-        <div class="ic">💬</div>
-        <h4>You can actually reach us</h4>
-        <p>A real person at <a href="mailto:info@ai-consultants.in" style="color:var(--accent);font-weight:600">info@ai-consultants.in</a> — not a ticket queue that closes itself in three days.</p>
-      </div>
     </div>
   </div>
 </section>
@@ -225,5 +278,19 @@
   <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
 </footer>
 
+<script>
+  // Intent chips: the anchor scrolls natively; add a brief pulse on the target.
+  document.querySelectorAll('.intent .chip').forEach(function (c) {
+    c.addEventListener('click', function () {
+      var id = c.getAttribute('href');
+      if (!id || id[0] !== '#') return;
+      var el = document.querySelector(id);
+      if (!el) return;
+      el.classList.remove('pulse');
+      void el.offsetWidth;          // restart the animation
+      el.classList.add('pulse');
+    });
+  });
+</script>
 </body>
 </html>
