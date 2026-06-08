@@ -721,7 +721,17 @@ class ReportsEngine:
             lines = self.db.execute(
                 """SELECT v.voucher_date, v.voucher_number, v.voucher_type,
                           v.narration, v.reference,
-                          vl.dr_amount, vl.cr_amount, vl.cleared_date
+                          vl.dr_amount, vl.cr_amount, vl.cleared_date,
+                          (SELECT l2.name
+                             FROM voucher_lines vl2
+                             JOIN ledgers l2 ON l2.id = vl2.ledger_id
+                            WHERE vl2.voucher_id = v.id
+                              AND vl2.ledger_id != vl.ledger_id
+                            ORDER BY (vl2.dr_amount + vl2.cr_amount) DESC
+                            LIMIT 1) AS party,
+                          (SELECT COUNT(*) FROM voucher_lines vl3
+                            WHERE vl3.voucher_id = v.id
+                              AND vl3.ledger_id != vl.ledger_id) AS contra_n
                    FROM voucher_lines vl
                    JOIN vouchers v ON vl.voucher_id=v.id
                    WHERE vl.ledger_id=? AND v.is_cancelled=0
@@ -742,10 +752,14 @@ class ReportsEngine:
                     cleared = bool(line["cleared_date"])
                 except (IndexError, KeyError):
                     cleared = False
+                party = line["party"] or ""
+                if party and (line["contra_n"] or 0) > 1:
+                    party = f"{party}  (+{line['contra_n'] - 1})"
                 transactions.append({
                     "date":         line["voucher_date"],
                     "voucher_no":   line["voucher_number"],
                     "voucher_type": line["voucher_type"],
+                    "party":        party,
                     "narration":    line["narration"] or "",
                     "reference":    line["reference"] or "",
                     "dr":           dr,
@@ -795,7 +809,17 @@ class ReportsEngine:
                       v.narration, v.reference,
                       vl.id as voucher_line_id,
                       vl.dr_amount, vl.cr_amount, vl.line_narration,
-                      vl.cleared_date
+                      vl.cleared_date,
+                      (SELECT l2.name
+                         FROM voucher_lines vl2
+                         JOIN ledgers l2 ON l2.id = vl2.ledger_id
+                        WHERE vl2.voucher_id = v.id
+                          AND vl2.ledger_id != vl.ledger_id
+                        ORDER BY (vl2.dr_amount + vl2.cr_amount) DESC
+                        LIMIT 1) AS party,
+                      (SELECT COUNT(*) FROM voucher_lines vl3
+                        WHERE vl3.voucher_id = v.id
+                          AND vl3.ledger_id != vl.ledger_id) AS contra_n
                FROM voucher_lines vl
                JOIN vouchers v ON vl.voucher_id=v.id
                WHERE vl.ledger_id=? AND v.is_cancelled=0
@@ -814,12 +838,16 @@ class ReportsEngine:
                 cleared_date = line["cleared_date"] or ""
             except (KeyError, IndexError):
                 cleared_date = ""
+            party = line["party"] or ""
+            if party and (line["contra_n"] or 0) > 1:
+                party = f"{party}  (+{line['contra_n'] - 1})"
             transactions.append({
                 "voucher_id":      line["voucher_id"],
                 "voucher_line_id": line["voucher_line_id"],
                 "date":            line["voucher_date"],
                 "voucher_no":      line["voucher_number"],
                 "type":            line["voucher_type"],
+                "party":           party,
                 "narration":       line["line_narration"] or line["narration"] or "",
                 "reference":       line["reference"] or "",
                 "dr":              dr,

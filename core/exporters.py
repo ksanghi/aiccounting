@@ -108,14 +108,14 @@ class ExcelExporter:
         for book in data["books"]:
             ws = wb.create_sheet(book["ledger"][:28])
             r = self._header(ws, company, f"{title}: {book['ledger']} ({data['from_date']} to {data['to_date']})")
-            ws.append(["Opening Balance","","","","","", book["opening"]])
-            r = self._col_hdrs(ws, r+1, ["Date","Voucher","Type","Narration","Ref","Dr","Cr","Balance"])
+            ws.append(["Opening Balance","","","","","","", book["opening"]])
+            r = self._col_hdrs(ws, r+1, ["Date","Voucher","Type","Particulars","Narration","Ref","Dr","Cr","Balance"])
             for t in book["transactions"]:
                 ws.append([t["date"], t["voucher_no"], t["voucher_type"],
-                           t["narration"], t["reference"],
+                           t.get("party",""), t["narration"], t["reference"],
                            t["dr"] or "", t["cr"] or "", t["balance"]])
-            ws.append(["Closing Balance","","","","","","", book["closing"]])
-            self._set_widths(ws, [12,14,8,30,14,12,12,14])
+            ws.append(["Closing Balance","","","","","","","", book["closing"]])
+            self._set_widths(ws, [12,14,8,26,26,12,12,12,14])
         wb.save(path)
 
     def receipts_payments(self, data: dict, company: dict, path: str):
@@ -414,18 +414,19 @@ class PDFExporter:
         elems = self._heading(company, f"{title}: {data['from_date']} to {data['to_date']}")
         for book in data["books"]:
             elems.append(self._Para(book["ledger"], self._styles["Heading2"]))
-            rows = [["Date","Voucher","Type","Narration","Ref","Dr","Cr","Balance"]]
-            rows.append(["Opening","","","","","","",_fmt(book["opening"])])
+            rows = [["Date","Voucher","Type","Particulars","Narration","Ref","Dr","Cr","Balance"]]
+            rows.append(["Opening","","","","","","","",_fmt(book["opening"])])
             for t in book["transactions"]:
                 rows.append([
                     t["date"], t["voucher_no"], t["voucher_type"][:3],
-                    t["narration"][:28], t["reference"][:10],
+                    (t.get("party","") or "")[:24],
+                    t["narration"][:22], t["reference"][:10],
                     _fmt(t["dr"]) if t["dr"] else "",
                     _fmt(t["cr"]) if t["cr"] else "",
                     _fmt(t["balance"]),
                 ])
-            rows.append(["Closing","","","","","","",_fmt(book["closing"])])
-            cw = [2*cm,3*cm,1.2*cm,6*cm,2.5*cm,2.5*cm,2.5*cm,2.8*cm]
+            rows.append(["Closing","","","","","","","",_fmt(book["closing"])])
+            cw = [2*cm,2.6*cm,1.1*cm,4.6*cm,4.2*cm,2*cm,2.3*cm,2.3*cm,2.6*cm]
             tbl = self._Table(rows, colWidths=cw)
             tbl.setStyle(self._tbl_style())
             elems += [tbl, self._Spacer(1, 0.5*cm)]

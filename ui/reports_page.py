@@ -687,7 +687,7 @@ class _LedgerBookPage(_ReportBase):
         opening.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:11px;")
         lay.addWidget(opening)
 
-        headers = ["Date","Voucher No","Type","Narration","Ref","Dr","Cr","Balance"]
+        headers = ["Date","Voucher No","Type","Particulars","Narration","Ref","Dr","Cr","Balance"]
         if self.SHOW_CLEARED:
             headers.append("Cleared")
         t = _make_table(headers, stretch_cols=[3])
@@ -705,17 +705,18 @@ class _LedgerBookPage(_ReportBase):
             t.setItem(r, 0, _item(tx["date"]))
             t.setItem(r, 1, _item(tx["voucher_no"]))
             t.setItem(r, 2, _item(tx["voucher_type"].replace("_"," ")))
-            t.setItem(r, 3, _item(tx["narration"]))
-            t.setItem(r, 4, _item(tx["reference"]))
-            t.setItem(r, 5, _item(_fmt(tx["dr"]) if tx["dr"] else "", right=True,
+            t.setItem(r, 3, _item(tx.get("party", "")))
+            t.setItem(r, 4, _item(tx["narration"]))
+            t.setItem(r, 5, _item(tx["reference"]))
+            t.setItem(r, 6, _item(_fmt(tx["dr"]) if tx["dr"] else "", right=True,
                                   colour=THEME["accent"] if tx["dr"] else None))
-            t.setItem(r, 6, _item(_fmt(tx["cr"]) if tx["cr"] else "", right=True,
+            t.setItem(r, 7, _item(_fmt(tx["cr"]) if tx["cr"] else "", right=True,
                                   colour=THEME["warning"] if tx["cr"] else None))
             bal_col = THEME["success"] if tx["balance"] >= 0 else THEME["danger"]
-            t.setItem(r, 7, _item(_fmt(tx["balance"]), right=True, colour=bal_col))
+            t.setItem(r, 8, _item(_fmt(tx["balance"]), right=True, colour=bal_col))
             if self.SHOW_CLEARED:
                 cleared = bool(tx.get("cleared"))
-                t.setItem(r, 8, _item(
+                t.setItem(r, 9, _item(
                     "✓" if cleared else "",
                     colour=THEME["success"] if cleared else None,
                 ))
@@ -1680,7 +1681,9 @@ class LedgerAccountPage(_ReportBase):
         self._scroll_layout = QVBoxLayout(self._scroll_widget)
         self._scroll_layout.setContentsMargins(0, 0, 0, 0)
         self._scroll_layout.setSpacing(8)
-        self._scroll_layout.addStretch()
+        # No trailing stretch — the single ledger card is given the stretch
+        # in _render_book so the table fills the page instead of leaving the
+        # lower half blank.
         scroll.setWidget(self._scroll_widget)
         root.addWidget(scroll, 1)
 
@@ -1695,7 +1698,7 @@ class LedgerAccountPage(_ReportBase):
         self._body = root
 
     def _clear_scroll(self):
-        while self._scroll_layout.count() > 1:
+        while self._scroll_layout.count():
             item = self._scroll_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
@@ -1753,10 +1756,11 @@ class LedgerAccountPage(_ReportBase):
 
         # Table
         show_cleared = bool(data.get("is_bank"))
-        headers = ["Date", "Voucher No", "Type", "Narration", "Ref", "Dr", "Cr", "Balance"]
+        headers = ["Date", "Voucher No", "Type", "Particulars", "Narration",
+                   "Ref", "Dr", "Cr", "Balance"]
         if show_cleared:
             headers.append("Cleared")
-        t = _make_table(headers, stretch_cols=[3])
+        t = _make_table(headers, stretch_cols=[3, 4])
         # Map row index → voucher_id, for click-to-open
         row_to_voucher: dict[int, int] = {}
         for tx in data["transactions"]:
@@ -1766,17 +1770,18 @@ class LedgerAccountPage(_ReportBase):
             t.setItem(r, 0, _item(tx["date"]))
             t.setItem(r, 1, _item(tx["voucher_no"]))
             t.setItem(r, 2, _item(tx["type"].replace("_", " ")))
-            t.setItem(r, 3, _item(tx["narration"]))
-            t.setItem(r, 4, _item(tx["reference"]))
-            t.setItem(r, 5, _item(_fmt(tx["dr"]) if tx["dr"] else "", right=True,
+            t.setItem(r, 3, _item(tx.get("party", "")))
+            t.setItem(r, 4, _item(tx["narration"]))
+            t.setItem(r, 5, _item(tx["reference"]))
+            t.setItem(r, 6, _item(_fmt(tx["dr"]) if tx["dr"] else "", right=True,
                                   colour=THEME["accent"] if tx["dr"] else None))
-            t.setItem(r, 6, _item(_fmt(tx["cr"]) if tx["cr"] else "", right=True,
+            t.setItem(r, 7, _item(_fmt(tx["cr"]) if tx["cr"] else "", right=True,
                                   colour=THEME["warning"] if tx["cr"] else None))
             bal_col = THEME["success"] if tx["balance"] >= 0 else THEME["danger"]
-            t.setItem(r, 7, _item(_fmt(tx["balance"]), right=True, colour=bal_col))
+            t.setItem(r, 8, _item(_fmt(tx["balance"]), right=True, colour=bal_col))
             if show_cleared:
                 cleared = bool(tx.get("cleared"))
-                t.setItem(r, 8, _item(
+                t.setItem(r, 9, _item(
                     "✓" if cleared else "",
                     colour=THEME["success"] if cleared else None,
                 ))
@@ -1785,14 +1790,18 @@ class LedgerAccountPage(_ReportBase):
             lambda row, _col, m=row_to_voucher: self._open_voucher(m.get(row))
         )
         t.setToolTip("Double-click a row to open the voucher")
-        lay.addWidget(t)
+        # The Ledger Account shows ONE ledger — let the table fill the page
+        # (a few rows then read as a proper ledger sheet, not a tiny box with
+        # the rest of the page blank). The table scrolls internally if long.
+        t.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        lay.addWidget(t, 1)
 
         closing = QLabel(f"Closing Balance:  {_fmt(data['closing'])}")
         closing.setStyleSheet("font-weight:bold; font-size:12px;")
         lay.addWidget(closing)
 
-        insert_pos = self._scroll_layout.count() - 1
-        self._scroll_layout.insertWidget(insert_pos, frame)
+        # Stretch so the one card (and the table inside it) fills the page.
+        self._scroll_layout.addWidget(frame, 1)
 
     def _open_voucher(self, voucher_id):
         """Open the voucher in the main Post Voucher form (edit mode)."""
