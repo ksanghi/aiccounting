@@ -78,34 +78,52 @@ def read_ai_features(path: Path) -> dict:
 def read_pricing(path: Path) -> dict:
     wb = load_workbook(path, data_only=True)
 
-    # Tiers
-    ws_t = wb["Tiers"]
+    # Accounts HQ — unified `ACCOUNTSHQ` sheet (one row per attribute/feature,
+    # one column per tier; same layout as RWAHQ/HOAHQ). Replaces the old split
+    # `Tiers` + `PlanFeatures` tabs. Per-country prices still live on `Countries`.
+    ws = wb["ACCOUNTSHQ"]
+    rows = list(_rows(ws, header_row=3))
+    headers = [ws.cell(row=3, column=c).value for c in range(1, ws.max_column + 1)]
+    reserved = {"row_type", "feature", "id", "upgrade_to", "notes"}
+    tier_codes = [h for h in headers if h is not None and h not in reserved]
+
+    def _attr_row(rid):
+        for r in rows:
+            if (str(r.get("id") or "")).strip() == rid:
+                return r
+        return {}
+
+    name_r  = _attr_row("tier_name")
+    seats_r = _attr_row("seats")
+    txn_r   = _attr_row("txn_limit")
+    over_r  = _attr_row("overage_rate")
+    price_r = _attr_row("price_annual_INR")
+    notes_r = _attr_row("tier_notes")
+
     tiers = []
-    for row in _rows(ws_t, header_row=4):
-        code = (row.get("code") or "").strip()
-        if not code:
-            continue
+    for code in tier_codes:
+        nm = name_r.get(code)
+        nt = notes_r.get(code)
         tiers.append({
             "code":           code,
-            "name":           (row.get("name") or code).strip(),
-            "seats_allowed":  _as_int(row.get("seats_allowed"), default=1),
-            "txn_limit":      _as_int(row.get("txn_limit"), default=0),
-            "overage_rate":   _as_float(row.get("overage_rate"), default=0.0),
-            "plan_price_INR": _as_float(row.get("plan_price_INR"), default=0.0),
-            "notes":          (row.get("notes") or "").strip(),
+            "name":           (str(nm).strip() if nm not in (None, "") else code),
+            "seats_allowed":  _as_int(seats_r.get(code), default=1),
+            "txn_limit":      _as_int(txn_r.get(code), default=0),
+            "overage_rate":   _as_float(over_r.get(code), default=0.0),
+            "plan_price_INR": _as_float(price_r.get(code), default=0.0),
+            "notes":          (str(nt).strip() if nt not in (None, "") else ""),
         })
     if not tiers:
-        raise ValueError("pricing.xlsx Tiers: no tiers found")
+        raise ValueError("pricing.xlsx ACCOUNTSHQ: no tiers found")
 
-    tier_codes = [t["code"] for t in tiers]
-
-    # PlanFeatures matrix
-    ws_p = wb["PlanFeatures"]
+    # PlanFeatures matrix — the `feature` rows of the same sheet
     plan_features: dict[str, list[str]] = {c: [] for c in tier_codes}
     feature_upgrade_map: dict[str, str] = {}
 
-    for row in _rows(ws_p, header_row=4):
-        fid = (row.get("feature_id") or "").strip()
+    for row in rows:
+        if (str(row.get("row_type") or "")).strip() != "feature":
+            continue
+        fid = (str(row.get("id") or "")).strip()
         if not fid:
             continue
         for code in tier_codes:
