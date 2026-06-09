@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=Accounts HQ
-set VERSION=1.0.27
+set VERSION=1.0.28
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
