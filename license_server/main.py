@@ -26,12 +26,17 @@ from typing import Optional
 from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+import asyncio
+import html as _html
 import json
+import re
+import time
 import urllib.error
 import urllib.request
 
@@ -40,8 +45,14 @@ from license_server.db import init_db, get_db
 from license_server.models import (
     License, MachineBinding, ValidationLog, Install,
     Credit, CreditTopup, AIUsageLog, Order,
-    SMSWallet, SMSWalletTxn,
+    SMSWallet, SMSWalletTxn, ChatLearned,
 )
+
+# Baked support-bot knowledge base (build/bake_kb.py → license_server/_kb.py).
+try:
+    from license_server._kb import KB_TEXT
+except Exception:
+    KB_TEXT = ""
 from license_server.plans import (
     PLANS, PLAN_LIMITS, PLAN_USER_LIMITS, PLAN_FEATURES, PLAN_SEATS,
     features_for, flats_limit_for, VALID_PRODUCTS,
@@ -1892,6 +1903,216 @@ async def razorpay_webhook(
 #                                                    Analysis and Ideas
 #                                                    Consultants, prop.
 #                                                    Monika Sanghi)
+# ── Support chatbot (public, KB-grounded) ─────────────────────────────────
+# The canned/keyword layer runs in the browser (chat-widget.js) and answers
+# common questions for free. Anything it can't match POSTs to /api/chat, which:
+#   1) serves a prior AI answer from chat_learned if we've seen the question
+#      (instant + free — the self-improving cache),
+#   2) otherwise asks Claude Haiku grounded ONLY in the baked KB, stores the
+#      Q&A as 'pending' for review, and returns it.
+# Cost is bounded by a per-IP hourly limit + a global daily cap; cache hits and
+# the browser's canned answers don't count toward either.
+
+CHAT_MODEL          = "claude-haiku-4-5"
+CHAT_MAX_TOKENS     = 500
+CHAT_DAILY_CAP      = 500      # global AI calls/day
+CHAT_PER_IP_HOUR    = 20       # AI calls per visitor IP per hour
+CHAT_FALLBACK_EMAIL = ("I'm not sure about that one — please email "
+                       "info@ai-consultants.in and we'll help you directly.")
+CHAT_FALLBACK_BUSY  = ("I'm getting a lot of questions right now. Please email "
+                       "info@ai-consultants.in and we'll get back to you.")
+
+CHAT_SYSTEM = (
+    "You are the friendly help assistant for Accounts HQ (by AI Consultants) on the "
+    "company website. Answer the user's question using ONLY the knowledge base "
+    "between <kb> and </kb>. If the answer is not in the knowledge base, say you're "
+    "not sure and suggest emailing info@ai-consultants.in — never guess or make up "
+    "steps, prices, or tax figures. Keep answers concise and friendly: 2-5 sentences "
+    "or a few short steps, plain text (no markdown headings). Accounts HQ records "
+    "transactions and computes GST/TDS from the rates set on each ledger; it is NOT a "
+    "tax-filing or compliance engine and you must not give tax or legal advice — for "
+    "'should I' tax questions, tell the user to confirm with their CA. Only discuss "
+    "Accounts HQ and AI Consultants; politely decline anything unrelated.\n\n"
+    "<kb>\n" + KB_TEXT + "\n</kb>"
+)
+
+_chat_day = {"date": "", "count": 0}             # global daily counter (in-memory)
+_chat_ip: dict[str, list[float]] = {}            # ip -> recent call timestamps
+
+
+def _norm_q(text: str) -> str:
+    t = (text or "").lower().strip()
+    t = re.sub(r"[^a-z0-9 ]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()[:400]
+
+
+def _chat_ip_ok(ip: str) -> bool:
+    now = time.time()
+    hits = [t for t in _chat_ip.get(ip, []) if now - t < 3600]
+    if len(hits) >= CHAT_PER_IP_HOUR:
+        _chat_ip[ip] = hits
+        return False
+    hits.append(now)
+    _chat_ip[ip] = hits
+    return True
+
+
+def _chat_day_ok() -> bool:
+    today = date.today().isoformat()
+    if _chat_day["date"] != today:
+        _chat_day.update(date=today, count=0)
+    return _chat_day["count"] < CHAT_DAILY_CAP
+
+
+def _chat_call_ai(question: str, history: list) -> tuple[str, bool]:
+    """Blocking Haiku call grounded in the KB. Run via asyncio.to_thread."""
+    msgs = []
+    for h in (history or [])[-6:]:
+        if not isinstance(h, dict):
+            continue
+        role = "assistant" if h.get("role") == "bot" else "user"
+        content = str(h.get("content", ""))[:800]
+        if content:
+            msgs.append({"role": role, "content": content})
+    msgs.append({"role": "user", "content": question})
+    req = {
+        "model": CHAT_MODEL,
+        "max_tokens": CHAT_MAX_TOKENS,
+        "system": [{"type": "text", "text": CHAT_SYSTEM,
+                    "cache_control": {"type": "ephemeral"}}],
+        "messages": msgs,
+    }
+    status_code, data, _err = _forward_to_anthropic(json.dumps(req).encode("utf-8"))
+    if status_code == 200 and data:
+        txt = "".join(b.get("text", "") for b in data.get("content", [])
+                      if b.get("type") == "text").strip()
+        if txt:
+            return txt, True
+    return "", False
+
+
+class ChatIn(BaseModel):
+    message: str = ""
+    history: list = Field(default_factory=list)
+
+
+@app.post("/api/chat")
+async def chat(body: ChatIn, request: Request, db: Session = Depends(get_db)):
+    msg = (body.message or "").strip()[:600]
+    if not msg:
+        return {"answer": "Ask me about Accounts HQ — pricing, GST, bank reconciliation, "
+                          "migrating from Tally, and so on."}
+
+    if not _chat_ip_ok(_client_ip(request)):
+        return {"answer": CHAT_FALLBACK_BUSY, "limited": True}
+
+    qn = _norm_q(msg)
+    row = db.scalar(select(ChatLearned).where(ChatLearned.qnorm == qn))
+    if row is not None and row.status != "discarded":
+        row.hits += 1
+        db.commit()
+        return {"answer": row.answer, "cached": True}
+
+    if not settings.anthropic_api_key or not _chat_day_ok():
+        return {"answer": CHAT_FALLBACK_BUSY, "limited": True}
+
+    answer, ok = await asyncio.to_thread(_chat_call_ai, msg, body.history)
+    if not ok or not answer:
+        return {"answer": CHAT_FALLBACK_EMAIL}
+
+    _chat_day["count"] += 1
+    if row is None:                  # don't re-learn a previously-discarded question
+        db.add(ChatLearned(qnorm=qn, question=msg, answer=answer,
+                           hits=1, status="pending"))
+        db.commit()
+    return {"answer": answer}
+
+
+# ── Admin: review the bot's learned answers ───────────────────────────────
+
+class ChatReviewAction(BaseModel):
+    action: str                       # approve | discard | save
+    answer: Optional[str] = None
+
+
+@app.post("/admin/chat-review/{row_id}", dependencies=[Depends(require_admin)])
+def chat_review_action(row_id: int, body: ChatReviewAction,
+                       db: Session = Depends(get_db)):
+    row = db.get(ChatLearned, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if body.action == "approve":
+        row.status = "approved"
+    elif body.action == "discard":
+        row.status = "discarded"
+    elif body.action == "save":
+        if body.answer is not None:
+            row.answer = body.answer.strip()[:4000]
+    else:
+        raise HTTPException(status_code=400, detail="bad action")
+    db.commit()
+    return {"ok": True, "id": row.id, "status": row.status}
+
+
+@app.get("/admin/chat-review", response_class=HTMLResponse)
+def chat_review_page(token: str = "", db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse(
+            "<h2>Chat review</h2><p>Append <code>?token=YOUR_ADMIN_TOKEN</code> to the URL.</p>",
+            status_code=403)
+    rows = db.scalars(select(ChatLearned).order_by(ChatLearned.hits.desc())).all()
+    rank = {"pending": 0, "approved": 1, "discarded": 2}
+    rows = sorted(rows, key=lambda r: (rank.get(r.status, 3), -r.hits))
+    esc = _html.escape
+    cards = []
+    for r in rows:
+        cards.append(f"""
+      <div class="card s-{esc(r.status)}" id="row-{r.id}">
+        <div class="meta"><b>#{r.id}</b> &middot; <span class="st">{esc(r.status)}</span> &middot; {r.hits} ask(s)</div>
+        <div class="q">{esc(r.question)}</div>
+        <textarea id="a-{r.id}">{esc(r.answer)}</textarea>
+        <div class="btns">
+          <button onclick="act({r.id},'save')">Save edit</button>
+          <button class="ok" onclick="act({r.id},'approve')">Approve</button>
+          <button class="no" onclick="act({r.id},'discard')">Discard</button>
+        </div>
+      </div>""")
+    body_html = "\n".join(cards) or "<p>No learned answers yet — the bot hasn't been asked anything new.</p>"
+    page = f"""<!doctype html><html><head><meta charset="utf-8"><title>Chat review</title>
+<style>
+ body{{font-family:system-ui,Arial,sans-serif;max-width:860px;margin:24px auto;padding:0 16px;color:#0f172a}}
+ h2{{margin:0 0 4px}} .sub{{color:#64748b;margin-bottom:18px;font-size:14px}}
+ .card{{border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin-bottom:14px}}
+ .card.s-pending{{border-left:4px solid #f59e0b}} .card.s-approved{{border-left:4px solid #16a34a}}
+ .card.s-discarded{{border-left:4px solid #cbd5e1;opacity:.55}}
+ .meta{{font-size:12.5px;color:#64748b;margin-bottom:6px}} .st{{text-transform:uppercase;font-weight:700}}
+ .q{{font-weight:700;margin-bottom:8px}}
+ textarea{{width:100%;min-height:78px;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit}}
+ .btns{{margin-top:8px;display:flex;gap:8px}}
+ button{{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:600}}
+ button.ok{{background:#16a34a;color:#fff;border-color:#16a34a}}
+ button.no{{background:#fff;color:#b91c1c;border-color:#fca5a5}}
+</style></head><body>
+<h2>Support bot — learned answers</h2>
+<div class="sub">Pending first, then most-asked. <b>Approve</b> keeps serving it; edit the text then <b>Save edit</b> to fix it; <b>Discard</b> stops serving it and never re-learns it. (Folding into the canonical KB docs is a separate rebake.)</div>
+{body_html}
+<script>
+const TOKEN={json.dumps(token)};
+async function act(id, action){{
+  const ans = document.getElementById('a-'+id).value;
+  const r = await fetch('/admin/chat-review/'+id, {{
+    method:'POST',
+    headers:{{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}},
+    body: JSON.stringify({{action: action, answer: ans}})
+  }});
+  if(r.ok){{ const d = await r.json(); const card = document.getElementById('row-'+id);
+    card.className = 'card s-'+d.status; card.querySelector('.st').textContent = d.status; }}
+  else {{ alert('Failed: '+r.status); }}
+}}
+</script></body></html>"""
+    return HTMLResponse(page)
+
+
 # A small middleware checks the Host header and (for AIC) rewrites the
 # request path to a private prefix that's served from the AIC folder.
 # The user-visible URL stays clean; only the internal routing path
@@ -1914,9 +2135,13 @@ async def _aic_host_rewrite(request, call_next):
     if host == _AIC_HOSTNAME:
         # Don't double-prefix if for some reason the path is already
         # under the internal prefix (shouldn't happen via the public
-        # hostname, but defensive).
+        # hostname, but defensive). Also leave real API/admin routes alone —
+        # otherwise the chat widget's /api/chat (and /admin/*) on the AIC host
+        # would get rewritten into the static mount and 404.
         path = request.scope["path"]
-        if not path.startswith(_AIC_INTERNAL_PREFIX):
+        if (not path.startswith(_AIC_INTERNAL_PREFIX)
+                and not path.startswith("/api/")
+                and not path.startswith("/admin/")):
             request.scope["path"] = _AIC_INTERNAL_PREFIX + path
             request.scope["raw_path"] = request.scope["path"].encode("utf-8")
     return await call_next(request)

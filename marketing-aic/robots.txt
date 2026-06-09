@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /checkout.html
+Disallow: /upgrade.html
+
+Sitemap: https://aic.ai-consultants.in/sitemap.xml

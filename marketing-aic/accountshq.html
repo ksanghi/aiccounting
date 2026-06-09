@@ -48,7 +48,7 @@
   .hero {
     position: relative; overflow: hidden;
     background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%);
-    padding: 80px 24px 60px;
+    padding: 52px 24px 40px;
     text-align: center;
   }
   .hero::before {
@@ -226,7 +226,7 @@
   }
   .section-lead {
     text-align: center; color: var(--ink-mute);
-    max-width: 620px; margin: 0 auto 56px;
+    max-width: 620px; margin: 0 auto 32px;
     font-size: 17px;
   }
   .pillar-grid {
@@ -329,7 +329,7 @@
   .stat-label { font-size: 14px; color: #94A3B8; margin-top: 4px; }
 
   /* ── Pricing ────────────────────────────────────── */
-  .pricing { padding: 90px 24px; background: white; }
+  .pricing { padding: 50px 24px; background: white; }
   .pricing-grid {
     display: grid; grid-template-columns: repeat(4, 1fr);
     gap: 16px; max-width: 1120px; margin: 0 auto;
@@ -375,7 +375,7 @@
 
   /* ── Final CTA ─────────────────────────────────── */
   .final {
-    padding: 90px 24px;
+    padding: 56px 24px;
     background: linear-gradient(135deg, var(--bg) 0%, #1E1A4D 100%);
     color: white; text-align: center;
   }
@@ -391,7 +391,70 @@
   }
   footer a { color: #CBD5E1; }
   footer a:hover { color: white; }
+
+  /* ── Ecosystem diagram (animated data-flow) ─────── */
+  .eco { padding: 50px 24px; background: white; }
+  .eco .container { max-width: 1120px; margin: 0 auto; }
+  .eco-sub { text-align: center; color: var(--ink-mute); max-width: 620px; margin: 0 auto 26px; font-size: 17px; }
+  .eco-card { background: #fff; border: 1px solid #e5e9f1; border-radius: 16px; padding: 10px; box-shadow: 0 6px 24px rgba(16,24,40,.07); }
+  .eco svg { width: 100%; height: auto; display: block; }
+  .nbox { fill: #fff; stroke: #d7deea; stroke-width: 1.5; }
+  .hub { fill: var(--bg); }
+  .nt { font: 600 14px system-ui; fill: #0f1629; }
+  .ns { font: 400 11px system-ui; fill: #667085; }
+  .ht { font: 700 16px system-ui; fill: #fff; }
+  .hs { font: 400 11px system-ui; fill: #9fb0c8; }
+  .zone { fill: none; stroke: #b7c2d6; stroke-width: 1.4; stroke-dasharray: 6 5; }
+  .zlbl { font: 700 11px system-ui; letter-spacing: 1px; }
+  .flow { fill: none; stroke: #cdd5e0; stroke-width: 2; }
+  .eco-legend { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; margin: 20px 2px 0; font-size: 13px; color: #667085; }
+  .eco-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 5px; }
+
+  /* ── Collapsible features list (accordion) ──────── */
+  .flist { padding: 50px 24px 60px; background: var(--bg-soft); }
+  .flist .container { max-width: 860px; margin: 0 auto; }
+  .acc { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: white; box-shadow: 0 6px 24px rgba(16,24,40,.06); }
+  .acc details { border-top: 1px solid var(--line); }
+  .acc details:first-child { border-top: none; }
+  .acc summary {
+    list-style: none; cursor: pointer; padding: 20px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 17px; font-weight: 700; color: var(--ink);
+    transition: background .15s;
+  }
+  .acc summary::-webkit-details-marker { display: none; }
+  .acc summary:hover { background: #f8fafc; }
+  .acc summary .acc-count { font-size: 13px; font-weight: 600; color: var(--ink-mute); margin-left: auto; margin-right: 14px; }
+  .acc summary .acc-chev { width: 18px; height: 18px; flex: none; transition: transform .2s; color: var(--accent); }
+  .acc details[open] summary .acc-chev { transform: rotate(180deg); }
+  .acc-body { padding: 0 24px 12px; }
+  .acc-feat { display: flex; gap: 12px; padding: 12px 0; border-top: 1px dashed var(--line); }
+  .acc-feat:first-child { border-top: none; }
+  .acc-feat .tick { color: var(--accent-2); font-weight: 700; flex: none; margin-top: 1px; }
+  .acc-feat .ft { font-size: 15px; }
+  .acc-feat .ft b { color: var(--ink); }
+  .acc-feat .ft span { color: var(--ink-mute); }
+  .acc-feat.adv { background: rgba(245,165,36,0.14); border-radius: 8px;
+    box-shadow: inset 3px 0 0 var(--accent-warm); padding-left: 12px; }
+  .adv-badge { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 800;
+    letter-spacing: .05em; text-transform: uppercase; color: #3a2a05;
+    background: var(--accent-warm); border: none; box-shadow: 0 1px 3px rgba(245,165,36,0.5);
+    padding: 2px 8px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
 </style>
+
+<!-- SEO -->
+<link rel="canonical" href="https://aic.ai-consultants.in/accountshq.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AI Consultants">
+<meta property="og:title" content="AI Consultants — Software for Indian businesses">
+<meta property="og:description" content="Software by AI Consultants: Accounts HQ (accounting), RWA HQ (RWA / HOA management), tradeHQ (broker consolidation). Built for Indian businesses.">
+<meta property="og:url" content="https://aic.ai-consultants.in/accountshq.html">
+<meta property="og:image" content="https://aic.ai-consultants.in/img/accountshq.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI Consultants — Software for Indian businesses">
+<meta name="twitter:description" content="Software by AI Consultants: Accounts HQ (accounting), RWA HQ (RWA / HOA management), tradeHQ (broker consolidation). Built for Indian businesses.">
+<meta name="twitter:image" content="https://aic.ai-consultants.in/img/accountshq.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Accounts HQ", "applicationCategory": "BusinessApplication", "operatingSystem": "Windows", "description": "Software by AI Consultants: Accounts HQ (accounting), RWA HQ (RWA / HOA management), tradeHQ (broker consolidation). Built for Indian businesses.", "url": "https://aic.ai-consultants.in/accountshq.html", "image": "https://aic.ai-consultants.in/img/accountshq.png", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"}, "publisher": {"@type": "Organization", "name": "AI Consultants"}}</script>
 </head>
 <body>
 
@@ -403,8 +466,9 @@
       <span>AI Consultants</span>
     </a>
     <div class="nav-links">
-      <a href="#how">How it works</a>
-      <a href="#features">Features</a>
+      <a href="index.html">Home</a>
+      <a href="#ecosystem">How it works</a>
+      <a href="#features-all">Features</a>
       <a href="pricing.html">Pricing</a>
       <a href="contact.html">Contact</a>
     </div>
@@ -414,238 +478,188 @@
 
 <!-- ── Hero ────────────────────────────────────────────────────────── -->
 <section class="hero">
-  <div class="eyebrow">For Indian businesses on Tally &amp; QuickBooks</div>
-  <h1>The accounting app that <span class="grad">posts itself</span>.</h1>
+  <div class="eyebrow">Easy, Intelligent and Quick accounting</div>
+  <h1>Don't just record transactions, <span class="grad">get insights</span> to manage the business.</h1>
   <p class="lead">
-    In Tally, every voucher is yours to type. In QuickBooks, your books sit
-    on someone else's server. Accounts HQ posts the entries <em>for</em> you —
-    drop in a bill and the voucher is already there, GST split, both sides
-    balanced — while your books stay in a file on your own machine.
+    Updated books give you direction for your business accounts. Thanks to
+    technology it's possible to get an up-to-the-minute status. Reports like
+    cash-flow planning and aging analysis keep you aware of the risk and
+    provide direction. AI ensures you spend minimum effort feeding in data.
   </p>
   <div class="cta-row">
     <a class="btn-primary" href="#pricing">Start free — no card</a>
-    <a class="btn-ghost" href="#how">See it work</a>
+    <a class="btn-ghost" href="#ecosystem">See it work</a>
   </div>
   <p class="hero-note">Free to start — and your Tally books come over in minutes.</p>
-
-  <div class="hero-mock" aria-hidden="true">
-    <div class="hero-mock-inner">
-      <div class="mock-side">
-        <div class="mock-brand"><span class="mock-brand-dot"></span><span>Accounts HQ</span></div>
-        <div class="section">Vouchers</div>
-        <div class="item active">Sales</div>
-        <div class="item">Purchase</div>
-        <div class="item">Payment</div>
-        <div class="item">Receipt</div>
-        <div class="section">Reports</div>
-        <div class="item">Trial Balance</div>
-        <div class="item">P &amp; L</div>
-        <div class="item">Balance Sheet</div>
-      </div>
-      <div class="mock-main">
-        <div class="mock-incoming"><span class="pdf"></span>INV-0241.pdf</div>
-        <div class="mock-scan"></div>
-        <div class="mock-h">Sales · INV-0241</div>
-        <div class="mock-sub">15 May 2026 · Acme Traders Pvt Ltd</div>
-        <div class="mock-row head">
-          <div>Account</div><div>Particulars</div><div>Dr</div><div>Cr</div>
-        </div>
-        <div class="mock-row">
-          <div>Acme Traders</div><div>Bill receivable</div><div class="pill-dr">82,600</div><div></div>
-        </div>
-        <div class="mock-row">
-          <div>Sales — Goods</div><div>3 dozen mugs @ 250</div><div></div><div class="pill-cr">70,000</div>
-        </div>
-        <div class="mock-row">
-          <div>CGST 9%</div><div>Intra-state</div><div></div><div class="pill-cr">6,300</div>
-        </div>
-        <div class="mock-row">
-          <div>SGST 9%</div><div>Intra-state</div><div></div><div class="pill-cr">6,300</div>
-        </div>
-        <div class="mock-ai-toast">
-          <span class="dot"></span>
-          AI filled 4 lines from the invoice PDF — ready to approve
-        </div>
-      </div>
-    </div>
-  </div>
 </section>
 
-<!-- ── Pillars ─────────────────────────────────────────────────────── -->
-<section class="pillars" id="how">
+<!-- ── Ecosystem diagram ───────────────────────────────────────────── -->
+<section class="eco" id="ecosystem">
   <div class="container">
-    <div class="section-eyebrow">Why owners switch</div>
-    <h2>Less typing. No jargon. Your data stays yours.</h2>
-    <p class="section-lead">
-      The three things Tally and QuickBooks never gave Indian business owners.
-    </p>
-    <div class="pillar-grid">
-      <div class="pillar-card">
-        <div class="pillar-icon pi-1">✨</div>
-        <h3>What took a journal entry now takes a glance.</h3>
-        <p>
-          The voucher you'd hand-key in Tally fills itself the moment a bill,
-          a bank statement, or a spoken line comes in. The same double-entry
-          runs underneath — you just don't type it any more.
-        </p>
-      </div>
-      <div class="pillar-card">
-        <div class="pillar-icon pi-2">🧠</div>
-        <h3>No accounting degree required.</h3>
-        <p>
-          Tally and QuickBooks assume you already speak debits and credits.
-          Here you say <b>"paid the electricity bill, 2,400"</b> and the
-          ledgers, the side, and the GST sort themselves out.
-        </p>
-      </div>
-      <div class="pillar-card">
-        <div class="pillar-icon pi-3">🔒</div>
-        <h3>Your books stay on your machine.</h3>
-        <p>
-          Not our cloud, not a subscription holding your data hostage. A file
-          on your own computer — opens instantly, works with no internet, and
-          nobody but you can ever see your numbers.
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Stats ───────────────────────────────────────────────────────── -->
-<section class="stats">
-  <div class="stats-grid">
-    <div>
-      <div class="stat-num">8</div>
-      <div class="stat-label">Voucher types — GST &amp; TDS automatic</div>
-    </div>
-    <div>
-      <div class="stat-num">5</div>
-      <div class="stat-label">GST rates split for you, every time</div>
-    </div>
-    <div>
-      <div class="stat-num">Offline</div>
-      <div class="stat-label">Works with no internet, no cloud</div>
-    </div>
-    <div>
-      <div class="stat-num">100%</div>
-      <div class="stat-label">Your data, on your machine</div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Feature deep-dives ──────────────────────────────────────────── -->
-<section class="features" id="features">
-  <div class="container">
-    <div class="section-eyebrow">What it does for you</div>
-    <h2>The work Tally and QuickBooks leave to you.</h2>
-    <p class="section-lead">
-      Four jobs that used to eat your evening — each one now done before you
-      sit down to check it.
+    <div class="section-eyebrow">The ecosystem</div>
+    <h2>A smart, modern workflow that saves time and energy.</h2>
+    <p class="eco-sub">
+      Documents and statements flow in, the AI drafts the entries, reports and
+      backups flow out — and your data never leaves your machine unless you ask it to.
     </p>
 
-    <!-- Row 1: AI Document Reader -->
-    <div class="feature-row">
-      <div class="feature-text">
-        <h3>Drop a bill in — get a voucher out</h3>
-        <p>
-          Accounts HQ reads any invoice, vendor bill, or expense receipt.
-          Vendor, line items, taxes, totals — all extracted, matched to
-          your ledgers, posted as a draft for you to approve.
-        </p>
-        <ul>
-          <li>PDF, JPG, PNG, scanned or digital</li>
-          <li>Vendor recognition across past bills</li>
-          <li>GST and TDS auto-detected from the bill</li>
-          <li>You approve before anything hits the ledger</li>
-        </ul>
-      </div>
-      <div class="feature-vis">
-        <div class="vis-line"><span class="vis-pill">PDF</span> ACME-INV-0241.pdf · 1 page</div>
-        <div class="vis-line"><span class="vis-key">Vendor →</span><b>Acme Traders Pvt Ltd</b></div>
-        <div class="vis-line"><span class="vis-key">Date →</span> 15 May 2026</div>
-        <div class="vis-line"><span class="vis-key">Total →</span> Rs. 82,600 <span class="vis-val-ok">balanced ✓</span></div>
-        <div class="vis-line"><span class="vis-key">GSTIN →</span> 06AAACA1234B1Z9</div>
-        <div class="vis-line"><span class="vis-key">Tax →</span> CGST 9% + SGST 9% <span class="vis-val-mute">(intra-state)</span></div>
-        <div class="vis-line vis-val-ok">→ Voucher draft ready to approve</div>
-      </div>
+    <div class="eco-card">
+      <svg viewBox="0 0 1080 700" role="img" aria-label="Accounts HQ ecosystem diagram">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#9aa6b8"/>
+          </marker>
+        </defs>
+        <rect class="zone" x="24" y="96" width="788" height="576" rx="16"/>
+        <text class="zlbl" x="40" y="120" fill="#7f8ba0">ON YOUR PREMISES  -  WORKS OFFLINE</text>
+        <rect x="836" y="96" width="220" height="576" rx="16" fill="#eff4fb" stroke="#dce6f4"/>
+        <text class="zlbl" x="852" y="120" fill="#5b7bb0">CLOUD - USED ONLY WHEN NEEDED</text>
+        <line class="flow" x1="228" y1="179" x2="428" y2="332" marker-end="url(#arr)"/>
+        <line class="flow" x1="228" y1="279" x2="428" y2="362" marker-end="url(#arr)"/>
+        <line class="flow" x1="228" y1="379" x2="428" y2="392" marker-end="url(#arr)"/>
+        <line class="flow" x1="428" y1="408" x2="228" y2="499" marker-end="url(#arr)"/>
+        <line class="flow" x1="540" y1="540" x2="540" y2="422" marker-end="url(#arr)"/>
+        <line class="flow" x1="540" y1="298" x2="540" y2="230" marker-end="url(#arr)"/>
+        <line class="flow" x1="652" y1="335" x2="850" y2="199" marker-start="url(#arr)" marker-end="url(#arr)"/>
+        <line class="flow" x1="652" y1="360" x2="850" y2="329" marker-start="url(#arr)" marker-end="url(#arr)"/>
+        <line class="flow" x1="652" y1="392" x2="850" y2="459" marker-start="url(#arr)" marker-end="url(#arr)"/>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" repeatCount="indefinite" path="M228,179 L428,332"/></circle>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite" path="M228,279 L428,362"/></circle>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="0.6s" repeatCount="indefinite" path="M228,379 L428,392"/></circle>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.6s" begin="0.4s" repeatCount="indefinite" path="M540,540 L540,422"/></circle>
+        <circle r="5" fill="#7c3aed"><animateMotion dur="2.2s" repeatCount="indefinite" path="M652,335 L850,199"/></circle>
+        <circle r="5" fill="#7c3aed"><animateMotion dur="2.2s" begin="1.1s" repeatCount="indefinite" path="M850,199 L652,335"/></circle>
+        <circle r="4" fill="#7c3aed"><animateMotion dur="3s" begin="0.5s" repeatCount="indefinite" path="M652,360 L850,329"/></circle>
+        <circle r="4" fill="#7c3aed"><animateMotion dur="3s" begin="0.9s" repeatCount="indefinite" path="M850,459 L652,392"/></circle>
+        <circle r="5" fill="#16a34a"><animateMotion dur="2.4s" repeatCount="indefinite" path="M540,298 L540,230"/></circle>
+        <circle r="5" fill="#16a34a"><animateMotion dur="2.6s" begin="0.8s" repeatCount="indefinite" path="M428,408 L228,499"/></circle>
+        <g><rect class="nbox" x="48" y="150" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="176" text-anchor="middle">Scanner / ADF</text>
+           <text class="ns" x="138" y="194" text-anchor="middle">paper invoices &amp; bills</text></g>
+        <g><rect class="nbox" x="48" y="250" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="276" text-anchor="middle">Email mailbox</text>
+           <text class="ns" x="138" y="294" text-anchor="middle">read-only - invoices + bank PDFs</text></g>
+        <g><rect class="nbox" x="48" y="350" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="376" text-anchor="middle">Phone photo</text>
+           <text class="ns" x="138" y="394" text-anchor="middle">snap - email it in</text></g>
+        <g><rect class="nbox" x="48" y="470" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="496" text-anchor="middle">Backup</text>
+           <text class="ns" x="138" y="514" text-anchor="middle">pen-drive / cloud folder</text></g>
+        <g><rect class="nbox" x="440" y="540" width="200" height="58" rx="10"/>
+           <text class="nt" x="540" y="566" text-anchor="middle">Bank statement</text>
+           <text class="ns" x="540" y="584" text-anchor="middle">import now - auto later</text></g>
+        <g><rect class="nbox" x="430" y="172" width="220" height="58" rx="10"/>
+           <text class="nt" x="540" y="198" text-anchor="middle">Reports &amp; GST returns</text>
+           <text class="ns" x="540" y="216" text-anchor="middle">Excel - PDF - Print</text></g>
+        <g><rect class="hub" x="430" y="300" width="220" height="120" rx="14"/>
+           <text class="ht" x="540" y="338" text-anchor="middle">Accounts HQ</text>
+           <text class="hs" x="540" y="358" text-anchor="middle">your books - on your PC</text>
+           <text class="hs" x="540" y="378" text-anchor="middle">Document Inbox - AI drafts</text>
+           <text class="hs" x="540" y="396" text-anchor="middle">Reconcile - Reports</text></g>
+        <g><rect class="nbox" x="852" y="170" width="190" height="58" rx="10"/>
+           <text class="nt" x="947" y="196" text-anchor="middle">Anthropic AI</text>
+           <text class="ns" x="947" y="214" text-anchor="middle">reads documents (your key)</text></g>
+        <g><rect class="nbox" x="852" y="300" width="190" height="58" rx="10"/>
+           <text class="nt" x="947" y="326" text-anchor="middle">Licence server</text>
+           <text class="ns" x="947" y="344" text-anchor="middle">activate &amp; validate</text></g>
+        <g><rect class="nbox" x="852" y="430" width="190" height="58" rx="10"/>
+           <text class="nt" x="947" y="456" text-anchor="middle">GST Portal</text>
+           <text class="ns" x="947" y="474" text-anchor="middle">GSTR-2B pull</text></g>
+        <line class="flow" x1="228" y1="438" x2="428" y2="400" marker-end="url(#arr)"/>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="0.9s" repeatCount="indefinite" path="M228,438 L428,400"/></circle>
+        <g><rect class="nbox" x="48" y="412" width="180" height="52" rx="10"/>
+           <text class="nt" x="138" y="437" text-anchor="middle">Manual entry</text>
+           <text class="ns" x="138" y="454" text-anchor="middle">type vouchers yourself</text></g>
+      </svg>
     </div>
 
-    <!-- Row 2: Bank Reconciliation -->
-    <div class="feature-row reverse">
-      <div class="feature-text">
-        <h3>Bank reconciliation that matches itself</h3>
-        <p>
-          Drop in any Indian bank's statement — HDFC, ICICI, SBI, Axis,
-          Kotak — and Accounts HQ matches each line against your ledger.
-          Cleared cheques flagged, unmatched entries highlighted, opening
-          and closing balances verified. The reconciliation Tally leaves to you.
-        </p>
-        <ul>
-          <li>Works on PDF and Excel (.xls and .xlsx)</li>
-          <li>AI-assisted matching for the awkward lines</li>
-          <li>Mark cleared, ignore, or post-on-the-fly</li>
-        </ul>
-      </div>
-      <div class="feature-vis">
-        <div class="vis-line"><span class="vis-pill">XLS</span> HDFC-statement-may-2026.xls</div>
-        <div class="vis-line">112 lines imported</div>
-        <div class="vis-line">98 auto-matched <span class="vis-val-ok">✓</span></div>
-        <div class="vis-line">11 cleared cheques flagged</div>
-        <div class="vis-line">3 unmatched <span class="vis-val-mute">(needs your attention)</span></div>
-        <div class="vis-line vis-val-ok">Opening Rs. 4,82,100 → Closing Rs. 6,93,450 · balanced ✓</div>
-      </div>
+    <div class="eco-legend">
+      <span><span class="dot" style="background:#0EA5A5"></span>Documents &amp; statements coming in</span>
+      <span><span class="dot" style="background:#7c3aed"></span>AI / licence / portal round-trips (cloud)</span>
+      <span><span class="dot" style="background:#16a34a"></span>Reports, exports &amp; backups going out</span>
     </div>
+  </div>
+</section>
 
-    <!-- Row 3: GST and TDS -->
-    <div class="feature-row">
-      <div class="feature-text">
-        <h3>GST and TDS, worked out for you</h3>
-        <p>
-          State codes decide CGST+SGST vs. IGST on their own. TDS sections
-          apply themselves above the threshold. Every figure stays traceable
-          and every ledger export is audit-ready — your accountant will thank you.
-        </p>
-        <ul>
-          <li>All standard GST rates (0%, 5%, 12%, 18%, 28%)</li>
-          <li>TDS sections 194A, 194C, 194I, 194J, 194Q built in</li>
-          <li>HSN/SAC capture per item</li>
-          <li>Audit-ready ledger export</li>
-        </ul>
-      </div>
-      <div class="feature-vis">
-        <div class="vis-line"><span class="vis-pill">Sales</span> to Acme Traders <span class="vis-val-mute">(state: 06 Haryana)</span></div>
-        <div class="vis-line vis-input">Total <b>Rs. 70,000</b> · GST 18%</div>
-        <div class="vis-line"><span class="vis-key">→</span> CGST 9% = Rs. 6,300 <span class="vis-val-ok">auto</span></div>
-        <div class="vis-line"><span class="vis-key">→</span> SGST 9% = Rs. 6,300 <span class="vis-val-ok">auto</span></div>
-        <div class="vis-line vis-val-mute">If buyer were in state 27 (Maharashtra) →</div>
-        <div class="vis-line"><span class="vis-key">→</span> IGST 18% = Rs. 12,600 <span class="vis-val-ok">auto</span></div>
-      </div>
-    </div>
+<!-- ── Collapsible features list ───────────────────────────────────── -->
+<section class="flist" id="features-all">
+  <div class="container">
+    <div class="section-eyebrow">Full feature list</div>
+    <h2>Everything Accounts HQ does.</h2>
+    <p class="section-lead">
+      Tap any group to see what's inside. Every feature below is part of
+      Accounts HQ.
+    </p>
 
-    <!-- Row 4: Voice -->
-    <div class="feature-row reverse">
-      <div class="feature-text">
-        <h3>Talk. We'll post.</h3>
-        <p>
-          "Got 5,000 cash from Suresh against last week's invoice." That's
-          a complete Receipt voucher. Accounts HQ picks the right ledger from
-          your party list, matches the bill reference, balances Dr/Cr.
-          You approve.
-        </p>
-        <ul>
-          <li>Conversational — no rigid templates</li>
-          <li>Recognises party names, bill numbers, dates</li>
-          <li>Always shows the draft before it posts</li>
-        </ul>
-      </div>
-      <div class="feature-vis">
-        <div class="vis-line"><span class="vis-pill">Voice</span> Recording · 4.2 sec</div>
-        <div class="vis-line vis-input">"5,000 cash from Suresh against last week's invoice"</div>
-        <div class="vis-line vis-val-ok">→ Receipt voucher · 15 May 2026</div>
-        <div class="vis-line"><span class="vis-key">Dr</span> Cash · Rs. 5,000</div>
-        <div class="vis-line"><span class="vis-key">Cr</span> Suresh Trading Co · Rs. 5,000</div>
-        <div class="vis-line"><span class="vis-key">Ref →</span> INV-0238 (12 May, balance Rs. 5,000)</div>
-      </div>
+    <div class="acc">
+
+      <details open>
+        <summary>AI &amp; automation
+          <span class="acc-count">4 features</span>
+          <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="acc-body">
+          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>AI document reader</b> <span class="adv-badge">Advanced</span> — <span>reads bills, invoices and statements into draft vouchers for you to approve.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Document Inbox</b> <span class="adv-badge">Advanced</span> — <span>queue, preview, review and approve incoming documents in one place.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Verbal / voice entry</b> <span class="adv-badge">Advanced</span> — <span>speak a transaction and get a balanced draft voucher.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Bill-wise referencing</b> <span class="adv-badge">Advanced</span> — <span>allocate receipts and payments against specific outstanding bills.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Reports &amp; exports
+          <span class="acc-count">5 features</span>
+          <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Financial statements</b> — <span>Trial Balance, Profit &amp; Loss, Balance Sheet.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Cash &amp; Bank books, Receipts &amp; Payments, Ledger account</b> — <span>the full set of day-to-day registers.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Receivables &amp; payables aging</b> — <span>who owes you and whom you owe, by age bucket.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Cash-flow planning</b> <span class="adv-badge">Advanced</span> — <span>map expected receipts and payments across the weeks ahead.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Excel / PDF / print / email</b> — <span>export or send any report in a click.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>GST &amp; TDS
+          <span class="acc-count">3 features</span>
+          <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>GST returns</b> — <span>CGST / SGST / IGST split automatically from state codes.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>TDS, section-aware</b> — <span>194A / 194C / 194I / 194J / 194Q rates applied above the threshold.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>HSN / SAC capture</b> — <span>recorded per item for audit-ready exports.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Reconciliation &amp; migration
+          <span class="acc-count">3 features</span>
+          <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Bank reconciliation</b> — <span>import any Indian bank's PDF or Excel statement and match each line.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Ledger reconciliation</b> — <span>reconcile party ledgers with 1-to-many matching.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Tally / Busy migration</b> — <span>bring your existing books over in minutes.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Core bookkeeping
+          <span class="acc-count">6 features</span>
+          <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>All 8 voucher types</b> — <span>Sales, Purchase, Payment, Receipt, Contra, Journal, Debit &amp; Credit Notes.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Day book &amp; ledger balances</b> — <span>every transaction and running balances at a glance.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Multi-party vouchers</b> — <span>split a single voucher across many ledgers in one entry.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Sticky voucher date</b> — <span>the date carries over while you post a batch of entries.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Backup &amp; restore</b> — <span>your books live in one file; back up to pen-drive or a cloud folder.</span></div></div>
+          <div class="acc-feat"><span class="tick">✓</span><div class="ft"><b>Works fully offline</b> — <span>opens instantly and runs with no internet.</span></div></div>
+        </div>
+      </details>
+
+    
     </div>
   </div>
 </section>
@@ -654,10 +668,10 @@
 <section class="pricing" id="pricing">
   <div class="container">
     <div class="section-eyebrow">Pricing</div>
-    <h2>Pay only when you grow.</h2>
+    <h2>Very affordable plans.</h2>
     <p class="section-lead">
-      Start free. Upgrade when you outgrow the limits. No card asked for
-      the demo. Prices in INR per year.
+      Start free. Upgrade when you outgrow the limits. No payment information
+      asked for the demo. Prices in INR per year.
     </p>
     <div class="pricing-grid">
 
@@ -671,7 +685,7 @@
           <li>Day book + ledger balances</li>
           <li>Backup &amp; restore</li>
         </ul>
-        <a class="price-btn" href="#">Download free</a>
+        <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=FREE">Download free</a>
       </div>
 
       <div class="price-card featured">
@@ -686,7 +700,7 @@
           <li>Bank &amp; ledger reconciliation</li>
           <li>Book migration from Tally</li>
         </ul>
-        <a class="price-btn" href="#">Start 30-day trial</a>
+        <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=STANDARD">Buy Standard</a>
       </div>
 
       <div class="price-card">
@@ -701,7 +715,7 @@
           <li>AI document reader</li>
           <li>Voice voucher entry</li>
         </ul>
-        <a class="price-btn" href="#">Start 30-day trial</a>
+        <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=PRO">Buy Pro</a>
       </div>
 
       <div class="price-card">
@@ -712,11 +726,8 @@
           <li>100,000 transactions / year</li>
           <li>10 users</li>
           <li>Everything in Pro</li>
-          <li>WhatsApp delivery</li>
-          <li>Audit export</li>
-          <li>API access</li>
         </ul>
-        <a class="price-btn" href="#">Start 30-day trial</a>
+        <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=PREMIUM">Buy Premium</a>
       </div>
 
     </div>
@@ -732,12 +743,13 @@
   </p>
   <div class="cta-row">
     <a class="btn-primary" href="#">Download for Windows</a>
-    <a class="btn-ghost" href="#features" style="background: transparent; color: white; border-color: rgba(255,255,255,0.3);">See features</a>
+    <a class="btn-ghost" href="#features-all" style="background: transparent; color: white; border-color: rgba(255,255,255,0.3);">See features</a>
   </div>
 </section>
 
 <footer>
   <p style="margin-bottom:12px">
+    <a href="index.html">Home</a> ·
     <a href="pricing.html">Pricing</a> ·
     <a href="contact.html">Contact</a> ·
     <a href="privacy.html">Privacy</a> ·
@@ -809,5 +821,6 @@
   }
 })();
 </script>
+  <script src="/chat-widget.js" defer></script>
 </body>
 </html>

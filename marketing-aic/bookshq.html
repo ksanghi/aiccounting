@@ -3,130 +3,832 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Books HQ — simple books for small business · AI Consultants</title>
-<meta name="description" content="Books HQ is the easy way to keep your small business books — invoices, expenses and GST-ready records, no accountant-speak. Grows into Accounts HQ when you do. By AI Consultants.">
+<title>Books HQ — AI bookkeeping for US small business (coming soon) · AI Consultants</title>
+<meta name="description" content="Books HQ: the simple way US freelancers & small businesses keep their books — branded invoices, snap-a-receipt AI bookkeeping, sales tax & 1099 tracking. Coming soon. By AI Consultants.">
 <style>
-  :root { --bg:#0B1220; --bg-soft:#F8FAFC; --ink:#0F172A; --ink-mute:#475569; --line:#E2E8F0; --accent:#0EA5A5; --accent-2:#00D4AA; --navy:#0f1629; --gold:#fcd34d; --white:#FFFFFF; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  html,body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; color:var(--ink); -webkit-font-smoothing:antialiased; }
-  body { background:var(--white); line-height:1.55; }
-  a { color:inherit; text-decoration:none; }
-  img { max-width:100%; display:block; }
+  :root {
+    --bg: #0B1220;
+    --bg-card: #111A2E;
+    --bg-soft: #F8FAFC;
+    --ink: #0F172A;
+    --ink-mute: #475569;
+    --line: #E2E8F0;
+    --accent: #0EA5A5;
+    --accent-2: #00D4AA;
+    --accent-warm: #F5A524;
+    --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  body { background: var(--white); line-height: 1.55; }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
 
-  .nav { position:sticky; top:0; z-index:50; background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
-  .nav-inner { max-width:1120px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; padding:14px 24px; }
-  .brand { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; color:var(--ink); }
-  .brand-dot { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); }
-  .crumb { color:var(--ink-mute); font-weight:500; }
-  .nav-links { display:flex; gap:28px; font-size:14px; color:var(--ink-mute); }
-  .nav-links a:hover { color:var(--ink); }
-  .nav-cta { background:var(--accent); color:white; padding:8px 16px; border-radius:8px; font-size:14px; font-weight:600; }
-  .nav-cta:hover { background:#0C8E8E; }
+  /* ── Nav ───────────────────────────────────────── */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 1120px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px; color: var(--ink-mute); }
+  .brand-dot { width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .nav-links { display: flex; gap: 28px; font-size: 14px; color: var(--ink-mute); }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { background: var(--accent); color: white; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .nav-cta:hover { background: #4F46E5; }
 
-  .hero { background:linear-gradient(180deg,#0B1220 0%,#0E2030 100%); padding:72px 24px 64px; text-align:center; color:white; }
-  .hero img.logo { height:56px; width:auto; margin:0 auto 28px; }
-  .eyebrow { display:inline-block; background:rgba(14,165,165,0.16); color:#99F6E4; border:1px solid rgba(14,165,165,0.4); padding:6px 14px; border-radius:999px; font-size:13px; font-weight:700; margin-bottom:22px; }
-  h1 { font-size:clamp(34px,5vw,56px); line-height:1.06; letter-spacing:-0.03em; font-weight:800; max-width:760px; margin:0 auto 20px; }
-  h1 .grad { color:var(--gold); }
-  .hero p.lead { font-size:clamp(17px,1.4vw,21px); color:#CBD5E1; max-width:640px; margin:0 auto 34px; }
-  .cta-row { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
-  .btn-primary,.btn-ghost { display:inline-block; padding:14px 26px; border-radius:10px; font-size:15px; font-weight:600; }
-  .btn-primary { background:var(--accent); color:white; box-shadow:0 8px 22px -8px rgba(14,165,165,0.6); }
-  .btn-primary:hover { background:#0C8E8E; }
-  .btn-ghost { background:transparent; color:white; border:1px solid rgba(255,255,255,0.3); }
-  .btn-ghost:hover { border-color:white; }
+  /* ── Hero ──────────────────────────────────────── */
+  .hero {
+    position: relative; overflow: hidden;
+    background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%);
+    padding: 52px 24px 40px;
+    text-align: center;
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: -30% -10% auto -10%; height: 620px;
+    background:
+      radial-gradient(42% 55% at 22% 30%, rgba(14,165,165,0.20), transparent 70%),
+      radial-gradient(40% 52% at 80% 18%, rgba(0,212,170,0.18), transparent 70%),
+      radial-gradient(46% 50% at 60% 75%, rgba(245,165,36,0.12), transparent 72%);
+    filter: blur(8px); z-index: 0; pointer-events: none;
+  }
+  .hero > * { position: relative; z-index: 1; }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero::before { animation: heroAurora 16s ease-in-out infinite alternate; }
+    .hero > .eyebrow { animation: heroIn 0.7s ease both; }
+    .hero > h1 { animation: heroIn 0.7s ease 0.06s both; }
+    .hero > p.lead { animation: heroIn 0.7s ease 0.12s both; }
+    .hero > .cta-row { animation: heroIn 0.7s ease 0.18s both; }
+    .hero > .hero-note { animation: heroIn 0.7s ease 0.24s both; }
+    .hero > .hero-mock { animation: heroIn 0.9s ease 0.30s both; }
+  }
+  @keyframes heroAurora {
+    0%   { transform: translate3d(0,0,0) scale(1); }
+    100% { transform: translate3d(0,-14px,0) scale(1.06); }
+  }
+  @keyframes heroIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  .eyebrow {
+    display: inline-block;
+    background: rgba(14, 165, 165, 0.08);
+    color: var(--accent);
+    border: 1px solid rgba(14, 165, 165, 0.2);
+    padding: 6px 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: clamp(36px, 5vw, 64px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+    max-width: 880px;
+    margin: 0 auto 22px;
+  }
+  h1 .grad {
+    background: linear-gradient(110deg, var(--accent) 0%, var(--accent-2) 34%, var(--accent-warm) 64%, var(--accent) 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    h1 .grad { animation: shimmer 7s linear infinite; }
+  }
+  @keyframes shimmer { to { background-position: 220% 0; } }
+  .hero p.lead {
+    font-size: clamp(17px, 1.4vw, 21px);
+    color: var(--ink-mute);
+    max-width: 680px;
+    margin: 0 auto 36px;
+  }
+  .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary, .btn-ghost {
+    display: inline-block; padding: 14px 26px;
+    border-radius: 10px; font-size: 15px; font-weight: 600;
+    transition: transform 0.06s ease, box-shadow 0.2s ease;
+  }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 8px 22px -8px rgba(14, 165, 165, 0.6); }
+  .btn-primary:hover { background: #4F46E5; transform: translateY(-1px); }
+  .btn-ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
+  .btn-ghost:hover { border-color: var(--ink); }
+  .hero-note { margin-top: 18px; color: var(--ink-mute); font-size: 13px; }
 
-  .section { max-width:1080px; margin:0 auto; padding:72px 24px; }
-  .section-head { text-align:center; max-width:640px; margin:0 auto 44px; }
-  .section-head h2 { font-size:clamp(26px,3.2vw,38px); letter-spacing:-0.02em; font-weight:800; margin-bottom:12px; }
-  .section-head p { color:var(--ink-mute); font-size:17px; }
-  .feat { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
-  .fcard { background:var(--white); border:1px solid var(--line); border-radius:14px; padding:24px; }
-  .fcard .ic { font-size:23px; margin-bottom:11px; }
-  .fcard h3 { font-size:18px; font-weight:700; margin-bottom:7px; }
-  .fcard p { color:var(--ink-mute); font-size:14.5px; }
+  .hero-mock {
+    max-width: 1000px; margin: 60px auto 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+    box-shadow: 0 30px 60px -20px rgba(15,23,42,0.4), 0 12px 30px -10px rgba(14,165,165,0.25);
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .hero-mock-inner {
+    background: #0B1220; border-radius: 9px;
+    height: 360px;
+    display: grid; grid-template-columns: 200px 1fr;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .mock-side {
+    background: #0A0F1C;
+    padding: 18px 14px;
+    border-right: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+  }
+  .mock-side .mock-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 22px; }
+  .mock-side .mock-brand-dot { width: 18px; height: 18px; border-radius: 5px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .mock-side .section { color: #6B7A99; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin: 14px 0 8px; }
+  .mock-side .item { padding: 7px 8px; border-radius: 6px; color: rgba(255,255,255,0.7); cursor: default; }
+  .mock-side .item.active { background: rgba(14, 165, 165, 0.18); color: white; }
+  .mock-main { position: relative; overflow: hidden; padding: 24px 28px; color: rgba(255,255,255,0.92); display: flex; flex-direction: column; }
+  .mock-h { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .mock-sub { font-size: 12px; color: #6B7A99; margin-bottom: 18px; }
+  .mock-row { display: grid; grid-template-columns: 90px 1fr 100px 100px; gap: 12px; padding: 9px 0;
+    border-top: 1px solid rgba(255,255,255,0.06); font-size: 12.5px; }
+  .mock-row.head { color: #6B7A99; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; border-top: none; }
+  .pill-dr { color: var(--accent-2); }
+  .pill-cr { color: var(--accent-warm); }
+  .mock-ai-toast {
+    margin-top: auto; padding: 10px 14px;
+    background: rgba(14, 165, 165, 0.12);
+    border: 1px solid rgba(14, 165, 165, 0.25);
+    border-radius: 8px; font-size: 12px;
+    color: rgba(255,255,255,0.92);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mock-ai-toast .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); }
 
-  .strip { background:var(--bg-soft); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-  .strip .section { display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
-  .strip h3 { font-size:21px; font-weight:800; letter-spacing:-0.01em; }
-  .strip p { color:var(--ink-mute); font-size:15px; margin-top:4px; max-width:560px; }
+  /* ── Live mock: the voucher posts itself ─────────── */
+  /* The .playing class is added by JS. Without JS the mock stays fully visible (static), so there is never hidden content. */
+  .mock-incoming {
+    position: absolute; top: 18px; right: 22px; z-index: 4;
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px; padding: 6px 10px; font-size: 11px; color: rgba(255,255,255,0.9);
+    opacity: 0; pointer-events: none;
+  }
+  .mock-incoming .pdf { width: 14px; height: 16px; border-radius: 2px; background: linear-gradient(135deg,#F5A524,#E0791A); }
+  .mock-scan {
+    position: absolute; left: 0; right: 0; top: -60px; height: 56px; z-index: 3;
+    background: linear-gradient(180deg, transparent, rgba(0,212,170,0.28), transparent);
+    opacity: 0; pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-mock.playing .mock-row:not(.head) { opacity: 0; transform: translateY(8px);
+      transition: opacity .4s ease, transform .4s ease; }
+    .hero-mock.playing .mock-row:not(.head).show { opacity: 1; transform: none; }
+    .hero-mock.playing .mock-ai-toast { opacity: 0; transform: translateY(8px);
+      transition: opacity .45s ease, transform .45s ease; }
+    .hero-mock.playing .mock-ai-toast.show { opacity: 1; transform: none; }
+    .hero-mock.playing .mock-incoming { transition: opacity .35s ease; }
+    .hero-mock.playing .mock-incoming.show { opacity: 1; }
+    .hero-mock.playing .mock-scan.run { animation: mockScan 0.95s ease forwards; }
+  }
+  @keyframes mockScan { 0% { top: -60px; opacity: 0.9; } 100% { top: 320px; opacity: 0; } }
 
-  .final { background:linear-gradient(135deg,#0F172A 0%,#0B1220 100%); color:white; text-align:center; padding:72px 24px; }
-  .final h2 { color:white; font-size:clamp(24px,3vw,34px); font-weight:800; margin-bottom:14px; }
-  .final p { color:#CBD5E1; max-width:540px; margin:0 auto 28px; font-size:17px; }
+  /* Feature demos play the switch when scrolled into view (JS adds .playing; static otherwise) */
+  @media (prefers-reduced-motion: no-preference) {
+    .feature-vis.playing .vis-line { opacity: 0; transform: translateY(6px);
+      transition: opacity .4s ease, transform .4s ease; }
+    .feature-vis.playing .vis-line.show { opacity: 1; transform: none; }
+  }
 
-  footer { background:var(--bg); color:#94A3B8; padding:40px 24px; text-align:center; font-size:13px; border-top:1px solid rgba(255,255,255,0.06); }
-  footer a { color:#CBD5E1; } footer a:hover { color:white; }
-  @media (max-width:760px){ .feat{grid-template-columns:1fr;} .nav-links{display:none;} }
+  /* ── Scroll-reveal (progressive enhancement; instant where scroll-timelines are unsupported) ── */
+  @media (prefers-reduced-motion: no-preference) {
+    .pillars h2, .pillar-card, .feature-row, .price-card, .final h2, .final .cta-row, .stats-grid {
+      animation: revealUp 0.6s ease both;
+      animation-timeline: view();
+      animation-range: entry 2% cover 22%;
+    }
+  }
+  @keyframes revealUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+
+  /* ── Pillars (Easy / Intelligent / Quick) ───────── */
+  .pillars { padding: 90px 24px; background: white; }
+  .container { max-width: 1120px; margin: 0 auto; }
+  .section-eyebrow {
+    color: var(--accent); font-weight: 700; font-size: 13px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    text-align: center; margin-bottom: 12px;
+  }
+  h2 {
+    font-size: clamp(28px, 3.6vw, 42px);
+    letter-spacing: -0.025em; line-height: 1.15;
+    text-align: center; margin-bottom: 18px;
+    font-weight: 800;
+  }
+  .section-lead {
+    text-align: center; color: var(--ink-mute);
+    max-width: 620px; margin: 0 auto 32px;
+    font-size: 17px;
+  }
+  .pillar-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+  }
+  @media (max-width: 880px) { .pillar-grid { grid-template-columns: 1fr; } }
+  .pillar-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 30px 28px;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  }
+  .pillar-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 14px 30px -16px rgba(14,165,165,0.25); }
+  .pillar-icon {
+    width: 44px; height: 44px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: white;
+    margin-bottom: 18px;
+  }
+  .pi-1 { background: linear-gradient(135deg, #0EA5A5, #8B5CF6); }
+  .pi-2 { background: linear-gradient(135deg, #00D4AA, #06B6D4); }
+  .pi-3 { background: linear-gradient(135deg, #F5A524, #EF4444); }
+  .pillar-card h3 { font-size: 20px; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .pillar-card p { color: var(--ink-mute); font-size: 15px; line-height: 1.6; }
+
+  /* ── Feature deep-dives ─────────────────────────── */
+  .features { padding: 90px 24px; background: var(--bg-soft); }
+  .feature-row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 60px; align-items: center;
+    margin-bottom: 80px;
+  }
+  .feature-row:last-child { margin-bottom: 0; }
+  .feature-row.reverse { direction: rtl; }
+  .feature-row.reverse > * { direction: ltr; }
+  @media (max-width: 880px) {
+    .feature-row, .feature-row.reverse { grid-template-columns: 1fr; direction: ltr; }
+  }
+  .feature-text h3 {
+    font-size: clamp(22px, 2.4vw, 28px);
+    letter-spacing: -0.02em; line-height: 1.2;
+    margin-bottom: 14px;
+  }
+  .feature-text p { color: var(--ink-mute); font-size: 16px; line-height: 1.65; margin-bottom: 18px; }
+  .feature-text ul { list-style: none; padding: 0; }
+  .feature-text li {
+    padding: 7px 0 7px 26px; font-size: 15px; color: var(--ink);
+    position: relative;
+  }
+  .feature-text li::before {
+    content: "✓"; position: absolute; left: 0; top: 7px;
+    color: var(--accent-2); font-weight: 700;
+  }
+  .feature-vis {
+    background: white; border: 1px solid var(--line);
+    border-radius: 14px; padding: 22px;
+    box-shadow: 0 14px 30px -16px rgba(15,23,42,0.15);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  .vis-line { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .vis-line:last-child { border-bottom: none; }
+  .vis-key { color: var(--ink-mute); margin-right: 8px; }
+  .vis-val-ok { color: #059669; font-weight: 600; }
+  .vis-val-mute { color: var(--ink-mute); }
+  .vis-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+    background: rgba(14, 165, 165, 0.1); color: var(--accent);
+    margin-right: 6px;
+  }
+  .vis-input { font-size: 16px; padding: 8px 0; }
+  .vis-input b { color: var(--ink); }
+
+  /* ── Stats strip ────────────────────────────────── */
+  .stats {
+    background: var(--bg);
+    color: white;
+    padding: 60px 24px;
+  }
+  .stats-grid {
+    max-width: 1120px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 30px;
+    text-align: center;
+  }
+  @media (max-width: 700px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+  .stat-num {
+    font-size: clamp(32px, 4vw, 48px);
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+  }
+  .stat-label { font-size: 14px; color: #94A3B8; margin-top: 4px; }
+
+  /* ── Pricing ────────────────────────────────────── */
+  .pricing { padding: 50px 24px; background: white; }
+  .pricing-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 16px; max-width: 1120px; margin: 0 auto;
+  }
+  @media (max-width: 980px) { .pricing-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .pricing-grid { grid-template-columns: 1fr; } }
+  .price-card {
+    background: white; border: 1px solid var(--line);
+    border-radius: 14px; padding: 28px 22px;
+    display: flex; flex-direction: column;
+  }
+  .price-card.featured {
+    border: 2px solid var(--accent);
+    box-shadow: 0 20px 40px -20px rgba(14, 165, 165, 0.4);
+    position: relative;
+  }
+  .price-card.featured::before {
+    content: "Most popular";
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: white;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 5px 12px; border-radius: 999px;
+  }
+  .price-name { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-mute); }
+  .price-amt { font-size: 38px; font-weight: 800; margin-top: 10px; letter-spacing: -0.02em; line-height: 1; }
+  .price-amt .small { font-size: 14px; color: var(--ink-mute); font-weight: 500; margin-left: 6px; }
+  .price-tag { font-size: 13px; color: var(--ink-mute); margin-top: 6px; min-height: 36px; }
+  .price-feats { list-style: none; padding: 0; margin: 22px 0 22px; flex-grow: 1; }
+  .price-feats li { padding: 6px 0 6px 22px; font-size: 14px; position: relative; }
+  .price-feats li::before {
+    content: "✓"; position: absolute; left: 0;
+    color: var(--accent-2); font-weight: 700;
+  }
+  .price-btn {
+    display: inline-block; text-align: center;
+    padding: 12px 18px; border-radius: 8px;
+    font-size: 14px; font-weight: 600;
+    border: 1px solid var(--line); background: white; color: var(--ink);
+  }
+  .price-btn:hover { border-color: var(--ink); }
+  .price-card.featured .price-btn { background: var(--accent); color: white; border-color: var(--accent); }
+  .price-card.featured .price-btn:hover { background: #4F46E5; border-color: #4F46E5; }
+
+  /* ── Final CTA ─────────────────────────────────── */
+  .final {
+    padding: 56px 24px;
+    background: linear-gradient(135deg, var(--bg) 0%, #1E1A4D 100%);
+    color: white; text-align: center;
+  }
+  .final h2 { color: white; }
+  .final p { color: #CBD5E1; max-width: 560px; margin: 0 auto 30px; font-size: 17px; }
+
+  /* ── Footer ────────────────────────────────────── */
+  footer {
+    background: var(--bg);
+    color: #94A3B8; padding: 40px 24px;
+    text-align: center; font-size: 13px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  footer a { color: #CBD5E1; }
+  footer a:hover { color: white; }
+
+  /* ── Ecosystem diagram (animated data-flow) ─────── */
+  .eco { padding: 50px 24px; background: white; }
+  .eco .container { max-width: 1120px; margin: 0 auto; }
+  .eco-sub { text-align: center; color: var(--ink-mute); max-width: 620px; margin: 0 auto 26px; font-size: 17px; }
+  .eco-card { background: #fff; border: 1px solid #e5e9f1; border-radius: 16px; padding: 10px; box-shadow: 0 6px 24px rgba(16,24,40,.07); }
+  .eco svg { width: 100%; height: auto; display: block; }
+  .nbox { fill: #fff; stroke: #d7deea; stroke-width: 1.5; }
+  .hub { fill: var(--bg); }
+  .nt { font: 600 14px system-ui; fill: #0f1629; }
+  .ns { font: 400 11px system-ui; fill: #667085; }
+  .ht { font: 700 16px system-ui; fill: #fff; }
+  .hs { font: 400 11px system-ui; fill: #9fb0c8; }
+  .zone { fill: none; stroke: #b7c2d6; stroke-width: 1.4; stroke-dasharray: 6 5; }
+  .zlbl { font: 700 11px system-ui; letter-spacing: 1px; }
+  .flow { fill: none; stroke: #cdd5e0; stroke-width: 2; }
+  .eco-legend { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; margin: 20px 2px 0; font-size: 13px; color: #667085; }
+  .eco-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 5px; }
+
+  /* ── Collapsible features list (accordion) ──────── */
+  .flist { padding: 50px 24px 60px; background: var(--bg-soft); }
+  .flist .container { max-width: 860px; margin: 0 auto; }
+  .acc { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: white; box-shadow: 0 6px 24px rgba(16,24,40,.06); }
+  .acc details { border-top: 1px solid var(--line); }
+  .acc details:first-child { border-top: none; }
+  .acc summary {
+    list-style: none; cursor: pointer; padding: 20px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 17px; font-weight: 700; color: var(--ink);
+    transition: background .15s;
+  }
+  .acc summary::-webkit-details-marker { display: none; }
+  .acc summary:hover { background: #f8fafc; }
+  .acc summary .acc-count { font-size: 13px; font-weight: 600; color: var(--ink-mute); margin-left: auto; margin-right: 14px; }
+  .acc summary .acc-chev { width: 18px; height: 18px; flex: none; transition: transform .2s; color: var(--accent); }
+  .acc details[open] summary .acc-chev { transform: rotate(180deg); }
+  .acc-body { padding: 0 24px 12px; }
+  .acc-feat { display: flex; gap: 12px; padding: 12px 0; border-top: 1px dashed var(--line); }
+  .acc-feat:first-child { border-top: none; }
+  .acc-feat .tick { color: var(--accent-2); font-weight: 700; flex: none; margin-top: 1px; }
+  .acc-feat .ft { font-size: 15px; }
+  .acc-feat .ft b { color: var(--ink); }
+  .acc-feat .ft span { color: var(--ink-mute); }
+  .acc-feat.adv { background: rgba(245,165,36,0.14); border-radius: 8px;
+    box-shadow: inset 3px 0 0 var(--accent-warm); padding-left: 12px; }
+  .adv-badge { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 800;
+    letter-spacing: .05em; text-transform: uppercase; color: #3a2a05;
+    background: var(--accent-warm); border: none; box-shadow: 0 1px 3px rgba(245,165,36,0.5);
+    padding: 2px 8px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
+
+  /* ── Coming-soon / pre-launch ─────────────────────── */
+  .crumb { color: var(--ink-mute); font-weight: 500; }
+  .soon-badge { display:inline-block; background: var(--accent-warm); color:#3a2a05; font-weight:800;
+    font-size:11px; letter-spacing:.06em; text-transform:uppercase; padding:3px 10px; border-radius:999px; vertical-align:middle; }
+  .prelaunch { background: linear-gradient(135deg, rgba(245,165,36,0.14), rgba(14,165,165,0.10));
+    border:1px solid rgba(245,165,36,0.35); color:var(--ink); max-width:1120px; margin:0 auto 26px;
+    border-radius:12px; padding:14px 20px; text-align:center; font-size:14.5px; font-weight:600; }
+  .prelaunch b { color:#B45309; }
+  .price-list { color:var(--ink-mute); text-decoration:line-through; font-size:18px; font-weight:600; margin-right:8px; }
+  .price-eyebrow { display:inline-block; background: rgba(14,165,165,0.1); color:var(--accent); font-weight:700;
+    font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:999px; margin-bottom:8px; }
+  .price-btn.soon { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .price-btn.soon:hover { background:#0C8E8E; border-color:#0C8E8E; }
+  .price-btn.muted { background:#F1F5F9; color:#64748B; border-color:#E2E8F0; }
+  .price-btn.muted:hover { border-color:#CBD5E1; }
 </style>
+
+<!-- SEO -->
+<link rel="canonical" href="https://aic.ai-consultants.in/bookshq.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AI Consultants">
+<meta property="og:title" content="Books HQ — AI bookkeeping for US small business (coming soon) · AI Consultants">
+<meta property="og:description" content="Books HQ: the simple way US freelancers &amp; small businesses keep their books — branded invoices, snap-a-receipt AI bookkeeping, sales tax &amp; 1099 tracking. Coming soon. By AI Consultants.">
+<meta property="og:url" content="https://aic.ai-consultants.in/bookshq.html">
+<meta property="og:image" content="https://aic.ai-consultants.in/img/bookshq.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Books HQ — AI bookkeeping for US small business (coming soon) · AI Consultants">
+<meta name="twitter:description" content="Books HQ: the simple way US freelancers &amp; small businesses keep their books — branded invoices, snap-a-receipt AI bookkeeping, sales tax &amp; 1099 tracking. Coming soon. By AI Consultants.">
+<meta name="twitter:image" content="https://aic.ai-consultants.in/img/bookshq.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Books HQ", "applicationCategory": "BusinessApplication", "operatingSystem": "Windows", "description": "Books HQ: the simple way US freelancers & small businesses keep their books — branded invoices, snap-a-receipt AI bookkeeping, sales tax & 1099 tracking. Coming soon. By AI Consultants.", "url": "https://aic.ai-consultants.in/bookshq.html", "image": "https://aic.ai-consultants.in/img/bookshq.png", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "publisher": {"@type": "Organization", "name": "AI Consultants"}}</script>
 </head>
 <body>
 
+<!-- ── Nav ─────────────────────────────────────────────────────────── -->
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="index.html"><span class="brand-dot"></span><span>AI Consultants <span class="crumb">/ Books HQ</span></span></a>
+    <a class="brand" href="index.html">
+      <span class="brand-dot"></span>
+      <span>AI Consultants <span class="crumb">/ Books HQ</span></span>
+    </a>
     <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="pricing.html">Pricing</a>
-      <a href="contact.html">Contact</a>
       <a href="index.html">All products</a>
+      <a href="#ecosystem">How it works</a>
+      <a href="#features-all">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="contact.html">Contact</a>
     </div>
-    <a class="nav-cta" href="pricing.html">Try free</a>
+    <a class="nav-cta" href="#pricing">Reserve early-bird</a>
   </div>
 </nav>
 
+<!-- ── Hero ────────────────────────────────────────────────────────── -->
 <section class="hero">
-  <img class="logo" src="img/bookshq.png" alt="Books HQ">
-  <span class="eyebrow">Books HQ · simple books for small business</span>
-  <h1>Simple books. <span class="grad">Done.</span></h1>
-  <p class="lead">The easy way to keep your shop or startup’s books — send invoices, snap your expenses, stay GST-ready. No journal entries, no accountant-speak. Just numbers you can trust.</p>
+  <div class="eyebrow"><span class="soon-badge">Coming soon</span>&nbsp;&nbsp;Books HQ — for US small business</div>
+  <h1>Snap a receipt. <span class="grad">The books do themselves.</span></h1>
+  <p class="lead">
+    Books HQ is the simple way US freelancers and small businesses keep their
+    books — send branded invoices, photograph an expense and let AI post the
+    entry, and stay on top of sales tax and 1099s. Runs on your own computer;
+    your data stays yours.
+  </p>
   <div class="cta-row">
-    <a class="btn-primary" href="pricing.html">Start free</a>
-    <a class="btn-ghost" href="index.html">See all products</a>
+    <a class="btn-primary" href="#pricing">Reserve at $99 — book now</a>
+    <a class="btn-ghost" href="#features-all">See what's inside</a>
   </div>
+  <p class="hero-note">Launching soon in the US · reserve now to lock in early-bird pricing — pay nothing today.</p>
 </section>
 
-<section class="section" id="features">
-  <div class="section-head">
-    <h2>Books, without the jargon</h2>
-    <p>Everything a small business needs to stay on top of its money — nothing it doesn’t.</p>
-  </div>
-  <div class="feat">
-    <div class="fcard"><div class="ic">🧾</div><h3>Send invoices</h3><p>Make a clean, GST-ready invoice in seconds and send it on WhatsApp or email. See who’s paid and who hasn’t at a glance.</p></div>
-    <div class="fcard"><div class="ic">📸</div><h3>Snap your expenses</h3><p>Photograph a bill and Books HQ reads it for you — vendor, amount, tax — and files it. No typing, no shoebox.</p></div>
-    <div class="fcard"><div class="ic">🏦</div><h3>Match your bank</h3><p>Import your statement and tick off what cleared. Always know your real cash position, not last month’s.</p></div>
-    <div class="fcard"><div class="ic">🇮🇳</div><h3>GST-ready</h3><p>Records kept the way GST expects — so filing season is a download, not a nightmare.</p></div>
-    <div class="fcard"><div class="ic">📊</div><h3>Plain-English reports</h3><p>What you earned, what you spent, who owes you — in words you actually use, not “trial balance.”</p></div>
-    <div class="fcard"><div class="ic">🔒</div><h3>Yours, on your machine</h3><p>Your books live on your own computer. Private by default, working with or without internet.</p></div>
-  </div>
-</section>
+<!-- ── Ecosystem diagram ───────────────────────────────────────────── -->
+<section class="eco" id="ecosystem">
+  <div class="container">
+    <div class="section-eyebrow">The ecosystem</div>
+    <h2>A smart, modern workflow that saves time and energy.</h2>
+    <p class="eco-sub">
+      Receipts and statements flow in, the AI drafts the entries, invoices and
+      reports flow out — and your data never leaves your machine unless you ask it to.
+    </p>
 
-<section class="strip">
-  <div class="section">
-    <div>
-      <h3>Outgrow it? Accounts HQ is one click away.</h3>
-      <p>When you’re ready for full GST/TDS, multi-user and deeper accounting, your data steps up to <b>Accounts HQ</b> — nothing to re-enter, nothing to relearn.</p>
+    <div class="eco-card">
+      <svg viewBox="0 0 1080 700" role="img" aria-label="Books HQ ecosystem diagram">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#9aa6b8"/>
+          </marker>
+        </defs>
+        <rect class="zone" x="24" y="96" width="788" height="576" rx="16"/>
+        <text class="zlbl" x="40" y="120" fill="#7f8ba0">ON YOUR PREMISES  -  WORKS OFFLINE</text>
+        <rect x="836" y="96" width="220" height="576" rx="16" fill="#eff4fb" stroke="#dce6f4"/>
+        <text class="zlbl" x="852" y="120" fill="#5b7bb0">CLOUD - USED ONLY WHEN NEEDED</text>
+        <line class="flow" x1="228" y1="179" x2="428" y2="332" marker-end="url(#arr)"/>
+        <line class="flow" x1="228" y1="279" x2="428" y2="362" marker-end="url(#arr)"/>
+        <line class="flow" x1="228" y1="379" x2="428" y2="392" marker-end="url(#arr)"/>
+        <line class="flow" x1="428" y1="408" x2="228" y2="499" marker-end="url(#arr)"/>
+        <line class="flow" x1="540" y1="540" x2="540" y2="422" marker-end="url(#arr)"/>
+        <line class="flow" x1="540" y1="298" x2="540" y2="230" marker-end="url(#arr)"/>
+        <line class="flow" x1="652" y1="335" x2="850" y2="199" marker-start="url(#arr)" marker-end="url(#arr)"/>
+        <line class="flow" x1="652" y1="360" x2="850" y2="329" marker-start="url(#arr)" marker-end="url(#arr)"/>
+        <line class="flow" x1="652" y1="392" x2="850" y2="459" marker-start="url(#arr)" marker-end="url(#arr)"/>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" repeatCount="indefinite" path="M228,179 L428,332"/></circle>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite" path="M228,279 L428,362"/></circle>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="0.6s" repeatCount="indefinite" path="M228,379 L428,392"/></circle>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.6s" begin="0.4s" repeatCount="indefinite" path="M540,540 L540,422"/></circle>
+        <circle r="5" fill="#7c3aed"><animateMotion dur="2.2s" repeatCount="indefinite" path="M652,335 L850,199"/></circle>
+        <circle r="5" fill="#7c3aed"><animateMotion dur="2.2s" begin="1.1s" repeatCount="indefinite" path="M850,199 L652,335"/></circle>
+        <circle r="4" fill="#7c3aed"><animateMotion dur="3s" begin="0.5s" repeatCount="indefinite" path="M652,360 L850,329"/></circle>
+        <circle r="4" fill="#7c3aed"><animateMotion dur="3s" begin="0.9s" repeatCount="indefinite" path="M850,459 L652,392"/></circle>
+        <circle r="5" fill="#16a34a"><animateMotion dur="2.4s" repeatCount="indefinite" path="M540,298 L540,230"/></circle>
+        <circle r="5" fill="#16a34a"><animateMotion dur="2.6s" begin="0.8s" repeatCount="indefinite" path="M428,408 L228,499"/></circle>
+        <g><rect class="nbox" x="48" y="150" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="176" text-anchor="middle">Scan / photo</text>
+           <text class="ns" x="138" y="194" text-anchor="middle">receipts &amp; vendor bills</text></g>
+        <g><rect class="nbox" x="48" y="250" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="276" text-anchor="middle">Email inbox</text>
+           <text class="ns" x="138" y="294" text-anchor="middle">bills &amp; bank statements</text></g>
+        <g><rect class="nbox" x="48" y="350" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="376" text-anchor="middle">Phone photo</text>
+           <text class="ns" x="138" y="394" text-anchor="middle">snap an expense</text></g>
+        <g><rect class="nbox" x="48" y="470" width="180" height="58" rx="10"/>
+           <text class="nt" x="138" y="496" text-anchor="middle">Backup</text>
+           <text class="ns" x="138" y="514" text-anchor="middle">drive / cloud folder</text></g>
+        <g><rect class="nbox" x="440" y="540" width="200" height="58" rx="10"/>
+           <text class="nt" x="540" y="566" text-anchor="middle">Bank statement</text>
+           <text class="ns" x="540" y="584" text-anchor="middle">import / bank feed</text></g>
+        <g><rect class="nbox" x="430" y="172" width="220" height="58" rx="10"/>
+           <text class="nt" x="540" y="198" text-anchor="middle">Invoices &amp; reports</text>
+           <text class="ns" x="540" y="216" text-anchor="middle">Excel - PDF - email</text></g>
+        <g><rect class="hub" x="430" y="300" width="220" height="120" rx="14"/>
+           <text class="ht" x="540" y="338" text-anchor="middle">Books HQ</text>
+           <text class="hs" x="540" y="358" text-anchor="middle">your books - on your PC</text>
+           <text class="hs" x="540" y="378" text-anchor="middle">AI drafts from receipts</text>
+           <text class="hs" x="540" y="396" text-anchor="middle">Invoice - Reconcile - Report</text></g>
+        <g><rect class="nbox" x="852" y="170" width="190" height="58" rx="10"/>
+           <text class="nt" x="947" y="196" text-anchor="middle">Anthropic AI</text>
+           <text class="ns" x="947" y="214" text-anchor="middle">reads your receipts (your key)</text></g>
+        <g><rect class="nbox" x="852" y="300" width="190" height="58" rx="10"/>
+           <text class="nt" x="947" y="326" text-anchor="middle">Licence server</text>
+           <text class="ns" x="947" y="344" text-anchor="middle">activate &amp; validate</text></g>
+        <g><rect class="nbox" x="852" y="430" width="190" height="58" rx="10"/>
+           <text class="nt" x="947" y="456" text-anchor="middle">Get paid</text>
+           <text class="ns" x="947" y="474" text-anchor="middle">PayPal - Stripe - Square</text></g>
+        <line class="flow" x1="228" y1="438" x2="428" y2="400" marker-end="url(#arr)"/>
+        <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="0.9s" repeatCount="indefinite" path="M228,438 L428,400"/></circle>
+        <g><rect class="nbox" x="48" y="412" width="180" height="52" rx="10"/>
+           <text class="nt" x="138" y="437" text-anchor="middle">Manual entry</text>
+           <text class="ns" x="138" y="454" text-anchor="middle">type it yourself</text></g>
+      </svg>
     </div>
-    <a class="btn-primary" href="accountshq.html" style="white-space:nowrap">See Accounts HQ →</a>
+
+    <div class="eco-legend">
+      <span><span class="dot" style="background:#0EA5A5"></span>Receipts &amp; statements coming in</span>
+      <span><span class="dot" style="background:#7c3aed"></span>AI / licence / payments round-trips (cloud)</span>
+      <span><span class="dot" style="background:#16a34a"></span>Invoices, reports &amp; exports going out</span>
+    </div>
   </div>
 </section>
 
+<!-- ── Collapsible features list ───────────────────────────────────── -->
+<section class="flist" id="features-all">
+  <div class="container">
+    <div class="section-eyebrow">Full feature list</div>
+    <h2>Everything Books HQ does.</h2>
+    <p class="section-lead">
+      Tap any group to see what's inside. <b>Advanced</b> marks the AI and tax
+      features that set Books HQ apart from a basic bookkeeping app.
+    </p>
+
+    <div class="acc">
+
+      <details open>
+        <summary>AI bookkeeping <span class="acc-count">4 features</span><svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-body">
+          <div class="acc-feat adv"><span class="tick">&#10003;</span><div class="ft"><b>AI receipt &amp; bill reader</b> <span class="adv-badge">Advanced</span> &mdash; <span>snap a receipt or bill and the AI drafts the entry &mdash; vendor, amount, category &mdash; for you to approve.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">&#10003;</span><div class="ft"><b>Document inbox</b> <span class="adv-badge">Advanced</span> &mdash; <span>every receipt and bill queued in one place to review and post.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">&#10003;</span><div class="ft"><b>Voice entry</b> <span class="adv-badge">Advanced</span> &mdash; <span>speak a transaction and get a balanced draft.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Recurring billing</b> &mdash; <span>set an invoice to repeat automatically.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Invoicing &amp; getting paid <span class="acc-count">3 features</span><svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Branded invoices</b> &mdash; <span>send a clean invoice by email or SMS and see who's paid at a glance.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Online payments</b> &mdash; <span>connect your own PayPal, Stripe or Square &mdash; money goes straight to you, auto-reconciled. We never hold funds.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Payment tracking</b> &mdash; <span>open, paid and overdue, always current.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>US tax <span class="acc-count">2 features</span><svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-body">
+          <div class="acc-feat adv"><span class="tick">&#10003;</span><div class="ft"><b>Sales tax tracking</b> <span class="adv-badge">Advanced</span> &mdash; <span>per state/local rate on invoices, taxable/exempt, a nexus tracker and a liability report. You or your CPA file.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">&#10003;</span><div class="ft"><b>1099 contractor tracking</b> <span class="adv-badge">Advanced</span> &mdash; <span>flag contractors, accumulate payments and export a year-end 1099 worksheet.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Reports &amp; exports <span class="acc-count">6 features</span><svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Financial statements</b> &mdash; <span>Profit &amp; Loss, Balance Sheet, Trial Balance.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Cash &amp; bank registers, account ledger, receipts &amp; payments</b> &mdash; <span>your day-to-day books.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Receivables &amp; payables aging</b> &mdash; <span>who owes you and whom you owe, by age.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Excel / CSV / PDF export</b> &mdash; <span>hand anything to your accountant in a click.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Print &amp; email</b> &mdash; <span>send any report straight out.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Mileage tracking</b> &mdash; <span>log business miles for deductions.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Reconciliation &amp; migration <span class="acc-count">3 features</span><svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Bank reconciliation</b> &mdash; <span>import your statement (OFX/QBO/CSV) and match each line.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Account reconciliation</b> &mdash; <span>reconcile vendor &amp; customer accounts with 1-to-many matching.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Import from QuickBooks / Wave / Xero</b> &mdash; <span>bring your existing books over via CSV.</span></div></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Core bookkeeping <span class="acc-count">6 features</span><svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-body">
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Double-entry transactions &amp; journal</b> &mdash; <span>proper books under the simple surface.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>General ledger &amp; account balances</b> &mdash; <span>everything at a glance.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Split transactions</b> &mdash; <span>one entry across several accounts.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Sticky date entry</b> &mdash; <span>the date carries while you post a batch.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Multi-user</b> &mdash; <span>2 / 5 / unlimited by plan.</span></div></div>
+          <div class="acc-feat"><span class="tick">&#10003;</span><div class="ft"><b>Backup &amp; works offline</b> &mdash; <span>your books in one file on your PC; opens instantly, no internet needed.</span></div></div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Pricing ─────────────────────────────────────────────────────── -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <div class="section-eyebrow">Pricing</div>
+    <h2>Reserve early-bird pricing.</h2>
+    <p class="section-lead">
+      Books HQ launches soon in the US. Reserve now to lock in the early-bird
+      price before it goes up &mdash; pay nothing today. Prices in USD per year.
+    </p>
+
+    <div class="prelaunch">&#128640; <b>Pre-launch:</b> Standard will be <b>$149/yr at launch</b> &mdash; reserve now and lock it in at <b>$99</b>.</div>
+
+    <div class="pricing-grid">
+
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amt">$0</div>
+        <div class="price-tag">For freelancers just starting out.</div>
+        <ul class="price-feats">
+          <li>Branded invoices + online payments</li>
+          <li>Basic books &amp; reports</li>
+          <li>10 AI receipts / month</li>
+          <li>1 user</li>
+        </ul>
+        <a class="price-btn muted" href="contact.html">Notify me at launch</a>
+      </div>
+
+      <div class="price-card" style="border:2px solid var(--accent);box-shadow:0 20px 40px -20px rgba(14,165,165,0.4)">
+        <div class="price-eyebrow">Early-bird &middot; book now</div>
+        <div class="price-name">Standard</div>
+        <div class="price-amt"><span class="price-list">$149</span>$99<span class="small">/ yr</span></div>
+        <div class="price-tag">For a small business keeping real books.</div>
+        <ul class="price-feats">
+          <li>Everything in Free</li>
+          <li>Bank reconciliation + aging</li>
+          <li>Import from QuickBooks / Wave</li>
+          <li>50 AI receipts / month</li>
+          <li>2 users</li>
+        </ul>
+        <a class="price-btn soon" href="contact.html">Reserve at $99 &rarr;</a>
+      </div>
+
+      <div class="price-card">
+        <div class="price-name">Pro</div>
+        <div class="price-amt">$229<span class="small">/ yr</span></div>
+        <div class="price-tag">Sales tax &amp; contractors.</div>
+        <ul class="price-feats">
+          <li>Everything in Standard</li>
+          <li>US sales tax tracking</li>
+          <li>1099 contractor tracking</li>
+          <li>200 AI receipts / month</li>
+          <li>5 users</li>
+        </ul>
+        <a class="price-btn" href="contact.html">Reserve &rarr;</a>
+      </div>
+
+      <div class="price-card">
+        <div class="price-name">Premium</div>
+        <div class="price-amt">$449<span class="small">/ yr</span></div>
+        <div class="price-tag">Everything, unlimited.</div>
+        <ul class="price-feats">
+          <li>Everything in Pro</li>
+          <li>Unlimited AI receipts</li>
+          <li>Unlimited users</li>
+        </ul>
+        <a class="price-btn" href="contact.html">Reserve &rarr;</a>
+      </div>
+
+    </div>
+    <p style="text-align:center;color:var(--ink-mute);font-size:13.5px;margin-top:24px">
+      Billed annually &mdash; about $8 / $19 / $37 a month. Free to start when it launches.
+    </p>
+  </div>
+</section>
+
+<!-- ── Final CTA ───────────────────────────────────────────────────── -->
 <section class="final">
-  <h2>Keep your books without dreading them.</h2>
-  <p>Start free — invoices, expenses and reports, in minutes. Pay only when it’s clearly worth it.</p>
+  <h2>Be first when Books HQ lands.</h2>
+  <p>
+    AI that reads your receipts and posts the entry &mdash; the bookkeeping app that
+    does the boring part for you. Reserve now to lock in early-bird pricing.
+  </p>
   <div class="cta-row">
-    <a class="btn-primary" href="pricing.html">Start free</a>
-    <a class="btn-ghost" href="index.html">All products</a>
+    <a class="btn-primary" href="contact.html">Reserve your spot</a>
+    <a class="btn-ghost" href="accountshq.html" style="background: transparent; color: white; border-color: rgba(255,255,255,0.3);">See Accounts HQ</a>
   </div>
 </section>
 
 <footer>
   <p style="margin-bottom:12px">
-    <a href="accountshq.html">Accounts HQ</a> · <a href="rwahq/">RWA HQ</a> · <a href="tradehq.html">tradeHQ</a> · <a href="hoahq.html">HOA HQ</a> · <a href="bookshq.html">Books HQ</a> · <a href="pricing.html">Pricing</a> · <a href="contact.html">Contact</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="refund.html">Refund Policy</a> · <a href="shipping.html">Delivery</a>
+    <a href="accountshq.html">Accounts HQ</a> &middot; <a href="rwahq/">RWA HQ</a> &middot; <a href="tradehq.html">tradeHQ</a> &middot; <a href="hoahq.html">HOA HQ</a> &middot; <a href="bookshq.html">Books HQ</a> &middot; <a href="pricing.html">Pricing</a> &middot; <a href="contact.html">Contact</a> &middot; <a href="privacy.html">Privacy</a> &middot; <a href="terms.html">Terms</a> &middot; <a href="refund.html">Refund Policy</a> &middot; <a href="shipping.html">Delivery</a>
   </p>
-  <p>© 2026 AI Consultants · <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
+  <p>&copy; 2026 AI Consultants &middot; <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
   <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
 </footer>
 
+<script>
+/* Live hero mock — the voucher posts itself. Degrades to the static screenshot if JS or motion is off. */
+(function () {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var mock = document.querySelector('.hero-mock');
+  if (!mock) return;
+  var rows = mock.querySelectorAll('.mock-row:not(.head)');
+  var toast = mock.querySelector('.mock-ai-toast');
+  var incoming = mock.querySelector('.mock-incoming');
+  var scan = mock.querySelector('.mock-scan');
+  if (!rows.length) return;
+  mock.classList.add('playing');
+  var timers = [];
+  function clearAll(){ timers.forEach(clearTimeout); timers = []; }
+  function at(ms, fn){ timers.push(setTimeout(fn, ms)); }
+  function reset(){
+    for (var i = 0; i < rows.length; i++) rows[i].classList.remove('show');
+    if (toast) toast.classList.remove('show');
+    if (incoming) incoming.classList.remove('show');
+    if (scan) scan.classList.remove('run');
+  }
+  function play(){
+    clearAll(); reset();
+    void mock.offsetWidth;                          // reflow so re-added classes re-animate
+    at(300,  function(){ if (incoming) incoming.classList.add('show'); });
+    at(780,  function(){ if (scan) scan.classList.add('run'); });
+    for (var i = 0; i < rows.length; i++) {
+      (function(r, idx){ at(1150 + idx * 420, function(){ r.classList.add('show'); }); })(rows[i], i);
+    }
+    at(1150 + rows.length * 420 + 260, function(){ if (toast) toast.classList.add('show'); });
+    at(6400, play);                                 // loop
+  }
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if (e.isIntersecting) play(); else clearAll(); });
+    }, { threshold: 0.25 });
+    io.observe(mock);
+  } else {
+    play();
+  }
+
+  // Each feature demo fills itself when it scrolls into view — the manual job, doing itself.
+  var vises = document.querySelectorAll('.feature-vis');
+  if (vises.length && 'IntersectionObserver' in window) {
+    var vio = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        var v = e.target, lines = v.querySelectorAll('.vis-line');
+        v.classList.add('playing');
+        for (var i = 0; i < lines.length; i++) lines[i].classList.remove('show');
+        void v.offsetWidth;
+        for (var j = 0; j < lines.length; j++) {
+          (function(l, idx){ setTimeout(function(){ l.classList.add('show'); }, 150 + idx * 260); })(lines[j], j);
+        }
+      });
+    }, { threshold: 0.4 });
+    for (var k = 0; k < vises.length; k++) vio.observe(vises[k]);
+  }
+})();
+</script>
+  <script src="/chat-widget.js" defer></script>
 </body>
 </html>

@@ -96,7 +96,8 @@
   .chip { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--line); color: var(--ink); font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer; box-shadow: 0 1px 2px rgba(15,23,42,0.05); transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease; }
   .chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); transform: translateY(-1px); }
   /* Outcome-led tile content */
-  .pcard { scroll-margin-top: 90px; }
+  .pcard { scroll-margin-top: 90px; position: relative; }
+  .soon-tag { position: absolute; top: 14px; right: 14px; background: #fcd34d; color: #0B1220; font-weight: 800; font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
   .pcard .hook { color: #fff; font-weight: 800; font-size: 16.5px; line-height: 1.35; margin-bottom: 14px; }
   .pcard .jobs { list-style: none; margin: 0 0 18px; padding: 0; flex: 1; }
   .pcard .jobs li { color: #94A3B8; font-size: 13.5px; line-height: 1.5; padding-left: 19px; position: relative; margin-bottom: 5px; }
@@ -126,6 +127,20 @@
     .nav-links { display: none; }
   }
 </style>
+
+<!-- SEO -->
+<link rel="canonical" href="https://aic.ai-consultants.in/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AI Consultants">
+<meta property="og:title" content="AI Consultants — Software for Indian businesses">
+<meta property="og:description" content="AI Consultants builds focused software for Indian businesses: Accounts HQ (accounting, GST, TDS), RWA HQ (society &amp; apartment management), tradeHQ (family trading &amp; investments). Built for India. Start free.">
+<meta property="og:url" content="https://aic.ai-consultants.in/">
+<meta property="og:image" content="https://aic.ai-consultants.in/img/accountshq.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI Consultants — Software for Indian businesses">
+<meta name="twitter:description" content="AI Consultants builds focused software for Indian businesses: Accounts HQ (accounting, GST, TDS), RWA HQ (society &amp; apartment management), tradeHQ (family trading &amp; investments). Built for India. Start free.">
+<meta name="twitter:image" content="https://aic.ai-consultants.in/img/accountshq.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Organization", "name": "AI Consultants", "url": "https://aic.ai-consultants.in/", "email": "info@ai-consultants.in", "logo": "https://aic.ai-consultants.in/img/accountshq.png", "sameAs": []}</script>
 </head>
 <body>
 
@@ -262,6 +277,7 @@
         <span class="go">Explore HOA HQ →</span>
       </a>
       <a class="pcard" id="app-bookshq" href="bookshq.html">
+        <span class="soon-tag">Coming soon</span>
         <img class="logo" src="img/bookshq.png" alt="Books HQ">
         <div class="hook">Just clean books — nothing to learn.</div>
         <ul class="jobs">
@@ -338,5 +354,6 @@
     });
   });
 </script>
+  <script src="/chat-widget.js" defer></script>
 </body>
 </html>

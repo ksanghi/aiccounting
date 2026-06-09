@@ -30,7 +30,9 @@
   .hero h1 .grad { color:var(--gold); }
   .hero-note { margin-top:16px; color:#94A3B8; font-size:13px; }
 
-  .section { max-width:1080px; margin:0 auto; padding:72px 24px; }
+  /* NOTE: section vertical padding kept tight (50px) to match the Accounts HQ
+     page — 72px left too much dead space between sections. Don't bump it back up. */
+  .section { max-width:1080px; margin:0 auto; padding:50px 24px; }
   .section-head { text-align:center; max-width:700px; margin:0 auto 44px; }
   .section-head .kicker { font-weight:700; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:12px; color:var(--accent); }
   .section-head h2 { font-size:clamp(27px,3.4vw,42px); letter-spacing:-0.02em; font-weight:800; line-height:1.12; }
@@ -96,9 +98,68 @@
   .dl-tile .ar { font-size:19px; line-height:1; }
   .dl-tile small { display:block; font-weight:600; font-size:11px; color:#5a4d08; margin-top:1px; }
 
+  /* Ecosystem diagram (animated data-flow) */
+  .eco-card { background:#fff; border:1px solid #e5e9f1; border-radius:16px; padding:10px; box-shadow:0 6px 24px rgba(16,24,40,.07); }
+  .eco-card svg { width:100%; height:auto; display:block; }
+  .nbox { fill:#fff; stroke:#d7deea; stroke-width:1.5; }
+  .hub { fill:var(--bg); }
+  .nt { font:600 14px system-ui; fill:#0f1629; }
+  .ns { font:400 11px system-ui; fill:#667085; }
+  .ht { font:700 16px system-ui; fill:#fff; }
+  .hs { font:400 11px system-ui; fill:#9fb0c8; }
+  .zone { fill:none; stroke:#b7c2d6; stroke-width:1.4; stroke-dasharray:6 5; }
+  .zlbl { font:700 11px system-ui; letter-spacing:1px; }
+  .flow { fill:none; stroke:#cdd5e0; stroke-width:2; }
+  .person { fill:var(--accent); }
+  .person-2 { fill:#a5b4fc; }
+  .eco-ic { filter:drop-shadow(0 3px 5px rgba(16,24,40,0.22)); }
+  .eco-legend { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; margin:22px 2px 0; font-size:13px; color:#667085; }
+  .eco-legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-right:5px; }
+
+  /* Pricing */
+  .pricing-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; max-width:1080px; margin:0 auto; }
+  @media (max-width:980px){ .pricing-grid{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:540px){ .pricing-grid{grid-template-columns:1fr;} }
+  .price-card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:28px 22px; display:flex; flex-direction:column; }
+  .price-card.featured { border:2px solid var(--accent); box-shadow:0 20px 40px -20px rgba(79,70,229,0.4); position:relative; }
+  .price-card.featured::before { content:"Most popular"; position:absolute; top:-10px; left:50%; transform:translateX(-50%); background:var(--accent); color:#fff; font-size:11px; font-weight:700; letter-spacing:.04em; padding:5px 12px; border-radius:999px; }
+  .price-name { font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-mute); }
+  .price-amt { font-size:34px; font-weight:800; margin-top:10px; letter-spacing:-0.02em; line-height:1; }
+  .price-amt .small { font-size:14px; color:var(--ink-mute); font-weight:500; margin-left:4px; }
+  .price-tag { font-size:13px; color:var(--ink-mute); margin-top:8px; min-height:34px; }
+  .price-feats { list-style:none; padding:0; margin:18px 0; flex-grow:1; }
+  .price-feats li { padding:6px 0 6px 22px; font-size:14px; position:relative; color:var(--ink); }
+  .price-feats li::before { content:"✓"; position:absolute; left:0; color:var(--accent); font-weight:700; }
+  .price-btn { display:inline-block; text-align:center; padding:12px 18px; border-radius:8px; font-size:14px; font-weight:700; border:1px solid var(--line); background:#fff; color:var(--ink); }
+  .price-btn:hover { border-color:var(--ink); }
+  .price-card.featured .price-btn { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .price-card.featured .price-btn:hover { background:#4338CA; border-color:#4338CA; }
+  .price-foot { text-align:center; color:var(--ink-mute); font-size:13.5px; margin-top:26px; }
+  .price-foot a { color:var(--accent); font-weight:600; }
+
+  /* Advanced badge in the feature list */
+  .adv-badge { display:inline-block; margin-left:8px; font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#3a2a05; background:var(--gold); box-shadow:0 1px 3px rgba(245,165,36,0.5); padding:2px 8px; border-radius:999px; vertical-align:middle; white-space:nowrap; }
+  .acc-body li.adv { background:rgba(252,211,77,0.16); box-shadow:inset 3px 0 0 #f59e0b; border-radius:0 8px 8px 0; padding-left:30px; }
+  .acc-body li.adv::before { left:12px; color:#f59e0b; }
+  .acc-item.open .acc-body { max-height:900px; }
+
   @media (max-width:760px){ .edges{grid-template-columns:1fr;} .nav-links{display:none;} .cbtn{display:none;} .slide{padding:24px;}
     .dl-tile { left:14px; right:14px; bottom:12px; justify-content:center; } }
 </style>
+
+<!-- SEO -->
+<link rel="canonical" href="https://aic.ai-consultants.in/rwahq/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AI Consultants">
+<meta property="og:title" content="RWA HQ — run your society, and end the anonymous building · AI Consultants">
+<meta property="og:description" content="RWA HQ runs your apartment or plot society — dues, billing, complaints, visitor passes — and brings the building together with a free resident app. By AI Consultants.">
+<meta property="og:url" content="https://aic.ai-consultants.in/rwahq/">
+<meta property="og:image" content="https://aic.ai-consultants.in/img/rwahq.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="RWA HQ — run your society, and end the anonymous building · AI Consultants">
+<meta name="twitter:description" content="RWA HQ runs your apartment or plot society — dues, billing, complaints, visitor passes — and brings the building together with a free resident app. By AI Consultants.">
+<meta name="twitter:image" content="https://aic.ai-consultants.in/img/rwahq.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "RWA HQ", "applicationCategory": "BusinessApplication", "operatingSystem": "Windows", "description": "RWA HQ runs your apartment or plot society — dues, billing, complaints, visitor passes — and brings the building together with a free resident app. By AI Consultants.", "url": "https://aic.ai-consultants.in/rwahq/", "image": "https://aic.ai-consultants.in/img/rwahq.png", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"}, "publisher": {"@type": "Organization", "name": "AI Consultants"}}</script>
 </head>
 <body>
 
@@ -107,11 +168,12 @@
     <a class="brand" href="../index.html"><span class="brand-dot"></span><span>AI Consultants <span class="crumb">/ RWA HQ</span></span></a>
     <div class="nav-links">
       <a href="#why">Highlights</a>
+      <a href="#how">How it works</a>
       <a href="#features">All features</a>
-      <a href="../pricing.html">Pricing</a>
+      <a href="#pricing">Pricing</a>
       <a href="../index.html">All products</a>
     </div>
-    <a class="nav-cta" href="../pricing.html">See pricing</a>
+    <a class="nav-cta" href="#pricing">See pricing</a>
   </div>
 </nav>
 
@@ -131,6 +193,182 @@
     <div class="ecard"><div class="ic">🔗</div><h3>Deep integration</h3><p>Your bills, your society accounts and the resident app all work together as one — no exports, no copying data between separate tools.</p></div>
     <div class="ecard"><div class="ic">💰</div><h3>Always affordable</h3><p>Start free, and stay light on the pocket as you grow. No charge per flat and no surprise bills — priced for a society, not a corporation.</p></div>
     <div class="ecard"><div class="ic">🧩</div><h3>Feature rich</h3><p>Everything a society needs in one place — billing, accounts, gate passes, complaints, notices and a full resident app. You won’t outgrow it.</p></div>
+  </div>
+</section>
+
+<!-- Ecosystem diagram — how the people, the gate and the cloud connect -->
+<section class="section" id="how">
+  <div class="section-head">
+    <div class="kicker">How it works</div>
+    <h2>One hub. <span class="hl">Everyone connected.</span></h2>
+    <p>Snap, scan or email a vendor bill and the AI drafts the entry for you. The committee runs the society on one computer, while residents, the guard at the gate and visitors all reach it — through the free app, WhatsApp or Telegram. The cloud is used only when you need AI, a payment or a licence check, and your data stays on your machine.</p>
+  </div>
+
+  <div class="eco-card">
+    <svg viewBox="0 0 1080 760" role="img" aria-label="RWA HQ ecosystem diagram">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#9aa6b8"/>
+        </marker>
+      </defs>
+
+      <!-- Zones -->
+      <rect class="zone" x="24" y="96" width="772" height="636" rx="16"/>
+      <text class="zlbl" x="40" y="122" fill="#7f8ba0">YOUR SOCIETY  -  WORKS OFFLINE</text>
+      <rect x="820" y="96" width="236" height="636" rx="16" fill="#eff4fb" stroke="#dce6f4"/>
+      <text class="zlbl" x="836" y="122" fill="#5b7bb0">CLOUD - USED ONLY WHEN NEEDED</text>
+
+      <!-- Flow lines: documents in (the AI tech edge) -->
+      <line class="flow" x1="256" y1="180" x2="438" y2="352" marker-end="url(#arr)"/>
+      <line class="flow" x1="256" y1="246" x2="438" y2="372" marker-end="url(#arr)"/>
+      <line class="flow" x1="256" y1="312" x2="438" y2="392" marker-end="url(#arr)"/>
+      <!-- Flow lines: people <-> hub -->
+      <line class="flow" x1="256" y1="410" x2="438" y2="408" marker-end="url(#arr)"/>
+      <line class="flow" x1="256" y1="482" x2="438" y2="424" marker-start="url(#arr)" marker-end="url(#arr)"/>
+      <line class="flow" x1="256" y1="554" x2="438" y2="440" marker-start="url(#arr)" marker-end="url(#arr)"/>
+      <line class="flow" x1="256" y1="626" x2="438" y2="452" marker-end="url(#arr)"/>
+      <!-- hub <-> cloud -->
+      <line class="flow" x1="662" y1="360" x2="836" y2="190" marker-start="url(#arr)" marker-end="url(#arr)"/>
+      <line class="flow" x1="662" y1="385" x2="836" y2="298" marker-start="url(#arr)" marker-end="url(#arr)"/>
+      <line class="flow" x1="662" y1="410" x2="836" y2="428" marker-start="url(#arr)" marker-end="url(#arr)"/>
+      <line class="flow" x1="662" y1="435" x2="836" y2="548" marker-start="url(#arr)" marker-end="url(#arr)"/>
+      <!-- hub -> outputs -->
+      <line class="flow" x1="550" y1="330" x2="550" y2="250" marker-end="url(#arr)"/>
+      <line class="flow" x1="550" y1="462" x2="550" y2="540" marker-end="url(#arr)"/>
+
+      <!-- Animated flow dots -->
+      <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" repeatCount="indefinite" path="M256,180 L438,352"/></circle>
+      <circle r="5" fill="#0EA5A5"><animateMotion dur="2.4s" begin="0.6s" repeatCount="indefinite" path="M256,246 L438,372"/></circle>
+      <circle r="5" fill="#0EA5A5"><animateMotion dur="2.6s" begin="1.0s" repeatCount="indefinite" path="M256,312 L438,392"/></circle>
+      <circle r="5" fill="#4F46E5"><animateMotion dur="2.5s" repeatCount="indefinite" path="M256,410 L438,408"/></circle>
+      <circle r="5" fill="#4F46E5"><animateMotion dur="2.6s" begin="0.5s" repeatCount="indefinite" path="M438,424 L256,482"/></circle>
+      <circle r="5" fill="#4F46E5"><animateMotion dur="2.8s" begin="0.9s" repeatCount="indefinite" path="M256,554 L438,440"/></circle>
+      <circle r="5" fill="#4F46E5"><animateMotion dur="2.5s" begin="0.3s" repeatCount="indefinite" path="M256,626 L438,452"/></circle>
+      <circle r="5" fill="#7c3aed"><animateMotion dur="2.2s" repeatCount="indefinite" path="M662,360 L836,190"/></circle>
+      <circle r="4" fill="#7c3aed"><animateMotion dur="2.2s" begin="1.1s" repeatCount="indefinite" path="M836,190 L662,360"/></circle>
+      <circle r="4" fill="#7c3aed"><animateMotion dur="3s" begin="0.5s" repeatCount="indefinite" path="M662,385 L836,298"/></circle>
+      <circle r="5" fill="#7c3aed"><animateMotion dur="2.6s" begin="0.3s" repeatCount="indefinite" path="M662,410 L836,428"/></circle>
+      <circle r="5" fill="#7c3aed"><animateMotion dur="2.6s" begin="1.4s" repeatCount="indefinite" path="M836,548 L662,435"/></circle>
+      <circle r="5" fill="#f59e0b"><animateMotion dur="2.4s" repeatCount="indefinite" path="M550,330 L550,250"/></circle>
+      <circle r="5" fill="#f59e0b"><animateMotion dur="2.6s" begin="0.9s" repeatCount="indefinite" path="M550,462 L550,540"/></circle>
+
+      <!-- Documents in (AI reads them) -->
+      <g>
+        <rect class="nbox" x="44" y="152" width="212" height="56" rx="11"/>
+        <image class="eco-ic" href="../img/eco-scanner.png" x="52" y="160" width="40" height="40">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -3; 0 0" dur="2.7s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="100" y="178">Scanner / ADF</text>
+        <text class="ns" x="100" y="195">vendor bills &amp; invoices</text>
+      </g>
+      <g>
+        <rect class="nbox" x="44" y="218" width="212" height="56" rx="11"/>
+        <image class="eco-ic" href="../img/eco-email.png" x="52" y="226" width="40" height="40">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -3; 0 0" dur="2.9s" begin="0.5s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="100" y="244">Email mailbox</text>
+        <text class="ns" x="100" y="261">read-only - bills + bank PDFs</text>
+      </g>
+      <g>
+        <rect class="nbox" x="44" y="284" width="212" height="56" rx="11"/>
+        <image class="eco-ic" href="../img/eco-phone.png" x="52" y="292" width="40" height="40">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -3; 0 0" dur="2.6s" begin="1.0s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="100" y="310">Phone photo</text>
+        <text class="ns" x="100" y="327">snap a bill - email it in</text>
+      </g>
+
+      <!-- People: Manager & committee -->
+      <g>
+        <rect class="nbox" x="44" y="380" width="212" height="60" rx="12"/>
+        <image class="eco-ic" href="../img/eco-manager.png" x="52" y="387" width="46" height="46">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -4; 0 0" dur="2.6s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="108" y="406">Manager &amp; committee</text>
+        <text class="ns" x="108" y="423">run the society on a PC</text>
+      </g>
+      <!-- People: Residents -->
+      <g>
+        <rect class="nbox" x="44" y="452" width="212" height="60" rx="12"/>
+        <image class="eco-ic" href="../img/eco-residents.png" x="52" y="459" width="46" height="46">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -4; 0 0" dur="2.4s" begin="0.6s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="108" y="478">Residents</text>
+        <text class="ns" x="108" y="495">free app - dues, chat, passes</text>
+      </g>
+      <!-- People: Security guard -->
+      <g>
+        <rect class="nbox" x="44" y="524" width="212" height="60" rx="12"/>
+        <image class="eco-ic" href="../img/eco-guard.png" x="52" y="531" width="46" height="46">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -4; 0 0" dur="2.8s" begin="0.3s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="108" y="550">Security guard</text>
+        <text class="ns" x="108" y="567">checks visitor codes at the gate</text>
+      </g>
+      <!-- People: Visitor -->
+      <g>
+        <rect class="nbox" x="44" y="596" width="212" height="60" rx="12"/>
+        <image class="eco-ic" href="../img/eco-visitor.png" x="52" y="603" width="46" height="46">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -4; 0 0" dur="2.5s" begin="0.9s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="108" y="622">Visitor</text>
+        <text class="ns" x="108" y="639">gets a pass on the phone</text>
+      </g>
+
+      <!-- Output: notices, passes, bills -->
+      <g>
+        <rect class="nbox" x="440" y="192" width="220" height="58" rx="10"/>
+        <text class="nt" x="550" y="218" text-anchor="middle">Notices, passes &amp; bills</text>
+        <text class="ns" x="550" y="236" text-anchor="middle">reach every resident</text>
+      </g>
+      <!-- Hub -->
+      <g>
+        <rect class="hub" x="438" y="330" width="224" height="132" rx="14"/>
+        <text class="ht" x="550" y="364" text-anchor="middle">RWA HQ</text>
+        <text class="hs" x="550" y="385" text-anchor="middle">on the manager's PC</text>
+        <text class="hs" x="550" y="403" text-anchor="middle">AI drafts bills - Billing - Accounts</text>
+        <text class="hs" x="550" y="421" text-anchor="middle">Complaints - Notices - Passes</text>
+        <text class="hs" x="550" y="439" text-anchor="middle">Resident app sync</text>
+      </g>
+      <!-- Output: reports -->
+      <g>
+        <rect class="nbox" x="440" y="540" width="220" height="58" rx="10"/>
+        <text class="nt" x="550" y="566" text-anchor="middle">Reports &amp; audit ledgers</text>
+        <text class="ns" x="550" y="584" text-anchor="middle">Excel - PDF - Print</text>
+      </g>
+
+      <!-- Cloud nodes -->
+      <g>
+        <rect class="nbox" x="836" y="158" width="200" height="64" rx="10"/>
+        <image class="eco-ic" href="../img/eco-ai.png" x="844" y="168" width="44" height="44">
+          <animateTransform attributeName="transform" type="translate" values="0 0; 0 -4; 0 0" dur="2.7s" begin="0.2s" repeatCount="indefinite"/>
+        </image>
+        <text class="nt" x="896" y="186">Anthropic AI</text>
+        <text class="ns" x="896" y="205">reads bills &amp; docs (your key)</text>
+      </g>
+      <g>
+        <rect class="nbox" x="836" y="270" width="200" height="56" rx="10"/>
+        <text class="nt" x="936" y="296" text-anchor="middle">Licence server</text>
+        <text class="ns" x="936" y="314" text-anchor="middle">activate &amp; validate</text>
+      </g>
+      <g>
+        <rect class="nbox" x="836" y="400" width="200" height="56" rx="10"/>
+        <text class="nt" x="936" y="426" text-anchor="middle">WhatsApp / Telegram</text>
+        <text class="ns" x="936" y="444" text-anchor="middle">reach the non-app residents</text>
+      </g>
+      <g>
+        <rect class="nbox" x="836" y="520" width="200" height="56" rx="10"/>
+        <text class="nt" x="936" y="546" text-anchor="middle">UPI / online payment</text>
+        <text class="ns" x="936" y="564" text-anchor="middle">residents pay dues</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="eco-legend">
+    <span><span class="dot" style="background:#0EA5A5"></span>Bills &amp; documents captured (scan, email, photo)</span>
+    <span><span class="dot" style="background:#4F46E5"></span>People &amp; the gate, working in</span>
+    <span><span class="dot" style="background:#7c3aed"></span>AI, licence, payments &amp; WhatsApp (cloud)</span>
+    <span><span class="dot" style="background:#f59e0b"></span>Notices, passes, bills &amp; reports going out</span>
   </div>
 </section>
 
@@ -154,19 +392,19 @@
     <div class="acc-item">
       <button class="acc-head">Maintenance &amp; billing <span class="chev">+</span></button>
       <div class="acc-body"><ul>
-        <li>Automatic monthly / quarterly maintenance bills</li>
+        <li class="adv">Automatic monthly / quarterly maintenance bills <span class="adv-badge">Advanced</span></li>
         <li>Fixed amount, or a rate per square foot, per flat</li>
-        <li>Late fees — a flat amount or a percentage</li>
+        <li class="adv">Late fees — a flat amount or a percentage <span class="adv-badge">Advanced</span></li>
         <li>Bill when you raise it, or only when the resident pays (proforma)</li>
         <li>GST on maintenance, handled correctly</li>
-        <li>Receipts, dues tracking and online payment</li>
+        <li class="adv">Receipts, dues tracking and online payment <span class="adv-badge">Advanced</span></li>
       </ul></div>
     </div>
     <div class="acc-item">
       <button class="acc-head">Society accounts <span class="chev">+</span></button>
       <div class="acc-body"><ul>
         <li>Proper double-entry society accounts</li>
-        <li>Dues register and ageing report</li>
+        <li class="adv">Dues register and ageing report <span class="adv-badge">Advanced</span></li>
         <li>Collection and GST reports</li>
         <li>Audit-ready ledgers</li>
         <li>Runs on the same engine as Accounts HQ</li>
@@ -193,10 +431,10 @@
       <button class="acc-head">Community &amp; resident app <span class="chev">+</span></button>
       <div class="acc-body"><ul>
         <li>Free resident app for iOS &amp; Android</li>
-        <li>Resident-to-resident chat — by flat number, no phone numbers shared</li>
-        <li>Photos in chat, and free 1-to-1 voice &amp; video calls, with no limits</li>
-        <li>“Who’s around right now” — the live society pulse</li>
-        <li>Share any notice or pass to WhatsApp &amp; Telegram</li>
+        <li class="adv">Resident-to-resident chat — by flat number, no phone numbers shared <span class="adv-badge">Advanced</span></li>
+        <li class="adv">Photos in chat, and free 1-to-1 voice &amp; video calls, with no limits <span class="adv-badge">Advanced</span></li>
+        <li class="adv">“Who’s around right now” — the live society pulse <span class="adv-badge">Advanced</span></li>
+        <li class="adv">Share any notice or pass to WhatsApp &amp; Telegram <span class="adv-badge">Advanced</span></li>
         <li>Dues, notices, complaints and passes, all on the phone</li>
       </ul></div>
     </div>
@@ -209,6 +447,73 @@
       </ul></div>
     </div>
   </div>
+</section>
+
+<!-- Pricing -->
+<section class="section" id="pricing">
+  <div class="section-head">
+    <div class="kicker">Pricing</div>
+    <h2>Priced for a society, <span class="hl">not a corporation.</span></h2>
+    <p>Start free. Upgrade when your society grows. No charge per flat, no surprise bills. Prices in INR per year.</p>
+  </div>
+
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div class="price-name">Free</div>
+      <div class="price-amt">Rs. 0</div>
+      <div class="price-tag">Up to 300 flats</div>
+      <ul class="price-feats">
+        <li>Member directory</li>
+        <li>Receipt tracking</li>
+        <li>Notice board, polls</li>
+        <li>Visitor passes</li>
+        <li>Basic reports</li>
+      </ul>
+      <a class="price-btn" href="../checkout.html?product=rwagenie&amp;plan=FREE">Download free</a>
+    </div>
+
+    <div class="price-card featured">
+      <div class="price-name">Standard</div>
+      <div class="price-amt">Rs. 2,999<span class="small">/yr</span></div>
+      <div class="price-tag">Up to 1,000 flats</div>
+      <ul class="price-feats">
+        <li>Everything in Free</li>
+        <li>Auto-billing &amp; late fees</li>
+        <li>Facilities booking</li>
+        <li>Asset register</li>
+        <li>Advanced reports</li>
+      </ul>
+      <a class="price-btn" href="../checkout.html?product=rwagenie&amp;plan=STANDARD">Buy Standard</a>
+    </div>
+
+    <div class="price-card">
+      <div class="price-name">Pro</div>
+      <div class="price-amt">Rs. 5,999<span class="small">/yr</span></div>
+      <div class="price-tag">Up to 2,500 flats</div>
+      <ul class="price-feats">
+        <li>Everything in Standard</li>
+        <li>WhatsApp invoices</li>
+        <li>Document storage</li>
+        <li>Vendor management</li>
+      </ul>
+      <a class="price-btn" href="../checkout.html?product=rwagenie&amp;plan=PRO">Buy Pro</a>
+    </div>
+
+    <div class="price-card">
+      <div class="price-name">Premium</div>
+      <div class="price-amt">Rs. 14,999<span class="small">/yr</span></div>
+      <div class="price-tag">Unlimited flats, large societies</div>
+      <ul class="price-feats">
+        <li>Everything in Pro</li>
+        <li>Unlimited flats</li>
+        <li>Multi-block / phase</li>
+        <li>Priority email support</li>
+      </ul>
+      <a class="price-btn" href="../checkout.html?product=rwagenie&amp;plan=PREMIUM">Buy Premium</a>
+    </div>
+  </div>
+
+  <p class="price-foot">Free to start — no payment information asked for the demo. Full comparison on the <a href="../pricing.html">pricing page</a>.</p>
 </section>
 
 <footer>
@@ -225,5 +530,6 @@
   document.querySelectorAll('.acc-head').forEach(function(h){h.onclick=function(){h.parentElement.classList.toggle('open');};});
 </script>
 
+  <script src="/chat-widget.js" defer></script>
 </body>
 </html>

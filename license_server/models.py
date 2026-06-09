@@ -261,3 +261,26 @@ class Order(Base):
     updated_at:          Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class ChatLearned(Base):
+    """Self-improving support-bot cache. Every AI answer the website chatbot
+    produces is stored here: it serves as an instant, free cache for repeat
+    questions AND a review queue. An operator promotes good ones (status
+    'approved') or drops junk ('discarded') via /admin/chat-review; discarded
+    questions are never re-cached. Promotion into the canonical docs/kb markdown
+    is a separate manual+rebake step — this table is the live runtime cache."""
+    __tablename__ = "chat_learned"
+
+    id:         Mapped[int]      = mapped_column(primary_key=True)
+    # Normalised question (lowercased, collapsed whitespace, stripped punctuation)
+    # used as the cache key.
+    qnorm:      Mapped[str]      = mapped_column(String(400), index=True)
+    question:   Mapped[str]      = mapped_column(String(1000), default="")
+    answer:     Mapped[str]      = mapped_column(String(4000), default="")
+    hits:       Mapped[int]      = mapped_column(Integer, default=1)
+    # pending | approved | discarded
+    status:     Mapped[str]      = mapped_column(String(12), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow,
+                                                 onupdate=datetime.utcnow)
