@@ -539,6 +539,27 @@ class DocumentReaderPage(QWidget):
         self._process_btn.setEnabled(True)
         self._vouchers = vouchers
 
+        # A4 vendor cache — for any extracted voucher whose vendor we've seen
+        # before, pre-fill the ledger mapping the user accepted last time so
+        # repeat invoices need no correction.
+        try:
+            from core import vendor_memory
+            for v in self._vouchers:
+                party = (v.get("party") or "").strip()
+                if not party:
+                    continue
+                cached = vendor_memory.recall(
+                    self._engine.db, self._engine.company_id, party)
+                if cached:
+                    v["dr_ledger"] = cached["dr_ledger"]
+                    v["cr_ledger"] = cached["cr_ledger"]
+                    if cached.get("voucher_type"):
+                        v["voucher_type"] = cached["voucher_type"]
+                    v["confidence"] = max(float(v.get("confidence", 0) or 0), 0.9)
+                    v["from_vendor_cache"] = True
+        except Exception:
+            pass
+
         if not vouchers:
             self._status.setText(
                 "No transactions found. Try a different document type."
@@ -743,6 +764,18 @@ class DocumentReaderPage(QWidget):
                 draft.source = "AI_DOC"
                 engine.post(draft)
                 posted += 1
+
+                # A4 vendor cache — remember the mapping the user accepted, so
+                # the next document from this vendor auto-fills.
+                try:
+                    party = (v.get("party") or "").strip()
+                    if party:
+                        from core import vendor_memory
+                        vendor_memory.remember(
+                            self._engine.db, self._engine.company_id, party,
+                            voucher_type=vtype, dr_ledger=dr_name, cr_ledger=cr_name)
+                except Exception:
+                    pass
 
             except VoucherValidationError as e:
                 errors.append(f"Row {r+1}: {'; '.join(e.errors)}")

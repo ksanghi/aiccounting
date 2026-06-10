@@ -401,6 +401,21 @@ CREATE INDEX IF NOT EXISTS idx_lsl_match         ON ledger_statement_lines(match
 CREATE INDEX IF NOT EXISTS idx_lstmt_ledger      ON ledger_statements(company_id, ledger_id);
 CREATE INDEX IF NOT EXISTS idx_migration_company ON migration_runs(company_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_period_locks_company ON period_locks(company_id, lock_from, lock_to);
+
+-- Document-AI vendor cache (A4): remembers the ledger mapping the user
+-- accepted for each vendor, so repeat invoices auto-fill. See core/vendor_memory.py.
+CREATE TABLE IF NOT EXISTS ai_vendor_memory (
+    id           INTEGER PRIMARY KEY,
+    company_id   INTEGER NOT NULL,
+    vendor_key   TEXT    NOT NULL,
+    voucher_type TEXT    DEFAULT '',
+    dr_ledger    TEXT    NOT NULL,
+    cr_ledger    TEXT    NOT NULL,
+    gst_rate     REAL    DEFAULT 0,
+    hits         INTEGER DEFAULT 1,
+    updated_at   TEXT    DEFAULT (datetime('now')),
+    UNIQUE(company_id, vendor_key)
+);
 """
 
 

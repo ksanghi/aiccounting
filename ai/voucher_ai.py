@@ -173,6 +173,7 @@ Start directly with [ and end with ].
     "amount": 1234.56,
     "narration": "clear human-readable description",
     "reference": "cheque/UTR/invoice number or empty string",
+    "party": "the vendor / supplier / customer name from the document, or empty string",
     "confidence": 0.95,
     "raw_line": "original text from document"
   }}
