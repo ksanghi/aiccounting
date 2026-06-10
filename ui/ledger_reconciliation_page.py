@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 
 from ui.theme import THEME
+from core.date_format import qt_format, format_iso
+from ui.table_utils import DateTableItem
 from ui.widgets import FilteredLedgerSearchEdit, SmartDateEdit
 from core.ledger_reconciliation import (
     LedgerReconciler, LocalParseFailed,
@@ -211,12 +213,12 @@ class LedgerReconciliationPage(QWidget):
             today.year() if today.month() >= 4 else today.year() - 1, 4, 1
         )
         self._period_from_edit = SmartDateEdit(fy_start)
-        self._period_from_edit.setDisplayFormat("dd-MMM-yyyy")
+        self._period_from_edit.setDisplayFormat(qt_format())
         self._period_from_edit.setFixedHeight(34)
         period_row.addWidget(self._period_from_edit)
         period_row.addWidget(QLabel("→"))
         self._period_to_edit = SmartDateEdit(today)
-        self._period_to_edit.setDisplayFormat("dd-MMM-yyyy")
+        self._period_to_edit.setDisplayFormat(qt_format())
         self._period_to_edit.setFixedHeight(34)
         period_row.addWidget(self._period_to_edit)
         period_row.addStretch()
@@ -401,7 +403,7 @@ class LedgerReconciliationPage(QWidget):
 
         for r, row in enumerate(self.reconciler.history_for_ledger(self._ledger_id)):
             self._history_table.insertRow(r)
-            self._history_table.setItem(r, 0, QTableWidgetItem(row["as_of_date"]))
+            self._history_table.setItem(r, 0, DateTableItem(row["as_of_date"]))
             self._history_table.setItem(r, 1, QTableWidgetItem(
                 f"₹ {row['book_balance']:,.2f}"
             ))
@@ -709,7 +711,7 @@ class LedgerReconciliationPage(QWidget):
         matched = self.reconciler.matched_lines(self._statement_id)
         self._matched_table.setRowCount(len(matched))
         for r, m in enumerate(matched):
-            self._matched_table.setItem(r, 0, QTableWidgetItem(m["txn_date"]))
+            self._matched_table.setItem(r, 0, DateTableItem(m["txn_date"]))
             self._matched_table.setItem(r, 1, QTableWidgetItem(m["sign"]))
             self._matched_table.setItem(r, 2, QTableWidgetItem(f"₹ {m['amount']:,.2f}"))
             self._matched_table.setItem(r, 3, QTableWidgetItem(m.get("voucher_number") or ""))
@@ -729,7 +731,7 @@ class LedgerReconciliationPage(QWidget):
         u_stmt = self.reconciler.unmatched_statement_lines(self._statement_id)
         self._unmatched_stmt_table.setRowCount(len(u_stmt))
         for r, s in enumerate(u_stmt):
-            date_item = QTableWidgetItem(s["txn_date"])
+            date_item = DateTableItem(s["txn_date"])
             # Carry the statement_line id on col 0 so bulk selection can
             # map a row back to its id.
             date_item.setData(Qt.ItemDataRole.UserRole, s["id"])
@@ -772,7 +774,7 @@ class LedgerReconciliationPage(QWidget):
         )
         self._unmatched_book_table.setRowCount(len(u_book))
         for r, b in enumerate(u_book):
-            self._unmatched_book_table.setItem(r, 0, QTableWidgetItem(b["voucher_date"]))
+            self._unmatched_book_table.setItem(r, 0, DateTableItem(b["voucher_date"]))
             self._unmatched_book_table.setItem(r, 1, QTableWidgetItem(b["voucher_number"] or ""))
             self._unmatched_book_table.setItem(r, 2, QTableWidgetItem(b["voucher_type"]))
             amt = (
@@ -795,7 +797,7 @@ class LedgerReconciliationPage(QWidget):
         ignored = self.reconciler.ignored_statement_lines(self._statement_id)
         self._ignored_table.setRowCount(len(ignored))
         for r, line in enumerate(ignored):
-            self._ignored_table.setItem(r, 0, QTableWidgetItem(line["txn_date"]))
+            self._ignored_table.setItem(r, 0, DateTableItem(line["txn_date"]))
             self._ignored_table.setItem(r, 1, QTableWidgetItem(line["sign"]))
             self._ignored_table.setItem(r, 2, QTableWidgetItem(
                 f"₹ {line['amount']:,.2f}"
@@ -932,7 +934,7 @@ class LedgerReconciliationPage(QWidget):
         row_to_id: dict[int, int] = {}
         for r, c in enumerate(candidates):
             row_to_id[r] = c["id"]
-            t.setItem(r, 0, QTableWidgetItem(c["voucher_date"]))
+            t.setItem(r, 0, DateTableItem(c["voucher_date"]))
             t.setItem(r, 1, QTableWidgetItem(c["voucher_number"] or ""))
             t.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             t.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
@@ -1020,7 +1022,7 @@ class LedgerReconciliationPage(QWidget):
             row_to_id[r] = c["id"]
             amt_val = float((c["cr_amount"] if use_cr else c["dr_amount"]) or 0)
             row_to_amt[r] = amt_val
-            t.setItem(r, 0, QTableWidgetItem(c["voucher_date"]))
+            t.setItem(r, 0, DateTableItem(c["voucher_date"]))
             t.setItem(r, 1, QTableWidgetItem(c["voucher_number"] or ""))
             t.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             t.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))

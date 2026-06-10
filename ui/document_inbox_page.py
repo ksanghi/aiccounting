@@ -388,7 +388,7 @@ class DocumentInboxPage(QWidget):
 
         # Approve row
         appr = QHBoxLayout()
-        self._approve_btn = QPushButton("✓  Approve & Post → Next")
+        self._approve_btn = QPushButton("✓  Approve & Post")
         self._approve_btn.setObjectName("btn_primary")
         self._approve_btn.setFixedHeight(34)
         self._approve_btn.clicked.connect(self._approve_current)
@@ -807,9 +807,7 @@ class DocumentInboxPage(QWidget):
 
         posted = (self._current_id, idx) in self._posted_keys
         self._approve_btn.setEnabled(not posted)
-        self._approve_btn.setText(
-            "✓ Posted" if posted else "✓  Approve & Post → Next"
-        )
+        self._approve_btn.setText("✓ Posted" if posted else "✓  Approve & Post")
 
         self._refresh_new_flags()
         # Pre-guess a group for any ledger that will be created.
@@ -875,12 +873,17 @@ class DocumentInboxPage(QWidget):
             )
             return
 
+        # Slow operation ahead (ledger create + post). Show it's working so a
+        # lagging post never looks like nothing happened.
+        self._set_posting_state(True)
+
         try:
             dr_id = self._ensure_ledger(
                 dr_name, self._f_dr_group.currentText() if self._dr_new else None)
             cr_id = self._ensure_ledger(
                 cr_name, self._f_cr_group.currentText() if self._cr_new else None)
         except Exception as e:
+            self._set_posting_state(False)
             QMessageBox.warning(self, "Ledger problem", str(e))
             return
 
@@ -905,9 +908,11 @@ class DocumentInboxPage(QWidget):
             draft.source = "AI_DOC"
             vid = engine.post(draft)
         except VoucherValidationError as e:
+            self._set_posting_state(False)
             QMessageBox.warning(self, "Could not post", "; ".join(e.errors))
             return
         except Exception as e:
+            self._set_posting_state(False)
             QMessageBox.warning(self, "Could not post", str(e))
             return
 
@@ -918,19 +923,59 @@ class DocumentInboxPage(QWidget):
             pass
 
         self._posted_keys.add((self._current_id, idx))
-        self._detail_status.setText(
-            f"✓ Posted voucher {idx + 1} of {len(self._drafts)}."
-        )
 
-        # All drafts for this document handled → mark the doc posted, move on.
+        # Mark the document done once every draft on it is posted (updates the
+        # queue on the left).
         if all((self._current_id, i) in self._posted_keys
                for i in range(len(self._drafts))):
             self._inbox.mark_posted(
                 self._current_id, voucher_id=vid if isinstance(vid, int) else None)
             self.refresh()
-            self._advance_to_next_doc()
-        else:
-            self._step_to_next_unposted()
+
+        # Unmistakable "done": blank the voucher and lock the button to
+        # "✓ Posted". We deliberately do NOT auto-jump to the next document —
+        # with a slow post the silent jump made it impossible to tell anything
+        # happened. Move on via Skip ▸ or by picking the next item in the queue.
+        self._blank_detail()
+        self._approve_btn.setEnabled(False)
+        self._approve_btn.setText("✓ Posted")
+        self._detail_status.setText(
+            f"✓ Posted voucher {idx + 1} of {len(self._drafts)}  —  pick the next document."
+        )
+        self._detail_status.setStyleSheet(
+            f"color:{THEME['success']}; font-weight:bold;")
+
+    def _set_posting_state(self, on: bool) -> None:
+        """Toggle the Approve button between its normal state and a disabled
+        'Posting…' state, repainting immediately so a slow post shows progress."""
+        self._approve_btn.setEnabled(not on)
+        self._approve_btn.setText("Posting…" if on else "✓  Approve & Post")
+        if on:
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+    def _blank_detail(self) -> None:
+        """Clear the editable voucher fields so a just-posted entry visibly
+        empties out. Guarded — a missing field never breaks the post."""
+        for w in (getattr(self, "_f_date", None), getattr(self, "_f_amount", None),
+                  getattr(self, "_f_narration", None), getattr(self, "_f_reference", None)):
+            try:
+                w.clear()
+            except Exception:
+                pass
+        for c in (getattr(self, "_f_dr", None), getattr(self, "_f_cr", None)):
+            try:
+                c.setEditText("")
+            except Exception:
+                pass
+        try:
+            self._f_source.clear()
+        except Exception:
+            pass
+        try:
+            self._f_conf.setText("")
+        except Exception:
+            pass
 
     def _step_to_next_unposted(self):
         n = len(self._drafts)

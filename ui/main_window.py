@@ -131,17 +131,24 @@ class MainWindow(QMainWindow):
         self._pages: list[tuple[str, str, QWidget, NavButton]] = []
         self._current_idx = -1
 
+        self._launcher = None
+
         self._setup_window()
         self._build_layout()
         self._build_pages()
         self._wire_shortcuts()
         self._select_page(0)
+        self._apply_nav_mode()
 
         # Backup reminder — fires 2 s after window opens (non-blocking)
         QTimer.singleShot(2000, self._check_backup_reminder)
 
         # First-run setup wizard (licence-aware) — once, after the window shows.
         QTimer.singleShot(900, self._maybe_setup_wizard)
+
+        # Self-update — quiet check ~4 s after launch; only speaks up if a newer
+        # released version exists. Manual check lives in Settings → Updates.
+        QTimer.singleShot(4000, lambda: self._check_updates(manual=False))
 
     # ── Window setup ──────────────────────────────────────────────────────────
 
@@ -238,44 +245,48 @@ class MainWindow(QMainWindow):
         self._nav_container.setSpacing(0)
         self._nav_container.setContentsMargins(0, 0, 0, 0)
         nav_outer.addLayout(self._nav_container)
-        nav_outer.addStretch()
 
-        self._nav_scroll.setWidget(nav_host)
-        sidebar_layout.addWidget(self._nav_scroll, 1)
+        # Secondary sidebar buttons — UNPINNED: they now live INSIDE the
+        # scrollable nav (right after the menu) and flow with it, instead of
+        # being frozen at the window bottom. They carry inline theme-coloured
+        # styles the global stylesheet doesn't cover, so _apply_chrome_theme()
+        # (re)applies them on every dark/light toggle; refs are stored for that.
+        nav_outer.addSpacing(10)
 
-        # Secondary sidebar buttons. These (and the nav containers above) carry
-        # inline, theme-coloured styles that the global stylesheet does NOT
-        # cover, so _apply_chrome_theme() (re)applies them — including on every
-        # dark/light toggle. Refs are stored so the toggle can re-skin them.
         theme_btn = QPushButton(self._theme_btn_label())
         theme_btn.setObjectName("theme_toggle")
         theme_btn.setFixedHeight(36)
         theme_btn.clicked.connect(self._toggle_theme)
-        sidebar_layout.addWidget(theme_btn)
+        nav_outer.addWidget(theme_btn)
         self._theme_btn = theme_btn
 
         setup_btn = QPushButton("  ⚙   Setup")
         setup_btn.setFixedHeight(36)
         setup_btn.clicked.connect(self.open_setup_wizard)
-        sidebar_layout.addWidget(setup_btn)
+        nav_outer.addWidget(setup_btn)
         self._setup_btn = setup_btn
 
         switch_btn = QPushButton("  🔄   Switch Company…")
         switch_btn.setFixedHeight(36)
         switch_btn.clicked.connect(self.change_company)
-        sidebar_layout.addWidget(switch_btn)
+        nav_outer.addWidget(switch_btn)
         self._switch_btn = switch_btn
 
         calc_btn = QPushButton("  ⌨   Calculator   (Alt+C)")
         calc_btn.setFixedHeight(36)
         calc_btn.clicked.connect(self._show_calculator)
-        sidebar_layout.addWidget(calc_btn)
+        nav_outer.addWidget(calc_btn)
         self._calc_btn = calc_btn
 
         # Version label
         ver = QLabel("v1.0  |  Python + SQLite")
-        sidebar_layout.addWidget(ver)
+        nav_outer.addWidget(ver)
         self._ver_lbl = ver
+
+        nav_outer.addStretch()
+
+        self._nav_scroll.setWidget(nav_host)
+        sidebar_layout.addWidget(self._nav_scroll, 1)
 
         root.addWidget(self._sidebar)
 
@@ -287,9 +298,37 @@ class MainWindow(QMainWindow):
         # Status bar
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+
+        # Navigation chrome (always visible, even when the sidebar is hidden):
+        #   ☰ Menu     → opens the tile launcher (Mode B)
+        #   ◧          → shows / hides the sidebar (Mode A auto-hide)
+        self._menu_btn = QPushButton("  ☰  Menu  ")
+        self._menu_btn.setObjectName("nav_menu_btn")
+        self._menu_btn.setToolTip("Open the menu launcher  (Ctrl+Q)")
+        self._menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._menu_btn.clicked.connect(self._open_launcher)
+        self.status.addWidget(self._menu_btn)
+
+        self._sidebar_toggle_btn = QPushButton("  ◧  ")
+        self._sidebar_toggle_btn.setObjectName("nav_sidebar_toggle")
+        self._sidebar_toggle_btn.setToolTip("Show / hide the sidebar")
+        self._sidebar_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
+        self.status.addWidget(self._sidebar_toggle_btn)
+
+        # AI-credits balance chip — always visible, click → the AI Wallet page.
+        self._credits_btn = QPushButton("💳  AI Credits")
+        self._credits_btn.setObjectName("nav_credits_btn")
+        self._credits_btn.setToolTip("AI credits balance — click to open the wallet")
+        self._credits_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._credits_btn.clicked.connect(
+            lambda: self.select_page_by_label("AI Credits"))
+        self.status.addWidget(self._credits_btn)
+
         self._all_co_label = QLabel("")
         self.status.addPermanentWidget(self._all_co_label)
         self._refresh_all_co_total()
+        self._refresh_credits_chip()
         self.status.showMessage(f"  {self._company_name}  |  Ready")
 
         # Paint the inline-styled chrome for the current theme.
@@ -335,6 +374,23 @@ class MainWindow(QMainWindow):
         self._all_co_label.setStyleSheet(
             f"color:{THEME['text_dim']}; font-size:10px; padding-right:10px;"
         )
+        # Status-bar nav chrome — themed pill buttons.
+        nav_chrome_qss = f"""
+            QPushButton {{
+                background: transparent; border: 1px solid {THEME['border']};
+                border-radius: 6px; padding: 2px 8px; margin: 2px 2px;
+                font-size: 11px; font-weight: bold;
+                color: {THEME['text_secondary']};
+            }}
+            QPushButton:hover {{
+                border-color: {THEME['accent']}; color: {THEME['accent']};
+            }}
+        """
+        for b in (getattr(self, "_menu_btn", None),
+                  getattr(self, "_sidebar_toggle_btn", None),
+                  getattr(self, "_credits_btn", None)):
+            if b is not None:
+                b.setStyleSheet(nav_chrome_qss)
 
     def _toggle_theme(self) -> None:
         """Flip light/dark, persist the choice, and re-skin the running app.
@@ -344,9 +400,19 @@ class MainWindow(QMainWindow):
         re-skin runs with window repaints suspended. Correctness: the inline-
         styled chrome and the per-state nav buttons are repainted explicitly,
         since the global stylesheet doesn't reach them."""
+        from ui.theme import get_theme_mode
+        new = "light" if get_theme_mode() == "dark" else "dark"
+        self._set_theme(new)
+
+    def _set_theme(self, new: str) -> None:
+        """Set light/dark explicitly (single source of truth), persist it, and
+        re-skin the running app. Both the sidebar toggle and the Settings-hub
+        theme card go through here, so theme lives in ONE place (user_prefs via
+        core.config) — no duplicate setting."""
         from ui.theme import get_theme_mode, set_theme_mode, get_stylesheet
         from core.config import set_theme_mode as persist_theme_mode
-        new = "light" if get_theme_mode() == "dark" else "dark"
+        if new not in ("light", "dark") or new == get_theme_mode():
+            return
         set_theme_mode(new)          # update live THEME dict
         persist_theme_mode(new)      # remember across restarts
 
@@ -360,8 +426,48 @@ class MainWindow(QMainWindow):
                 btn._update_style(idx == self._current_idx)
             if hasattr(self, "_theme_btn"):
                 self._theme_btn.setText(self._theme_btn_label())
+            # Keep the Settings-hub theme buttons in sync if they exist.
+            for k, b in getattr(self, "_theme_btns", {}).items():
+                b.setChecked(k == new)
         finally:
             self.setUpdatesEnabled(True)
+
+    # ── Navigation modes (sidebar / tile launcher) ─────────────────────────────
+
+    def _ensure_launcher(self):
+        """Lazily build the tile launcher (Mode B). One instance, shown/hidden."""
+        if getattr(self, "_launcher", None) is None:
+            from ui.nav_launcher import NavLauncher
+            self._launcher = NavLauncher(self)
+        return self._launcher
+
+    def _open_launcher(self) -> None:
+        self._ensure_launcher().open_launcher()
+
+    def _toggle_sidebar(self) -> None:
+        """Show / hide the sidebar rail (Mode A auto-hide). Persisted."""
+        vis = not self._sidebar.isVisible()
+        self._sidebar.setVisible(vis)
+        try:
+            from core.user_prefs import prefs
+            prefs.set("sidebar_hidden", not vis)
+        except Exception:
+            pass
+
+    def _apply_nav_mode(self) -> None:
+        """Apply the saved navigation style at startup.
+        'sidebar'  → rail visible (unless the user hid it last time).
+        'launcher' → rail hidden; the ☰ Menu button / Ctrl+Q is the way in."""
+        try:
+            from core.user_prefs import prefs
+            mode = prefs.get("nav_mode", "launcher")
+            hidden = bool(prefs.get("sidebar_hidden", False))
+        except Exception:
+            mode, hidden = "sidebar", False
+        if mode == "launcher":
+            self._sidebar.setVisible(False)
+        else:
+            self._sidebar.setVisible(not hidden)
 
     # ── Page registration ─────────────────────────────────────────────────────
 
@@ -397,7 +503,17 @@ class MainWindow(QMainWindow):
     def _maybe_setup_wizard(self) -> None:
         try:
             from core.user_prefs import prefs
+            # First launch — run it.
             if not prefs.get("setup_wizard_done"):
+                self.open_setup_wizard()
+                return
+            # Re-run on upgrade: if the current plan is higher than the plan the
+            # wizard last ran for, re-open it to set up the newly-unlocked
+            # features. Plans ordered FREE < STANDARD < PRO < PREMIUM.
+            order = {"FREE": 0, "STANDARD": 1, "PRO": 2, "PREMIUM": 3}
+            now_plan = (getattr(self.license_mgr, "plan", "") or "FREE").upper()
+            ran_plan = (prefs.get("setup_wizard_plan", "FREE") or "FREE").upper()
+            if order.get(now_plan, 0) > order.get(ran_plan, 0):
                 self.open_setup_wizard()
         except Exception:
             pass
@@ -835,6 +951,11 @@ class MainWindow(QMainWindow):
         lic_page.plan_changed.connect(self._on_plan_changed)
         self.register_page("License & Plan", "🔑", lic_page, section_above="ACCOUNT")
 
+        # AI Credits (wallet) — its own page so the balance isn't buried inside
+        # License. Also surfaced as an always-visible chip in the status bar.
+        from ui.wallet_page import WalletPage
+        self.register_page("AI Credits", "💳", WalletPage(lmgr))
+
         from ui.feedback_page import FeedbackPage
         feedback_page = FeedbackPage(self.license_mgr)
         self.register_page("Feedback", "💬", feedback_page)
@@ -876,6 +997,18 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 16, 8, 0)
         layout.setSpacing(20)
+
+        # ── Card: Navigation style (Mode A sidebar / Mode B launcher) ─────────
+        self._build_nav_mode_card(layout)
+
+        # ── Card: Date format (one pref, applied across all screens) ──────────
+        self._build_date_format_card(layout)
+
+        # ── Card: Theme (single source of truth — same as the sidebar toggle) ──
+        self._build_theme_card(layout)
+
+        # ── Card: Updates (version + Check for updates) ───────────────────────
+        self._build_updates_card(layout)
 
         # ── Card: Dr / Cr Label Style ─────────────────────────────────────────
         card = QFrame()
@@ -1004,10 +1137,181 @@ class MainWindow(QMainWindow):
         open_btn.clicked.connect(self._navigate_to_period_locks)
         p_card.addWidget(open_btn)
 
+        # Subclass hook — RWA HQ adds its own cards here (billing settings,
+        # facility approvals, WhatsApp/Meta + Broadcast dialogs) so all the
+        # scattered prefs land in this one hub. No-op in AccountsHQ.
+        try:
+            self._build_extra_settings_cards(layout)
+        except Exception:
+            import traceback
+            print("extra settings cards skipped:\n" + traceback.format_exc())
+
         layout.addStretch()
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
         return page
+
+    def _build_extra_settings_cards(self, layout: QVBoxLayout) -> None:
+        """Hook for subclasses to append product-specific Settings cards.
+        Base (AccountsHQ) adds nothing."""
+        return
+
+    def _build_nav_mode_card(self, layout: QVBoxLayout) -> None:
+        """Settings card: pick how you navigate between screens.
+        Mode A = the sidebar rail (grouped + hideable).
+        Mode B = a full-screen tile launcher opened on a key press."""
+        from core.user_prefs import prefs
+
+        card = self._pref_card("Navigation style", layout)
+        hint = QLabel(
+            "How you move between screens. Both can be used any time — this "
+            "sets the default. Tip: press Ctrl+Q (or the ☰ Menu button at the "
+            "bottom) to open the tile launcher whenever you like."
+        )
+        hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        hint.setWordWrap(True)
+        card.addWidget(hint)
+
+        choices = {
+            "sidebar":  ("Sidebar",
+                         "Grouped menu rail on the left. ☰ hides it when you want more room."),
+            "launcher": ("Tile launcher",
+                         "No rail. One key press shows every screen as tiles, grouped by category."),
+        }
+        current = prefs.get("nav_mode", "launcher")
+
+        row = QHBoxLayout()
+        self._nav_mode_btns: dict[str, QPushButton] = {}
+        for key, (short_lbl, desc) in choices.items():
+            btn = QPushButton(f"{short_lbl}\n{desc}")
+            btn.setCheckable(True)
+            btn.setFixedHeight(58)
+            btn.setChecked(key == current)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {THEME['border']};
+                    border-radius: 6px; padding: 4px 16px;
+                    font-size: 11px; color: {THEME['text_secondary']};
+                    background: transparent; text-align: left;
+                }}
+                QPushButton:checked {{
+                    background: {THEME['accent']}22;
+                    border-color: {THEME['accent']};
+                    color: {THEME['accent']}; font-weight: bold;
+                }}
+                QPushButton:hover:!checked {{ border-color: {THEME['accent']}; }}
+            """)
+            btn.clicked.connect(lambda _=False, k=key: self._apply_nav_mode_choice(k))
+            self._nav_mode_btns[key] = btn
+            row.addWidget(btn)
+        row.addStretch()
+        card.addLayout(row)
+
+    def _apply_nav_mode_choice(self, mode: str) -> None:
+        from core.user_prefs import prefs
+        prefs.set("nav_mode", mode)
+        if mode == "sidebar":
+            # Switching back to the rail un-hides it.
+            prefs.set("sidebar_hidden", False)
+        for k, b in getattr(self, "_nav_mode_btns", {}).items():
+            b.setChecked(k == mode)
+        self._apply_nav_mode()
+
+    def _build_date_format_card(self, layout: QVBoxLayout) -> None:
+        """Settings card: how dates are shown everywhere — date pickers and
+        table cells (Day Book, Reports, both Reconciliations, Period Lock,
+        voucher dates). One pref, applied app-wide."""
+        from core import date_format
+
+        card = self._pref_card("Date format", layout)
+        hint = QLabel(
+            "How dates appear throughout the app. Already-open screens pick "
+            "the new format up when you switch to them or reopen them."
+        )
+        hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        hint.setWordWrap(True)
+        card.addWidget(hint)
+
+        current = date_format.qt_format()
+        row = QHBoxLayout()
+        self._date_fmt_btns: dict[str, QPushButton] = {}
+        for key, label in date_format.OPTIONS:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setFixedHeight(46)
+            btn.setChecked(key == current)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {THEME['border']};
+                    border-radius: 6px; padding: 4px 16px;
+                    font-size: 11px; color: {THEME['text_secondary']};
+                    background: transparent; text-align: left;
+                }}
+                QPushButton:checked {{
+                    background: {THEME['accent']}22;
+                    border-color: {THEME['accent']};
+                    color: {THEME['accent']}; font-weight: bold;
+                }}
+                QPushButton:hover:!checked {{ border-color: {THEME['accent']}; }}
+            """)
+            btn.clicked.connect(lambda _=False, k=key: self._apply_date_format_choice(k))
+            self._date_fmt_btns[key] = btn
+            row.addWidget(btn)
+        row.addStretch()
+        card.addLayout(row)
+
+    def _apply_date_format_choice(self, fmt: str) -> None:
+        from core import date_format
+        date_format.set_format(fmt)
+        for k, b in getattr(self, "_date_fmt_btns", {}).items():
+            b.setChecked(k == fmt)
+        # Refresh the page the user is on so the change is visible immediately
+        # where the screen supports it.
+        try:
+            cur = self._stack.currentWidget()
+            if hasattr(cur, "refresh"):
+                cur.refresh()
+        except Exception:
+            pass
+
+    def _build_theme_card(self, layout: QVBoxLayout) -> None:
+        """Settings card: light / dark. Same single source as the sidebar
+        toggle (no duplicate combo elsewhere). RWA HQ's Society Settings used
+        to carry its own theme combo — that's removed; this is the one place."""
+        from ui.theme import get_theme_mode
+
+        card = self._pref_card("Theme", layout)
+        hint = QLabel("Light or dark appearance. Same as the toggle on the sidebar.")
+        hint.setStyleSheet(f"color:{THEME['text_dim']}; font-size:10px;")
+        card.addWidget(hint)
+
+        current = get_theme_mode()
+        row = QHBoxLayout()
+        self._theme_btns: dict[str, QPushButton] = {}
+        for key, label in (("light", "☀  Light"), ("dark", "🌙  Dark")):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setFixedHeight(40)
+            btn.setChecked(key == current)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid {THEME['border']};
+                    border-radius: 6px; padding: 4px 22px;
+                    font-size: 12px; color: {THEME['text_secondary']};
+                    background: transparent;
+                }}
+                QPushButton:checked {{
+                    background: {THEME['accent']}22;
+                    border-color: {THEME['accent']};
+                    color: {THEME['accent']}; font-weight: bold;
+                }}
+                QPushButton:hover:!checked {{ border-color: {THEME['accent']}; }}
+            """)
+            btn.clicked.connect(lambda _=False, k=key: self._set_theme(k))
+            self._theme_btns[key] = btn
+            row.addWidget(btn)
+        row.addStretch()
+        card.addLayout(row)
 
     # ── Financial-year card (per-company, not a per-machine pref) ─────────────
 
@@ -1147,6 +1451,80 @@ class MainWindow(QMainWindow):
         self.db.commit()
 
     # ── Settings-card helpers ─────────────────────────────────────────────────
+
+    # ── Self-update ───────────────────────────────────────────────────────
+    def _build_updates_card(self, layout: QVBoxLayout) -> None:
+        from PySide6.QtWidgets import QPushButton
+        from core.app_release import current_release
+        card_l = self._pref_card("Updates", layout)
+        self._version_lbl = QLabel(f"You're on version {current_release()}.")
+        self._version_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
+        card_l.addWidget(self._version_lbl)
+        self._check_btn = QPushButton("Check for updates")
+        self._check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._check_btn.clicked.connect(lambda: self._check_updates(manual=True))
+        card_l.addWidget(self._check_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+    def _check_updates(self, manual: bool) -> None:
+        """Check the licence server for a newer released version. Runs the
+        network call off the UI thread; manual=True also reports 'up to date'
+        and errors, while the startup check stays silent unless there's news."""
+        from PySide6.QtCore import QThread, QObject, Signal
+        t = getattr(self, "_update_thread", None)
+        if t is not None and t.isRunning():
+            return
+        if manual and hasattr(self, "_check_btn"):
+            self._check_btn.setEnabled(False)
+            self._check_btn.setText("Checking…")
+
+        class _Worker(QObject):
+            done = Signal(object)
+
+            def run(self):
+                try:
+                    from core.updater import check_for_update
+                    self.done.emit(check_for_update())
+                except Exception:
+                    self.done.emit(None)
+
+        self._update_thread = QThread(self)
+        self._update_worker = _Worker()
+        self._update_worker.moveToThread(self._update_thread)
+        self._update_thread.started.connect(self._update_worker.run)
+        self._update_worker.done.connect(
+            lambda res: self._on_update_result(res, manual))
+        self._update_worker.done.connect(self._update_thread.quit)
+        self._update_thread.start()
+
+    def _on_update_result(self, res, manual: bool) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        if hasattr(self, "_check_btn"):
+            self._check_btn.setEnabled(True)
+            self._check_btn.setText("Check for updates")
+        if res is None:
+            if manual:
+                QMessageBox.information(
+                    self, "Check for updates",
+                    "Couldn't check for updates right now. Please try again later.")
+            return
+        if not res.get("update"):
+            if manual:
+                QMessageBox.information(
+                    self, "Up to date",
+                    f"You're on the latest version ({res.get('current', '')}).")
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Update available")
+        notes = ("\n\n" + res["notes"]) if res.get("notes") else ""
+        box.setText(
+            f"A new version ({res.get('latest', '')}) is available.\n"
+            f"You're on {res.get('current', '')}.{notes}")
+        dl = box.addButton("Download", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is dl and res.get("url"):
+            import webbrowser
+            webbrowser.open(res["url"])
 
     def _pref_card(self, title: str, parent_layout: QVBoxLayout) -> QVBoxLayout:
         """Create a Settings card with a title, append it to `parent_layout`,
@@ -1439,6 +1817,19 @@ class MainWindow(QMainWindow):
         if hasattr(widget, "refresh"):
             widget.refresh()
 
+        # AI usage may have changed the balance — keep the status-bar chip live.
+        self._refresh_credits_chip()
+
+    def _refresh_credits_chip(self) -> None:
+        btn = getattr(self, "_credits_btn", None)
+        if btn is None:
+            return
+        try:
+            from ai.credit_manager import CreditManager
+            btn.setText(f"💳  {CreditManager().balance_display}")
+        except Exception:
+            btn.setText("💳  AI Credits")
+
     def _on_voucher_posted(self, vno: str, vtype: str, amount: float):
         self.status.showMessage(
             f"  ✓  {vno}  posted  |  ₹{amount:,.2f}  |  {self._company_name}"
@@ -1546,6 +1937,15 @@ class MainWindow(QMainWindow):
         calc_sc = QShortcut(QKeySequence("Alt+C"), self)
         calc_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
         calc_sc.activated.connect(self._show_calculator)
+
+        # Tile launcher (Mode B): Ctrl+Q (one-hand, left side) + the physical
+        # Menu key. No typing.
+        launcher_sc = QShortcut(QKeySequence("Ctrl+Q"), self)
+        launcher_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        launcher_sc.activated.connect(self._open_launcher)
+        menu_key_sc = QShortcut(QKeySequence(Qt.Key.Key_Menu), self)
+        menu_key_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        menu_key_sc.activated.connect(self._open_launcher)
         # Number keys 1-9 jump to nav pages
         for i in range(min(9, 9)):
             QShortcut(QKeySequence(f"Ctrl+{i+1}"), self).activated.connect(

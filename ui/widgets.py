@@ -1139,7 +1139,8 @@ class SmartDateEdit(QWidget):
 
     def __init__(self, initial: QDate | None = None, parent=None):
         super().__init__(parent)
-        self._fmt = "dd-MMM-yyyy"
+        from core.date_format import qt_format
+        self._fmt = qt_format()
         self._min: QDate | None = None
         self._max: QDate | None = None
         self._date = initial if isinstance(initial, QDate) else QDate.currentDate()

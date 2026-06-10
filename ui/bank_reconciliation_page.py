@@ -22,6 +22,7 @@ from PySide6.QtCore import Qt, QDate, Signal, QThread
 from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME
+from core.date_format import qt_format, format_iso
 from ui.widgets import FilteredLedgerSearchEdit, AmountEdit, SmartDateEdit
 from core.bank_reconciliation import (
     BankReconciler,
@@ -32,7 +33,7 @@ from core.bank_reconciliation import (
     UnverifiedStatement,
 )
 from core.voucher_engine import VoucherDraft, VoucherLine
-from ui.table_utils import NumericTableItem, make_sortable, populating
+from ui.table_utils import NumericTableItem, DateTableItem, make_sortable, populating
 
 
 # ── Background worker for import + auto-match ────────────────────────────────
@@ -365,7 +366,7 @@ class _FindCandidateDialog(QDialog):
                 float(c["cr_amount"] or 0)
             )
             self._row_to_amount[r] = amt_val
-            self._table.setItem(r, 0, QTableWidgetItem(c["voucher_date"]))
+            self._table.setItem(r, 0, DateTableItem(c["voucher_date"]))
             self._table.setItem(r, 1, QTableWidgetItem(c["voucher_number"] or ""))
             self._table.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             self._table.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
@@ -704,14 +705,14 @@ class BankReconciliationPage(QWidget):
         fy_start = QDate(today.year() if today.month() >= 4 else today.year() - 1,
                          4, 1)
         self._period_from_edit = SmartDateEdit(fy_start)
-        self._period_from_edit.setDisplayFormat("dd-MMM-yyyy")
+        self._period_from_edit.setDisplayFormat(qt_format())
         self._period_from_edit.setFixedHeight(36)
         period_row.addWidget(self._period_from_edit)
 
         period_row.addWidget(QLabel("→"))
 
         self._period_to_edit = SmartDateEdit(today)
-        self._period_to_edit.setDisplayFormat("dd-MMM-yyyy")
+        self._period_to_edit.setDisplayFormat(qt_format())
         self._period_to_edit.setFixedHeight(36)
         period_row.addWidget(self._period_to_edit)
         period_row.addStretch()
@@ -1008,7 +1009,7 @@ class BankReconciliationPage(QWidget):
         rows = self.reconciler.history_for_ledger(self._bank_ledger_id)
         self._history_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
-            self._history_table.setItem(r, 0, QTableWidgetItem(row["as_of_date"]))
+            self._history_table.setItem(r, 0, DateTableItem(row["as_of_date"]))
             self._history_table.setItem(r, 1, NumericTableItem(
                 f"₹ {row['book_balance']:,.2f}", row["book_balance"]
             ))
@@ -1514,7 +1515,7 @@ class BankReconciliationPage(QWidget):
         with populating(self._matched_table):
             self._matched_table.setRowCount(len(matched))
             for r, m in enumerate(matched):
-                self._matched_table.setItem(r, 0, QTableWidgetItem(m["txn_date"]))
+                self._matched_table.setItem(r, 0, DateTableItem(m["txn_date"]))
                 self._matched_table.setItem(r, 1, QTableWidgetItem(m["sign"]))
                 self._matched_table.setItem(r, 2, NumericTableItem(
                     f"₹ {m['amount']:,.2f}", m["amount"]
@@ -1538,7 +1539,7 @@ class BankReconciliationPage(QWidget):
         with populating(self._unmatched_stmt_table):
             self._unmatched_stmt_table.setRowCount(len(u_stmt))
             for r, s in enumerate(u_stmt):
-                date_item = QTableWidgetItem(s["txn_date"])
+                date_item = DateTableItem(s["txn_date"])
                 # Carry the statement_line.id on column 0 so multi-select
                 # bulk actions can map row → id.
                 date_item.setData(Qt.ItemDataRole.UserRole, s["id"])
@@ -1584,7 +1585,7 @@ class BankReconciliationPage(QWidget):
         with populating(self._unmatched_book_table):
             self._unmatched_book_table.setRowCount(len(u_book))
             for r, b in enumerate(u_book):
-                self._unmatched_book_table.setItem(r, 0, QTableWidgetItem(b["voucher_date"]))
+                self._unmatched_book_table.setItem(r, 0, DateTableItem(b["voucher_date"]))
                 self._unmatched_book_table.setItem(r, 1, QTableWidgetItem(b["voucher_number"] or ""))
                 self._unmatched_book_table.setItem(r, 2, QTableWidgetItem(b["voucher_type"]))
                 amt = (
@@ -1613,7 +1614,7 @@ class BankReconciliationPage(QWidget):
         with populating(self._ignored_table):
             self._ignored_table.setRowCount(len(ignored))
             for r, s in enumerate(ignored):
-                self._ignored_table.setItem(r, 0, QTableWidgetItem(s["txn_date"]))
+                self._ignored_table.setItem(r, 0, DateTableItem(s["txn_date"]))
                 self._ignored_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
                 self._ignored_table.setItem(r, 2, NumericTableItem(
                     f"₹ {s['amount']:,.2f}", s["amount"]

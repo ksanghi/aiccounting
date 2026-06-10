@@ -11,8 +11,10 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QColor
 
 from ui.theme   import THEME, VOUCHER_COLOURS
+from core.date_format import qt_format, format_iso
 from ui.widgets import make_label, SmartDateEdit
 from ui.table_utils import make_sortable, apply_text_filter
+from ui.table_utils import DateTableItem
 from core.i18n   import format_currency
 
 
@@ -111,19 +113,19 @@ class _ReportBase(QWidget):
         if self.AS_OF:
             frow.addWidget(make_label("As of"))
             self.as_of = SmartDateEdit(QDate.currentDate())
-            self.as_of.setDisplayFormat("dd-MMM-yyyy")
+            self.as_of.setDisplayFormat(qt_format())
             self.as_of.setFixedHeight(30)
             frow.addWidget(self.as_of)
         else:
             frow.addWidget(make_label("From"))
             self.from_date = SmartDateEdit(_fy_start())
-            self.from_date.setDisplayFormat("dd-MMM-yyyy")
+            self.from_date.setDisplayFormat(qt_format())
             self.from_date.setFixedHeight(30)
             frow.addWidget(self.from_date)
 
             frow.addWidget(make_label("To"))
             self.to_date = SmartDateEdit(QDate.currentDate())
-            self.to_date.setDisplayFormat("dd-MMM-yyyy")
+            self.to_date.setDisplayFormat(qt_format())
             self.to_date.setFixedHeight(30)
             frow.addWidget(self.to_date)
 
@@ -726,7 +728,7 @@ class _LedgerBookPage(_ReportBase):
         for tx in book["transactions"]:
             r = t.rowCount()
             t.insertRow(r)
-            t.setItem(r, 0, _item(tx["date"]))
+            t.setItem(r, 0, DateTableItem(tx["date"]))
             t.item(r, 0).setData(Qt.ItemDataRole.UserRole, tx.get("voucher_id"))
             t.setItem(r, 1, _item(tx["voucher_no"]))
             t.setItem(r, 2, _item(tx["voucher_type"].replace("_"," ")))
@@ -1073,7 +1075,7 @@ class GSTR1Page(_ReportBase):
         self._table.setRowCount(len(rows))
         for i, r in enumerate(rows):
             self._table.setItem(i, 0, _item(r["invoice_no"]))
-            self._table.setItem(i, 1, _item(r["invoice_date"]))
+            self._table.setItem(i, 1, DateTableItem(r["invoice_date"]))
             self._table.setItem(i, 2, _item(r["party"]))
             self._table.setItem(i, 3, _item(r["gstin"]))
             self._table.setItem(i, 4, _item(r["pos"]))
@@ -1678,13 +1680,13 @@ class LedgerAccountPage(_ReportBase):
         h.addSpacing(8)
         h.addWidget(make_label("From"))
         self.from_date = SmartDateEdit(_fy_start())
-        self.from_date.setDisplayFormat("dd-MMM-yyyy")
+        self.from_date.setDisplayFormat(qt_format())
         self.from_date.setFixedHeight(28)
         h.addWidget(self.from_date)
 
         h.addWidget(make_label("To"))
         self.to_date = SmartDateEdit(QDate.currentDate())
-        self.to_date.setDisplayFormat("dd-MMM-yyyy")
+        self.to_date.setDisplayFormat(qt_format())
         self.to_date.setFixedHeight(28)
         h.addWidget(self.to_date)
 
@@ -1801,7 +1803,7 @@ class LedgerAccountPage(_ReportBase):
             r = t.rowCount()
             t.insertRow(r)
             row_to_voucher[r] = tx["voucher_id"]
-            t.setItem(r, 0, _item(tx["date"]))
+            t.setItem(r, 0, DateTableItem(tx["date"]))
             t.setItem(r, 1, _item(tx["voucher_no"]))
             t.setItem(r, 2, _item(tx["type"].replace("_", " ")))
             t.setItem(r, 3, _item(tx.get("party", "")))

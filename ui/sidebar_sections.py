@@ -1,39 +1,40 @@
 """
-Collapsible sidebar sections — shared base UI.
+Collapsible sidebar sections — navigation Mode A (shared base UI).
 
 MainWindow.register_page() builds the sidebar linearly (a NavButton per page
-plus optional section-header labels). With GST/TDS reports, reconciliation,
-and the Document Inbox added, AHQ's sidebar now runs long. This module
-post-processes that flat list into collapsible groups:
+plus optional section-header labels). This module post-processes that flat
+list into a THREE-level collapsible tree, driven by ui/menu_tree.py:
 
-  ▾ TRANSACTIONS   ← expanded
-        Post Voucher
-        Day Book
+  ▾ ACCOUNTING            ← section (collapsible)
+        ENTRY             ← group sub-header (the middle level)
+          Post Voucher    ← page
+          Auto Post
+        RECONCILIATION
+          Bank Reconciliation
   ▸ REPORTS
-  ▸ TAX
+  ▸ TOOLS
   …
 
-This was originally built in RWAGenie (rwagenie/app/sidebar.py); it's been
-moved DOWN into the AHQ base so AHQ gets the grouped menu too, and RHQ can
-share the same widget. RHQ keeps its own RWA-specific section map and skips
-the base grouping (it overrides MainWindow._finalize_sidebar to a no-op and
-groups with its own map after adding RWA pages).
+The section/group assignment lives entirely in ui/menu_tree.py so the sidebar
+(this file) and the tile launcher (ui/nav_launcher.py) can never drift.
 
-The NavButton widgets are reused (re-parented), so navigation click wiring
-through MainWindow._select_page() stays intact.
+The NavButton widgets are reused (re-parented), so the click wiring through
+MainWindow._select_page() stays intact. RHQ keeps its own sidebar map
+(rwagenie/app/sidebar.py) and overrides _finalize_sidebar.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QSizePolicy
 
 from ui.theme import THEME
+from ui import menu_tree
 
 
 class CollapsibleSection(QWidget):
-    """A clickable section header that shows/hides a stack of NavButtons.
-    Emits expanded_changed(is_expanded) so the host can enforce accordion
-    behaviour (open one → collapse the rest)."""
+    """A clickable section header that shows/hides a stack of NavButtons
+    (optionally split by group sub-headers). Emits expanded_changed so the
+    host can enforce accordion behaviour (open one → collapse the rest)."""
 
     expanded_changed = Signal(bool)
 
@@ -64,6 +65,16 @@ class CollapsibleSection(QWidget):
     def add_button(self, button: QWidget) -> None:
         button.setParent(self._body)
         self._body_layout.addWidget(button)
+
+    def add_subheader(self, text: str) -> None:
+        """A small group label inside the section body (the middle level)."""
+        if not text:
+            return
+        lbl = QLabel(text.upper())
+        lbl.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:9px; font-weight:bold;"
+            " letter-spacing:1px; padding:6px 14px 2px;")
+        self._body_layout.addWidget(lbl)
 
     def is_empty(self) -> bool:
         return self._body_layout.count() == 0
@@ -98,84 +109,37 @@ class CollapsibleSection(QWidget):
         """)
 
 
-# ── AHQ section map (case-insensitive substring; first match wins; anything
-# unmatched lands in "Other" so a page is never dropped). ────────────────────
-_LABEL_TO_SECTION: list[tuple[str, str]] = [
-    ("Post Voucher",     "Transactions"),
-    ("Day Book",         "Transactions"),
-    ("Ledger Balances",  "Transactions"),
-    ("Verbal",           "Transactions"),
-    ("Reconcil",         "Reconciliation"),   # before the report/book matches
-    ("Trial Balance",    "Reports"),
-    ("Profit",           "Reports"),
-    ("P & L",            "Reports"),
-    ("P&L",              "Reports"),
-    ("Balance Sheet",    "Reports"),
-    ("Cash Book",        "Reports"),
-    ("Bank Book",        "Reports"),
-    ("Ledger Account",   "Reports"),
-    ("Receipt",          "Reports"),
-    ("Rcpt",             "Reports"),
-    ("Aging",            "Reports"),
-    ("Ageing",           "Reports"),
-    ("Bill-wise",        "Reports"),
-    ("Cash-Flow",        "Reports"),
-    ("GST",              "Tax"),
-    ("TDS",              "Tax"),
-    ("HSN",              "Tax"),
-    ("Document Inbox",   "AI"),
-    ("AI Doc",           "AI"),
-    ("Backup",           "Data"),
-    ("Migration",        "Data"),
-    ("Period Lock",      "Data"),
-    ("License",          "Account"),
-    ("Feedback",         "Account"),
-    ("Settings",         "Account"),
-]
-
-# Section order top→bottom; bool = expanded by default.
-SECTION_ORDER: list[tuple[str, bool]] = [
-    ("Transactions",   True),
-    ("Reports",        False),
-    ("Tax",            False),
-    ("Reconciliation", False),
-    ("AI",             False),
-    ("Data",           False),
-    ("Account",        False),
-    ("Other",          False),
-]
-
-
+# Back-compat shim — some code may still import this. Delegates to menu_tree.
 def section_for_label(label: str) -> str:
-    lower = (label or "").lower()
-    for needle, section in _LABEL_TO_SECTION:
-        if needle.lower() in lower:
-            return section
-    return "Other"
+    return menu_tree.resolve(label)[0]
 
 
 def regroup_into_sections(window) -> None:
-    """Rebuild window's flat sidebar (_nav_container of NavButtons + section
-    QLabels) into collapsible sections. Operates on window._pages (the
-    authoritative page list) and window._nav_container. Safe to call once
-    after all pages are registered."""
+    """Mode A sidebar. Now a compact header rail + hover flyout (see
+    ui/nav_flyout.py) rather than an inline accordion — the section contents
+    fly out over the content area, open on hover/click, show one at a time,
+    and auto-collapse when a page is picked."""
+    from ui.nav_flyout import build_flyout_rail
+    build_flyout_rail(window)
+    return
+
+
+def _regroup_accordion_legacy(window) -> None:
+    """Previous inline-accordion grouping — kept for reference, unused."""
     nav = getattr(window, "_nav_container", None)
     pages = getattr(window, "_pages", None)
     if nav is None or pages is None:
         return
 
-    # 1. Bucket each page's NavButton by section.
-    buckets: dict[str, list] = {name: [] for name, _ in SECTION_ORDER}
+    # 1. Drop the Home nav button (reached via the logo, not the menu); keep
+    #    the rest as (label, button) items for the tree builder.
+    items = []
     for entry in pages:
-        # MainWindow stores (label, icon, widget, button) tuples.
         label, btn = entry[0], entry[-1]
-        # Home has no sidebar link — it's reached via the app logo. Drop its
-        # nav button entirely rather than bucketing it into a section.
         if (label or "").strip().lower() == "home":
             btn.setParent(None)
             continue
-        sec = section_for_label(label)
-        buckets.setdefault(sec, []).append(btn)
+        items.append((label, btn))
 
     # 2. Detach everything currently in the nav (buttons + old header labels).
     while nav.count() > 0:
@@ -184,15 +148,19 @@ def regroup_into_sections(window) -> None:
         if w is not None:
             w.setParent(None)
 
-    # 3. Rebuild as one CollapsibleSection per non-empty bucket.
+    # 3. Build the tree and rebuild as collapsible sections with group
+    #    sub-headers.
+    tree = menu_tree.build_tree(items, label_of=lambda it: it[0])
     sections: list[CollapsibleSection] = []
-    for sec_name, expanded in SECTION_ORDER:
-        btns = buckets.get(sec_name, [])
-        if not btns:
-            continue
+    for sec_name, groups in tree:
+        expanded = sec_name in menu_tree.DEFAULT_EXPANDED
         section = CollapsibleSection(sec_name, expanded=expanded)
-        for btn in btns:
-            section.add_button(btn)
+        multi = sum(1 for g, _ in groups if g) > 0
+        for group_name, group_items in groups:
+            if multi:
+                section.add_subheader(group_name)
+            for _label, btn in group_items:
+                section.add_button(btn)
         nav.addWidget(section)
         sections.append(section)
 

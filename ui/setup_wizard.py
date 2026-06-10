@@ -55,26 +55,96 @@ def _skip_note() -> QLabel:
     return lbl
 
 
+class _Choice(QPushButton):
+    """A selectable option that shows an explicit ✓ when chosen — clearer than a
+    colour-filled radio/checkbox. Put mutually-exclusive options in a
+    QButtonGroup; use standalone for a yes/no toggle."""
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self._label = text
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(
+            "QPushButton{text-align:left; padding:11px 14px; border:1px solid "
+            f"{THEME['border']}; border-radius:8px; background:transparent; "
+            f"color:{THEME['text_primary']}; font-size:13px;}}"
+            f"QPushButton:checked{{border-color:{THEME['accent']}; "
+            f"color:{THEME['accent']}; font-weight:bold;}}")
+        self.toggled.connect(self._render)
+        self._render(self.isChecked())
+
+    def _render(self, on: bool):
+        self.setText(("✓   " if on else "      ") + self._label)
+
+
+_FY_PRESETS = [
+    ("04-01", "April – March (India default)"),
+    ("01-01", "January – December"),
+    ("07-01", "July – June"),
+    ("10-01", "October – September"),
+]
+
+
+def _fy_label(val: str) -> str:
+    for v, lbl in _FY_PRESETS:
+        if v == val:
+            return lbl
+    return f"Custom ({val})"
+
+
+def _locked_banner(tier: str, on_upgrade) -> QFrame:
+    """Shown in place of a feature's controls when the current plan doesn't
+    include it — so the user SEES the feature (and what unlocks it) instead of
+    it being hidden. 'all-tier, not a tier-gated tour'."""
+    f = QFrame(); f.setObjectName("card")
+    l = QVBoxLayout(f); l.setContentsMargins(14, 12, 14, 12); l.setSpacing(6)
+    head = QLabel(f"🔒  Unlocks with {tier}")
+    head.setStyleSheet(f"color:{THEME['accent']}; font-weight:bold; font-size:13px;")
+    l.addWidget(head)
+    note = QLabel("You don't have this on your current plan. Upgrade to switch it on — "
+                  "your other settings stay as they are.")
+    note.setWordWrap(True); note.setStyleSheet(f"color:{THEME['text_secondary']};")
+    l.addWidget(note)
+    btn = QPushButton(f"Upgrade to {tier}")
+    btn.clicked.connect(on_upgrade)
+    l.addWidget(btn, alignment=Qt.AlignmentFlag.AlignLeft)
+    return f
+
+
 # ── Pages ──────────────────────────────────────────────────────────────────────
 
 class _Page(QWizardPage):
+    # Subclasses set `feature` (licence id) + `tier` (what unlocks it). When the
+    # current plan lacks the feature the page is shown LOCKED (upgrade teaser
+    # instead of controls) rather than hidden — all-tier, not a tier-gated tour.
+    feature: str | None = None
+    tier: str = "Standard"
+
     def __init__(self, wizard):
         super().__init__()
         self.wiz = wizard
+        self.locked = bool(self.feature) and not wizard._has(self.feature)
         self._lay = QVBoxLayout(self)
         self._lay.setSpacing(10)
 
     def add(self, w):
         self._lay.addWidget(w)
 
+    def add_locked(self) -> bool:
+        """Render the upgrade teaser (call after the why/what block, then
+        `return` so the page skips its locked controls)."""
+        self.add(_locked_banner(self.tier, self.wiz._open_upgrade))
+        return True
+
     def save(self):
         pass
 
     def validatePage(self):
-        try:
-            self.save()
-        except Exception:
-            pass
+        if not self.locked:
+            try:
+                self.save()
+            except Exception:
+                pass
         return True
 
 
@@ -103,12 +173,23 @@ class LookFeelPage(_Page):
             "10 seconds. No downside — change it any time in the sidebar."))
         row = QHBoxLayout()
         row.addWidget(QLabel("Theme:"))
-        self._light = QRadioButton("Light"); self._dark = QRadioButton("Dark")
+        self._light = _Choice("Light"); self._dark = _Choice("Dark")
         from core.config import current_theme_mode
         (self._dark if current_theme_mode() == "dark" else self._light).setChecked(True)
-        g = QButtonGroup(self); g.addButton(self._light); g.addButton(self._dark)
+        g = QButtonGroup(self); g.setExclusive(True)
+        g.addButton(self._light); g.addButton(self._dark)
         row.addWidget(self._light); row.addWidget(self._dark); row.addStretch()
         self._lay.addLayout(row)
+
+        # Menu style (the navigation mode — Mode A sidebar / Mode B launcher).
+        self._lay.addWidget(QLabel("Menu style:"))
+        self._nav_sidebar = _Choice("Sidebar — a list down the left (classic)")
+        self._nav_launcher = _Choice("Launcher — a tile grid you open with one key (modern)")
+        navg = QButtonGroup(self); navg.setExclusive(True)
+        navg.addButton(self._nav_sidebar); navg.addButton(self._nav_launcher)
+        (self._nav_launcher if prefs.get("nav_mode", "sidebar") == "launcher"
+         else self._nav_sidebar).setChecked(True)
+        self._lay.addWidget(self._nav_sidebar); self._lay.addWidget(self._nav_launcher)
 
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Debit/Credit wording:"))
@@ -145,9 +226,13 @@ class LookFeelPage(_Page):
             pass
         set_label_style(self._style.currentData())
         prefs.set("default_voucher_date", self._date.currentData())
+        prefs.set("nav_mode",
+                  "launcher" if self._nav_launcher.isChecked() else "sidebar")
 
 
 class GSTPage(_Page):
+    feature = "gst"; tier = "Pro"
+
     def __init__(self, wizard):
         super().__init__(wizard)
         self.setTitle("GST")
@@ -158,6 +243,8 @@ class GSTPage(_Page):
             "username too if you want GSTR-2B reconciliation pulled for you.",
             "Just type your GSTIN (15 chars) and pick your state. The portal username is "
             "optional and only needed for automatic 2B."))
+        if self.locked:
+            self.add_locked(); return
         row = wizard._company_row()
         self._gstin = QLineEdit(row.get("gstin") or ""); self._gstin.setPlaceholderText("22ABCDE1234F1Z5")
         self._state = QLineEdit(row.get("state_code") or "07"); self._state.setPlaceholderText("State code e.g. 07")
@@ -176,6 +263,8 @@ class GSTPage(_Page):
 
 
 class TDSPage(_Page):
+    feature = "tds"; tier = "Pro"
+
     def __init__(self, wizard):
         super().__init__(wizard)
         self.setTitle("TDS")
@@ -183,6 +272,8 @@ class TDSPage(_Page):
         self.add(_why_what(
             "Your TAN lets Accounts HQ produce TDS reports and a section-wise TDS register.",
             "Just type your 10-character TAN. Skip if you don't deduct TDS."))
+        if self.locked:
+            self.add_locked(); return
         row = wizard._company_row()
         self._tan = QLineEdit(row.get("tan") or ""); self._tan.setPlaceholderText("e.g. DELA12345B")
         r = QHBoxLayout(); r.addWidget(QLabel("TAN:")); r.addWidget(self._tan, 1)
@@ -194,6 +285,8 @@ class TDSPage(_Page):
 
 
 class BillWisePage(_Page):
+    feature = "bill_wise_refs"; tier = "Pro"
+
     def __init__(self, wizard):
         super().__init__(wizard)
         self.setTitle("Track invoices bill-by-bill")
@@ -203,7 +296,9 @@ class BillWisePage(_Page):
             "overdue each one is — not just their overall balance.",
             "One extra click when recording a receipt/payment: “Allocate to bills…”. If you "
             "don't turn it on, parties are tracked by their overall balance as usual."))
-        self._chk = QCheckBox("Yes, let me allocate receipts/payments to specific bills")
+        if self.locked:
+            self.add_locked(); return
+        self._chk = _Choice("Yes — let me allocate receipts/payments to specific bills")
         self._chk.setChecked(bool(prefs.get("bill_wise_enabled", True)))
         self.add(self._chk)
 
@@ -211,36 +306,67 @@ class BillWisePage(_Page):
         prefs.set("bill_wise_enabled", self._chk.isChecked())
 
 
-class AIKeyPage(_Page):
+class AIChoicePage(_Page):
+    feature = "ai_document_reader"; tier = "Pro"
+
     def __init__(self, wizard):
         super().__init__(wizard)
-        self.setTitle("AI document reading (your own key)")
+        self.setTitle("AI document reading")
         self.setSubTitle("Let AI read invoices and draft the vouchers.")
         self.add(_why_what(
             "Drop or email an invoice and the AI reads it, decides its type and drafts the "
             "voucher for you to approve — a big time saver on data entry.",
-            "Get a key from console.anthropic.com (one-time, free to create). The AI then "
-            "runs on YOUR key, so there's a small per-document cost billed by Anthropic, not "
-            "us. No key = the AI features simply stay locked."))
+            "Pick how the AI is powered. You can change this any time."))
+        if self.locked:
+            self.add_locked(); return
+
+        self._wallet = _Choice("Use our AI — pay per document from your wallet (simplest, nothing to set up)")
+        self._byok = _Choice("Use my own AI key — also unlocks the bulk Document Inbox (email / scan import)")
+        g = QButtonGroup(self); g.setExclusive(True)
+        g.addButton(self._wallet); g.addButton(self._byok)
+        from core.user_prefs import prefs
+        (self._byok if prefs.get("ai_mode", "wallet") == "byok"
+         else self._wallet).setChecked(True)
+        self.add(self._wallet); self.add(self._byok)
+
         from core.ai_routing import routing
         self._key = QLineEdit(routing.get_own_key())
         self._key.setEchoMode(QLineEdit.EchoMode.Password)
         self._key.setPlaceholderText("sk-ant-...")
-        r = QHBoxLayout(); r.addWidget(QLabel("Anthropic key:")); r.addWidget(self._key, 1)
+        r = QHBoxLayout(); r.addWidget(QLabel("Your Anthropic key:")); r.addWidget(self._key, 1)
         self._lay.addLayout(r)
-        get = QPushButton("Get a key (opens console.anthropic.com)")
-        get.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://console.anthropic.com/settings/keys")))
-        self.add(get)
-        self.add(_skip_note())
+        self._get = QPushButton("Get a key (opens console.anthropic.com)")
+        self._get.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl("https://console.anthropic.com/settings/keys")))
+        self.add(self._get)
+
+        self._byok.toggled.connect(self._sync)
+        self._sync(self._byok.isChecked())
+
+    def _sync(self, byok_on: bool):
+        self._key.setEnabled(byok_on)
+        self._get.setEnabled(byok_on)
 
     def save(self):
+        from core.user_prefs import prefs
         from core.ai_routing import routing
-        k = self._key.text().strip()
-        if k:
-            routing.set_own_key(k)
+        byok = self._byok.isChecked()
+        if byok:
+            prefs.set("ai_mode", "byok")
+            k = self._key.text().strip()
+            if k:
+                routing.set_own_key(k)
+        else:
+            prefs.set("ai_mode", "wallet")
+        # Activate one AI pipeline, deactivate the other. The menu/feature gates
+        # honour these so only the chosen path is shown.
+        prefs.set("document_inbox_active", byok)
+        prefs.set("ai_doc_reader_active", not byok)
 
 
 class EmailPage(_Page):
+    feature = "document_inbox"; tier = "Pro"
+
     def __init__(self, wizard):
         super().__init__(wizard)
         self.setTitle("Auto-import invoices from email")
@@ -251,6 +377,8 @@ class EmailPage(_Page):
             "A one-time connect (~5 min) — most providers need an “app password”, and the "
             "setup screen has step-by-step help per provider. We read only; your password is "
             "stored only on this PC."))
+        if self.locked:
+            self.add_locked(); return
         self._status = QLabel("")
         self.add(self._status)
         btn = QPushButton("Connect email…")
@@ -278,6 +406,8 @@ class EmailPage(_Page):
 
 
 class ScannerPage(_Page):
+    feature = "document_inbox"; tier = "Pro"
+
     def __init__(self, wizard):
         super().__init__(wizard)
         self.setTitle("Scan paper invoices straight in")
@@ -287,6 +417,8 @@ class ScannerPage(_Page):
             "Anything your scanner saves into the inbox folder is picked up by the Document "
             "Inbox automatically — no importing.",
             "Set your scanner software's save location to the folder below, once."))
+        if self.locked:
+            self.add_locked(); return
         path = QLabel(folder); path.setWordWrap(True)
         path.setStyleSheet(f"color:{THEME['text_primary']}; font-weight:bold;")
         self.add(path)
@@ -332,6 +464,97 @@ class FinishPage(_Page):
 
     def save(self):
         prefs.set("setup_wizard_done", True)
+        # Remember the plan we ran for, so an upgrade can re-open the wizard
+        # focused on the newly-unlocked features.
+        try:
+            prefs.set("setup_wizard_plan",
+                      (getattr(self.wiz.lmgr, "plan", "") or "FREE"))
+        except Exception:
+            pass
+
+
+class BusinessProfilePage(_Page):
+    def __init__(self, wizard):
+        super().__init__(wizard)
+        self.setTitle("Your business")
+        self.setSubTitle("Identity that appears on invoices and reports.")
+        self.add(_why_what(
+            "Your business name, PAN and address print on invoices, statements and "
+            "reports, and identify your books.",
+            "Type them once — you can edit them later from Settings."))
+        row = wizard._company_row()
+        self._name = QLineEdit(row.get("name") or ""); self._name.setPlaceholderText("Business / firm name")
+        self._pan = QLineEdit(row.get("pan") or ""); self._pan.setPlaceholderText("PAN (10 chars)")
+        self._addr = QLineEdit(row.get("address") or ""); self._addr.setPlaceholderText("Address")
+        for lab, w in (("Name", self._name), ("PAN", self._pan), ("Address", self._addr)):
+            r = QHBoxLayout(); r.addWidget(QLabel(lab + ":")); r.addWidget(w, 1)
+            self._lay.addLayout(r)
+
+        # Books year (financial year). Askable once, early; LOCKED read-only
+        # once vouchers exist — changing it then would mislabel posted vouchers.
+        self.add(QLabel("Books year — when your accounting year starts:"))
+        cur_fy = row.get("fy_start") or "04-01"
+        self._fy = None
+        if self._fy_locked(wizard):
+            msg = QLabel(f"🔒  {_fy_label(cur_fy)}  —  set when you started; it can't be "
+                         "changed now that vouchers are posted (that would mislabel them).")
+            msg.setWordWrap(True)
+            msg.setStyleSheet(f"color:{THEME['text_secondary']}; font-size:12px;")
+            self.add(msg)
+        else:
+            self._fy = QComboBox()
+            for val, lbl in _FY_PRESETS:
+                self._fy.addItem(lbl, val)
+            i = self._fy.findData(cur_fy)
+            if i < 0:
+                self._fy.addItem(f"Custom ({cur_fy})", cur_fy); i = self._fy.findData(cur_fy)
+            self._fy.setCurrentIndex(max(0, i))
+            self.add(self._fy)
+            note = QLabel("Set this before posting your first voucher — it locks afterwards.")
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px; font-style:italic;")
+            self.add(note)
+        self.add(_skip_note())
+
+    def _fy_locked(self, wizard) -> bool:
+        try:
+            r = wizard.db.execute(
+                "SELECT COUNT(*) AS c FROM vouchers WHERE company_id=?",
+                (wizard.company_id,)).fetchone()
+            return bool(r and (r["c"] if hasattr(r, "keys") else r[0]))
+        except Exception:
+            return False
+
+    def save(self):
+        fields = dict(
+            name=self._name.text().strip(),
+            pan=self._pan.text().strip().upper(),
+            address=self._addr.text().strip())
+        if self._fy is not None:          # only settable while unlocked
+            fields["fy_start"] = self._fy.currentData()
+        self.wiz._update_company(**fields)
+
+
+class VoucherFormPage(_Page):
+    def __init__(self, wizard):
+        super().__init__(wizard)
+        self.setTitle("Entry & reconciliation")
+        self.setSubTitle("Small touches for daily work.")
+        self.add(_why_what(
+            "A success popup confirms each posting; switching it off lets you post "
+            "silently and faster. When reconciling, a comment prompt records why you "
+            "ignored a bank line (duplicate, already booked, etc.).",
+            "Two toggles — vouchers and reconciliation work either way."))
+        self._toast = _Choice("Show a success popup after posting a voucher")
+        self._toast.setChecked(bool(prefs.get("after_post_toast", True)))
+        self.add(self._toast)
+        self._reco = _Choice("Ask for a comment when ignoring a bank-statement line")
+        self._reco.setChecked(bool(prefs.get("bank_reco_comment_on_ignore", True)))
+        self.add(self._reco)
+
+    def save(self):
+        prefs.set("after_post_toast", self._toast.isChecked())
+        prefs.set("bank_reco_comment_on_ignore", self._reco.isChecked())
 
 
 # ── Wizard ──────────────────────────────────────────────────────────────────────
@@ -348,32 +571,40 @@ class SetupWizard(QWizard):
         self.resize(620, 520)
         self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage, True)
 
-        def has(f):
-            try:
-                return bool(lmgr.has_feature(f))
-            except Exception:
-                return False
-
+        # All-tier: every page is added; locked features show an upgrade teaser
+        # instead of being hidden. RWA HQ overrides _page_set() for its pages.
         self.addPage(WelcomePage(self))
         self.addPage(LookFeelPage(self))
-        if has("gst"):
-            self.addPage(GSTPage(self))
-        if has("tds"):
-            self.addPage(TDSPage(self))
-        if has("bill_wise_refs"):
-            self.addPage(BillWisePage(self))
-        if has("document_inbox"):
-            self.addPage(AIKeyPage(self))
-            self.addPage(EmailPage(self))
-            self.addPage(ScannerPage(self))
+        for page_cls in self._page_set():
+            self.addPage(page_cls(self))
         self.addPage(BackupPage(self))
         self.addPage(FinishPage(self))
+
+    # ── product hook + shared helpers ──────────────────────────────────────
+    def _page_set(self):
+        """Middle pages between Welcome and Backup. Accounts HQ default; RWA HQ
+        overrides with its own page set."""
+        return [BusinessProfilePage, GSTPage, TDSPage, BillWisePage,
+                AIChoicePage, EmailPage, ScannerPage, VoucherFormPage]
+
+    def _has(self, feature: str) -> bool:
+        try:
+            return bool(self.lmgr.has_feature(feature))
+        except Exception:
+            return False
+
+    def _open_upgrade(self):
+        """Open the upgrade page in the browser WITHOUT closing the wizard.
+        (Previously this closed the wizard and navigated the app, which lost the
+        user's place — they had to restart. Never close the wizard from here.)"""
+        QDesktopServices.openUrl(QUrl("https://apps.ai-consultants.in/"))
 
     # ── helpers shared by pages ────────────────────────────────────────────
     def _company_row(self) -> dict:
         try:
             r = self.db.execute(
-                "SELECT gstin, state_code, gst_username, tan FROM companies WHERE id=?",
+                "SELECT name, gstin, state_code, gst_username, tan, pan, address, fy_start "
+                "FROM companies WHERE id=?",
                 (self.company_id,)).fetchone()
             return dict(r) if r else {}
         except Exception:

@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QDate, Signal, QTimer, QThread
 from PySide6.QtGui  import QFont, QShortcut, QKeySequence
 
 from ui.theme   import THEME, VOUCHER_COLOURS
+from core.date_format import qt_format, format_iso
 from ui.widgets import (
     LedgerSearchEdit, AmountEdit, CalculatorWidget,
     VoucherLineRow, make_label, make_separator, StatusPill
@@ -130,7 +131,7 @@ class _MultiPartyVoucherDialog(QDialog):
         head.addWidget(make_label("Voucher Date", required=True), 0, 0)
         self.date_edit = SmartDateEdit(QDate.fromString(default_date, "yyyy-MM-dd"))
         self.date_edit.setFixedHeight(34)
-        self.date_edit.setDisplayFormat("dd-MMM-yyyy")
+        self.date_edit.setDisplayFormat(qt_format())
         head.addWidget(self.date_edit, 1, 0)
 
         bank_label = "Paid from" if is_payment else "Deposited to"
@@ -591,7 +592,7 @@ class VoucherEntryPage(QWidget):
         from ui.widgets import SmartDateEdit
         self.date_edit = SmartDateEdit(QDate.currentDate())
         self.date_edit.setFixedHeight(34)
-        self.date_edit.setDisplayFormat("dd-MMM-yyyy")
+        self.date_edit.setDisplayFormat(qt_format())
 
         # ±1 day steppers — paid (STANDARD+) shortcut for back-dated
         # voucher entry: type today's date once, then nudge a day at a time.

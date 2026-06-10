@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 
 from ui.theme import THEME
+from core.date_format import qt_format, format_iso
+from ui.table_utils import DateTableItem
 from ui.widgets import make_label, SmartDateEdit
 
 
@@ -61,12 +63,12 @@ class _AddLockDialog(QDialog):
 
         today = QDate.currentDate()
         self._from_edit = SmartDateEdit(QDate(today.year(), today.month(), 1))
-        self._from_edit.setDisplayFormat("dd-MMM-yyyy")
+        self._from_edit.setDisplayFormat(qt_format())
         self._from_edit.setFixedHeight(34)
         form.addRow(make_label("Lock from", required=True), self._from_edit)
 
         self._to_edit = SmartDateEdit(today)
-        self._to_edit.setDisplayFormat("dd-MMM-yyyy")
+        self._to_edit.setDisplayFormat(qt_format())
         self._to_edit.setFixedHeight(34)
         form.addRow(make_label("Lock to", required=True), self._to_edit)
 
@@ -233,8 +235,8 @@ class PeriodLocksPage(QWidget):
         self._fy_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             self._fy_table.setItem(r, 0, QTableWidgetItem(row["fy"]))
-            self._fy_table.setItem(r, 1, QTableWidgetItem(row["start_date"]))
-            self._fy_table.setItem(r, 2, QTableWidgetItem(row["end_date"]))
+            self._fy_table.setItem(r, 1, DateTableItem(row["start_date"]))
+            self._fy_table.setItem(r, 2, DateTableItem(row["end_date"]))
 
             cell = QWidget()
             cl = QHBoxLayout(cell)
@@ -287,8 +289,8 @@ class PeriodLocksPage(QWidget):
         self._lk_table.setSortingEnabled(False)
         self._lk_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
-            self._lk_table.setItem(r, 0, QTableWidgetItem(row["lock_from"]))
-            self._lk_table.setItem(r, 1, QTableWidgetItem(row["lock_to"]))
+            self._lk_table.setItem(r, 0, DateTableItem(row["lock_from"]))
+            self._lk_table.setItem(r, 1, DateTableItem(row["lock_to"]))
             self._lk_table.setItem(r, 2, QTableWidgetItem(row["reason"] or ""))
             self._lk_table.setItem(r, 3, QTableWidgetItem(row["locked_at"][:16]))
 

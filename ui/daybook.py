@@ -12,8 +12,9 @@ from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui  import QColor, QFont, QKeySequence, QShortcut
 
 from ui.theme   import THEME, VOUCHER_COLOURS
+from core.date_format import qt_format, format_iso
 from ui.widgets import make_label, make_separator, SmartDateEdit
-from ui.table_utils import NumericTableItem, make_sortable, populating
+from ui.table_utils import NumericTableItem, DateTableItem, make_sortable, populating
 from core.i18n   import format_currency
 
 
@@ -73,13 +74,13 @@ class DayBookPage(QWidget):
 
         frow.addWidget(make_label("From"))
         self.from_date = SmartDateEdit(QDate(QDate.currentDate().year(), 4, 1))
-        self.from_date.setDisplayFormat("dd-MMM-yyyy")
+        self.from_date.setDisplayFormat(qt_format())
         self.from_date.setFixedHeight(30)
         frow.addWidget(self.from_date)
 
         frow.addWidget(make_label("To"))
         self.to_date = SmartDateEdit(QDate.currentDate())
-        self.to_date.setDisplayFormat("dd-MMM-yyyy")
+        self.to_date.setDisplayFormat(qt_format())
         self.to_date.setFixedHeight(30)
         frow.addWidget(self.to_date)
 
@@ -182,6 +183,9 @@ class DayBookPage(QWidget):
                     # Amount column sorts by numeric value, not the ₹-formatted string.
                     if j == 3:
                         item = NumericTableItem(text, v["total_amount"])
+                    elif j == 0:
+                        # Date shows in the user's chosen format, sorts by ISO.
+                        item = DateTableItem(v["voucher_date"])
                     else:
                         item = QTableWidgetItem(text)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter |

@@ -104,10 +104,19 @@ class RoutingConfig:
         """'byok' or 'ag_key' for a feature — from the versioned table."""
         return feature_class(feature)
 
+    # Document AI is WALLET-ONLY by product decision: it runs on the built-in /
+    # AccGenie wallet key (metered as credits) and NEVER the customer's own
+    # key — settled when the HD-key / BYOK mix was dropped as too confusing.
+    # Forced to the wallet even if a key happens to be set, so a demo/free
+    # licence (no key) and a keyed account behave identically here.
+    _WALLET_ONLY = {"document_recognition"}
+
     def resolve(self, feature: str) -> str:
         """Return ROUTE_CUSTOMER / ROUTE_WALLET / ROUTE_LOCKED for `feature`."""
+        if feature in self._WALLET_ONLY:
+            return ROUTE_WALLET
         if self.has_own_key():
-            # A customer key covers everything, heavy or light.
+            # A customer key covers everything else, heavy or light.
             return ROUTE_CUSTOMER
         # No customer key — light features fall back to the wallet,
         # heavy (byok) features are locked.

@@ -40,6 +40,26 @@ class NumericTableItem(QTableWidgetItem):
         return super().__lt__(other)
 
 
+class DateTableItem(QTableWidgetItem):
+    """Cell that DISPLAYS a date in the user's chosen format but SORTS
+    chronologically. The ISO string ('yyyy-MM-dd') is kept as the sort key —
+    it orders correctly as plain text — while the visible text follows the
+    user's date-format preference."""
+
+    def __init__(self, iso: str):
+        from core.date_format import format_iso
+        super().__init__(format_iso(iso))
+        self.setData(_SORT_ROLE, str(iso or ""))
+
+    def __lt__(self, other):
+        if isinstance(other, QTableWidgetItem):
+            mine  = self.data(_SORT_ROLE)
+            yours = other.data(_SORT_ROLE)
+            if mine is not None and yours is not None:
+                return str(mine) < str(yours)
+        return super().__lt__(other)
+
+
 def make_sortable(table: QTableWidget) -> None:
     """Turn on click-to-sort on a QTableWidget. Safe to call multiple
     times — idempotent."""
