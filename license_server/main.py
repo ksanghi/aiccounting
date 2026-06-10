@@ -1368,6 +1368,58 @@ def wallet_topup_create_order(
     )
 
 
+@app.get("/wallet/pay", response_class=HTMLResponse)
+def wallet_pay_page(order_id: str = "", key: str = "", amount: int = 0,
+                    name: str = "", email: str = ""):
+    """Minimal Razorpay checkout page for a wallet top-up order. The desktop
+    app opens this in the browser after creating the order; on success the
+    `/webhooks/razorpay` handler credits the wallet (order.kind=wallet_topup),
+    so this page only has to run the Razorpay modal."""
+    opts = {
+        "key": key,
+        "order_id": order_id,
+        "amount": int(amount or 0),
+        "currency": "INR",
+        "name": "AI Consultants",
+        "description": "Accounts HQ — AI wallet top-up",
+        "prefill": {"name": name or "", "email": email or ""},
+        "theme": {"color": "#0a7a55"},
+    }
+    opts_json = json.dumps(opts)
+    page = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>AI Wallet top-up</title>"
+        "<style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;"
+        "background:#0b1220;color:#eef2ff;display:flex;align-items:center;"
+        "justify-content:center;height:100vh;margin:0;text-align:center}"
+        ".box{max-width:440px;padding:28px}h2{margin:0 0 8px}"
+        "p{color:#9fb0d6}button{margin-top:14px;background:#0a7a55;color:#fff;"
+        "border:0;border-radius:8px;padding:12px 22px;font-size:15px;"
+        "font-weight:700;cursor:pointer}</style>"
+        "<script src='https://checkout.razorpay.com/v1/checkout.js'></script>"
+        "</head><body><div class='box'>"
+        "<h2>AI Wallet top-up</h2>"
+        "<p id='msg'>Opening secure Razorpay checkout…</p>"
+        "<button id='retry' style='display:none' onclick='openRzp()'>Open payment</button>"
+        "</div><script>"
+        f"var OPTS={opts_json};"
+        "OPTS.handler=function(r){document.getElementById('msg').innerHTML="
+        "'\\u2713 Payment received. Your credits will appear in Accounts HQ "
+        "shortly \\u2014 you can close this tab and click Refresh in the app.';"
+        "document.getElementById('retry').style.display='none';};"
+        "OPTS.modal={ondismiss:function(){document.getElementById('msg')"
+        ".innerHTML='Payment was not completed.';"
+        "document.getElementById('retry').style.display='inline-block';}};"
+        "function openRzp(){if(!OPTS.key||!OPTS.order_id){"
+        "document.getElementById('msg').innerHTML='Missing order details.';return;}"
+        "var rzp=new Razorpay(OPTS);rzp.open();}"
+        "openRzp();"
+        "</script></body></html>"
+    )
+    return HTMLResponse(page)
+
+
 # ── Checkout (Razorpay) ──────────────────────────────────────────────────────
 
 @app.post("/api/v1/checkout/create-order", response_model=CheckoutCreateResponse)

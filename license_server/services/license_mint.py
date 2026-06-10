@@ -44,6 +44,7 @@ def mint_license(
     seats_allowed: Optional[int] = None,
     notes:         str = "",
     initial_credits_paise: int = 0,
+    billing_period: str = "annual",
 ) -> License:
     """
     Mints a new license. Returns the License row (already added to the
@@ -86,6 +87,7 @@ def mint_license(
         license_key   = key,
         product       = product,
         plan          = plan,
+        billing_period= (billing_period or "annual").lower(),
         customer_email= customer_email,
         company_name  = company_name or "",
         expires_at    = expires_at,
@@ -108,5 +110,14 @@ def default_expiry_for_plan(plan: str) -> date:
     """One-year-from-today expiry. DEMO is shorter (30 days). Adjust here
     if billing periods change."""
     if (plan or "").upper() == "DEMO":
+        return date.today() + timedelta(days=30)
+    return date.today() + timedelta(days=365)
+
+
+def expiry_for(plan: str, period: str = "annual") -> date:
+    """Period-aware expiry: monthly = +30 days, annual = +365 (DEMO = +30)."""
+    if (plan or "").upper() == "DEMO":
+        return date.today() + timedelta(days=30)
+    if (period or "annual").lower() == "monthly":
         return date.today() + timedelta(days=30)
     return date.today() + timedelta(days=365)
