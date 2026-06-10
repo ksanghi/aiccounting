@@ -414,6 +414,33 @@ def health():
     return {"status": "ok", "version": settings.server_version}
 
 
+# ── Desktop self-update: latest RELEASED version per product ───────────────
+# Released versions (clean SemVer), NOT build numbers. Bump on each blessed
+# release; the desktop app compares its baked release version to `latest` and
+# offers the download. `url` should point at the current installer/download.
+LATEST_RELEASE = {
+    "accgenie": {
+        "latest": "1.0",
+        # TODO: confirm the exact Accounts HQ installer URL.
+        "url":    "https://apps.ai-consultants.in/",
+        "notes":  "",
+    },
+    "rwagenie": {
+        "latest": "1.0",
+        "url":    "https://apps.ai-consultants.in/downloads/RWAHQ-Setup.exe",
+        "notes":  "",
+    },
+}
+
+
+@app.get("/api/v1/app-version")
+def app_version(product: str = "accgenie"):
+    """Latest released version + download link for a desktop product. Used by
+    the app's 'Check for updates'. Unknown product → empty (app stays quiet)."""
+    info = LATEST_RELEASE.get((product or "accgenie").strip().lower())
+    return info or {"latest": "", "url": "", "notes": ""}
+
+
 @app.post("/api/v1/install/heartbeat", response_model=HeartbeatResponse)
 def install_heartbeat(body: HeartbeatRequest, db: Session = Depends(get_db)):
     """

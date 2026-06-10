@@ -16,6 +16,7 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 
 from core.paths import license_file as _license_file_path
+from core.app_release import current_release
 
 BASE_DIR     = Path(__file__).parent.parent
 LICENSE_FILE = _license_file_path()
@@ -398,7 +399,7 @@ class LicenseManager:
             payload = json.dumps({
                 "license_key": license_key,
                 "machine_id":  self.get_machine_id(),
-                "app_version": "1.0.10",
+                "app_version": current_release(),
                 # Which app is asking — the server rejects a license whose
                 # product doesn't match (a product's license only works with
                 # its own app). Empty for legacy builds → no server check.
@@ -491,7 +492,7 @@ class LicenseManager:
             payload = json.dumps({
                 "license_key": self.license_key,
                 "machine_id":  self.get_machine_id(),
-                "app_version": "1.0.10",
+                "app_version": current_release(),
             }).encode()
             req = urllib.request.Request(
                 f"{SERVER_URL}/license/validate",
