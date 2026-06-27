@@ -34,6 +34,33 @@ class ImportError(Exception):
     """Base for bank-statement import failures the UI is expected to handle."""
 
 
+_BALANCE_TOLERANCE = 0.50   # rupees; statement amounts are exact to the paisa
+
+
+@dataclass
+class BalanceCheck:
+    """Self-check: opening + credits − debits == closing. A failing tie-out
+    means rows were dropped, duplicated, or misread."""
+    opening: float | None
+    stated_closing: float | None
+    total_credits: float
+    total_debits: float
+    computed_closing: float | None
+    gap: float | None
+    checkable: bool
+    balanced: bool
+    txn_count: int
+
+
+class BalanceMismatch(ImportError):
+    """Parsed statement doesn't tie out — surfaced to the UI to block/confirm."""
+    def __init__(self, check: "BalanceCheck"):
+        self.check = check
+        super().__init__(
+            f"Statement does not balance (off by Rs.{abs(check.gap or 0):,.2f})."
+        )
+
+
 class LocalParseFailed(ImportError):
     """Local parser couldn't extract — UI should ask user to allow AI fallback."""
     def __init__(self, message: str, file_text: str = ""):
@@ -145,6 +172,7 @@ class BankReconciler:
         self.db = db
         self.company_id = company_id
         self.tree = tree
+        self.last_balance_check: "BalanceCheck | None" = None
 
     # ── Imports — single pipeline ─────────────────────────────────────────────
 
@@ -160,6 +188,7 @@ class BankReconciler:
         confirm_account_population: bool = False,
         force_mismatch_override: bool = False,
         confirm_unverified: bool = False,
+        confirm_balance_mismatch: bool = False,
         user_id: int | None = None,
     ) -> int:
         """
@@ -177,6 +206,7 @@ class BankReconciler:
 
         Returns the statement_id.
         """
+        self.last_balance_check = None
         path = Path(file_path)
         if not path.exists():
             raise ValueError(f"File not found: {file_path}")
@@ -211,6 +241,7 @@ class BankReconciler:
                 confirm_account_population=confirm_account_population,
                 force_mismatch_override=force_mismatch_override,
                 confirm_unverified=confirm_unverified,
+                confirm_balance_mismatch=confirm_balance_mismatch,
             )
 
         # ── 2. Statement-belongs-to-ledger qualification ──
@@ -248,6 +279,7 @@ class BankReconciler:
                 "ext":            path.suffix.lower(),
             }),
             lines=lines,
+            confirm_balance_mismatch=confirm_balance_mismatch,
         )
 
     def import_feed_account(
@@ -331,6 +363,7 @@ class BankReconciler:
         confirm_account_population: bool = False,
         force_mismatch_override: bool = False,
         confirm_unverified: bool = False,
+        confirm_balance_mismatch: bool = False,
     ) -> int:
         from ai.document_parser import DocumentParser
         from ai.voucher_ai import VoucherAI
@@ -446,6 +479,7 @@ class BankReconciler:
                 "account_number": meta["account_number"],
             }),
             lines=lines,
+            confirm_balance_mismatch=confirm_balance_mismatch,
         )
 
     # ── Helpers used by import_statement ──────────────────────────────────────
@@ -1732,6 +1766,28 @@ class BankReconciler:
             )
         return statement_id
 
+    @staticmethod
+    def _compute_balance_check(
+        opening: float | None,
+        stated_closing: float | None,
+        lines: list[dict],
+    ) -> BalanceCheck:
+        """opening + Σcredits − Σdebits should equal the statement's closing."""
+        cr = round(sum(l["amount"] for l in lines if l.get("sign") == "CR"), 2)
+        dr = round(sum(l["amount"] for l in lines if l.get("sign") == "DR"), 2)
+        checkable = opening is not None and stated_closing is not None
+        computed = round(opening + cr - dr, 2) if opening is not None else None
+        gap = (round(computed - stated_closing, 2)
+               if (checkable and computed is not None) else None)
+        balanced = bool(
+            checkable and gap is not None and abs(gap) <= _BALANCE_TOLERANCE
+        )
+        return BalanceCheck(
+            opening=opening, stated_closing=stated_closing,
+            total_credits=cr, total_debits=dr, computed_closing=computed,
+            gap=gap, checkable=checkable, balanced=balanced, txn_count=len(lines),
+        )
+
     def _persist_statement(
         self,
         bank_ledger_id: int,
@@ -1745,7 +1801,19 @@ class BankReconciler:
         imported_by_user_id: int | None,
         raw_meta: str,
         lines: list[dict],
+        confirm_balance_mismatch: bool = False,
     ) -> int:
+        # Balance verification BEFORE any DB write: if the statement carries an
+        # opening and closing and they don't tie out with the parsed lines,
+        # refuse the import (so silently-dropped rows can't slip in) unless the
+        # user explicitly overrides.
+        check = self._compute_balance_check(
+            statement_opening, statement_closing, lines,
+        )
+        self.last_balance_check = check
+        if check.checkable and not check.balanced and not confirm_balance_mismatch:
+            raise BalanceMismatch(check)
+
         with self.db:
             cur = self.db.execute(
                 """INSERT INTO bank_statements
