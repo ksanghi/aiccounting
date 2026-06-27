@@ -123,7 +123,10 @@ class MainWindow(QMainWindow):
         self._company_name = row["name"] if row else "Company"
         self._company_gstin = row["gstin"] if row else ""
 
-        self.setWindowTitle(f"AccGenie — {self._company_name}")
+        from core.app_release import APP_NAME, APP_VERSION
+        self.setWindowTitle(
+            f"{APP_NAME} {APP_VERSION} — {self._company_name}"
+        )
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
         self.setStyleSheet(get_stylesheet())
@@ -251,7 +254,8 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(calc_btn)
 
         # Version label
-        ver = QLabel("v1.0  |  Python + SQLite")
+        from core.app_release import APP_NAME, APP_VERSION
+        ver = QLabel(f"{APP_NAME} v{APP_VERSION}  |  Python + SQLite")
         ver.setStyleSheet(f"color:{THEME['text_dim']}; font-size:9px; padding:8px 16px;")
         sidebar_layout.addWidget(ver)
 

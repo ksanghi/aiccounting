@@ -1150,8 +1150,46 @@ class BankReconciliationPage(QWidget):
                     f"₹{abs(check.gap or 0):,.2f}."
                 )
         self._status_lbl.setText(status)
+        self._show_extract_banner(check)
         self._populate_review()
         self._stack.setCurrentWidget(self._review_page)
+
+    def _show_extract_banner(self, check):
+        """Make the parse result visible on the review page: rows read + the
+        opening/closing tie-out, colour-coded."""
+        banner = getattr(self, "_extract_banner", None)
+        if banner is None:
+            return
+        if check is None:
+            banner.setVisible(False)
+            return
+
+        def m(v):
+            return f"₹{v:,.2f}" if v is not None else "—"
+
+        if check.checkable and check.balanced:
+            bg, fg = "#D9F5E6", "#057A55"
+            txt = (f"✅ Read {check.txn_count} transactions · "
+                   f"Opening {m(check.opening)} + Credits ₹{check.total_credits:,.2f} "
+                   f"− Debits ₹{check.total_debits:,.2f} = {m(check.computed_closing)} "
+                   f"= Closing {m(check.stated_closing)} · BALANCED")
+        elif not check.checkable:
+            bg, fg = "#FDEBD0", "#B45309"
+            txt = (f"ℹ️ Read {check.txn_count} transactions · "
+                   f"Credits ₹{check.total_credits:,.2f} − Debits ₹{check.total_debits:,.2f}"
+                   f" · No opening/closing balance found on the file — tie-out not verified")
+        else:
+            bg, fg = "#FBE1E1", "#C83A3A"
+            txt = (f"⚠️ Read {check.txn_count} transactions · "
+                   f"Opening {m(check.opening)} + Credits ₹{check.total_credits:,.2f} "
+                   f"− Debits ₹{check.total_debits:,.2f} = {m(check.computed_closing)} "
+                   f"≠ Closing {m(check.stated_closing)} · OFF BY ₹{abs(check.gap or 0):,.2f}")
+        banner.setStyleSheet(
+            f"padding:7px 12px; border-radius:6px; font-size:12px; font-weight:600;"
+            f" background:{bg}; color:{fg};"
+        )
+        banner.setText(txt)
+        banner.setVisible(True)
 
     def _on_import_error(self, msg: str):
         self._status_lbl.setText("")
@@ -1189,6 +1227,16 @@ class BankReconciliationPage(QWidget):
         next_btn.clicked.connect(self._go_to_summary)
         bar.addWidget(next_btn)
         layout.addLayout(bar)
+
+        # Extraction & balance banner — makes the parse result visible: how
+        # many rows were read and whether the statement ties out.
+        self._extract_banner = QLabel("")
+        self._extract_banner.setWordWrap(True)
+        self._extract_banner.setVisible(False)
+        self._extract_banner.setStyleSheet(
+            "padding:7px 12px; border-radius:6px; font-size:12px; font-weight:600;"
+        )
+        layout.addWidget(self._extract_banner)
 
         self._tabs = QTabWidget()
         self._matched_table = self._make_table(
