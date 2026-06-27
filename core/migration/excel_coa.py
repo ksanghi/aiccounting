@@ -24,6 +24,7 @@ from typing import Optional
 
 from .payload import (
     MigrationPayload, GroupSpec, LedgerSpec, CompanySpec,
+    nature_for_group_name,
 )
 
 
@@ -203,7 +204,9 @@ def _row_to_group(headers, row, type_col: int | None = None) -> Optional[GroupSp
         nature=(
             _norm_nature(row[nature_idx])
             if nature_idx is not None and nature_idx < len(row) else ""
-        ),
+        # When the sheet has no/blank/unrecognised Nature, derive it from the
+        # standard group name instead of leaving it blank (→ ASSET default).
+        ) or nature_for_group_name(name),
     )
 
 
