@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Reports · {{ company.display_name }}{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">Reports</h1>
+<div class="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+  {% set items = [
+    ('Trial Balance','trial-balance'),
+    ('Profit & Loss','pnl'),
+    ('Balance Sheet','balance-sheet'),
+    ('Receivables Aging (A/R)','receivables'),
+    ('Payables Aging (A/P)','payables'),
+    ('Schedule C (US)','schedule-c'),
+    ('Form 1099 (US)','form-1099'),
+  ] %}
+  {% for label, path in items %}
+  <a href="/c/{{ slug }}/reports/{{ path }}" class="block bg-white border rounded-xl p-5 hover:border-amber-400 font-semibold">{{ label }}</a>
+  {% endfor %}
+</div>
+{% endblock %}

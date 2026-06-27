@@ -10,6 +10,7 @@ the form attaches to VoucherDraft.allocations before engine.post().
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from core.i18n import format_currency, currency_symbol
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QAbstractItemView, QHeaderView, QPushButton, QDoubleSpinBox, QMessageBox,
@@ -37,7 +38,7 @@ class BillAllocationDialog(QDialog):
     def _build(self):
         lay = QVBoxLayout(self)
         head = QLabel(
-            f"Voucher amount: <b>₹{self.amount:,.2f}</b> — tick how much settles "
+            f"Voucher amount: <b>{format_currency(self.amount)}</b> — tick how much settles "
             f"each open bill (oldest first is auto-filled). Anything left over "
             f"posts on-account.")
         head.setWordWrap(True)
@@ -111,13 +112,13 @@ class BillAllocationDialog(QDialog):
         alloc = self._allocated()
         rem = round(self.amount - alloc, 2)
         if rem > 0:
-            txt = f"Allocated ₹{alloc:,.2f}  ·  ₹{rem:,.2f} will post on-account"
+            txt = f"Allocated {format_currency(alloc)}  ·  {format_currency(rem)} will post on-account"
             colour = THEME["text_secondary"]
         elif rem < 0:
-            txt = f"Allocated ₹{alloc:,.2f}  ·  OVER by ₹{-rem:,.2f}"
+            txt = f"Allocated {format_currency(alloc)}  ·  OVER by {format_currency(-rem)}"
             colour = THEME["danger"]
         else:
-            txt = f"Allocated ₹{alloc:,.2f}  ·  fully allocated ✓"
+            txt = f"Allocated {format_currency(alloc)}  ·  fully allocated ✓"
             colour = THEME["success"]
         self._remaining.setText(txt)
         self._remaining.setStyleSheet(

@@ -1,0 +1,20 @@
+=== ACCOUNTSHQ ===
+DEMO: Full-feature trial, hard-capped at txn_limit. Mirrors PREMIUM features.
+FREE: Permanent free tier — Basic books with AI posting · 5,000 transactions · 1 user · no card
+STANDARD:  Full bookkeeping with AI posting ·  A/R‑A/P aging, Cash Flow, migration · 20,000 transactions · 2 users
+PRO: Everything in Standard+ GST, TDS reports,  20,000 transactions · 2 users
+PREMIUM: Unlimited transactions · WhatsApp accounting, compliance audits, 10 users
+
+=== BOOKSHQ ===
+DEMO: Full-feature trial.
+FREE: AI books your receipts & bills + full financial reports. 5,000 transactions, 1 user.
+STANDARD: 20,000 transactions, 2 users + bank feeds & QuickBooks/Wave import.
+PRO: 50,000 transactions, 5 users + US sales tax, 1099, Schedule C.
+PREMIUM: Everything, unlimited.
+
+=== STOREHQ ===
+DEMO: Full-feature trial.
+FREE: Books + AI receipts (storefront features are paid).
+STANDARD: Storefront: invoicing, purchase orders, inventory & stock tracking.
+PRO: Adds stock valuation (FIFO/avg, COGS), price lists, US sales tax & 1099.
+PREMIUM: Everything, unlimited.

@@ -27,6 +27,18 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui  import QFont, QPixmap, QIcon
 
 from core import branding
+# Apply the build flavor + country brand at IMPORT time, BEFORE resolving the
+# logo path — otherwise the splash/window grab the default (Accounts HQ) art.
+# A US-flavored build (core/_flavor.py FORCE_COUNTRY="US") becomes Books HQ here.
+try:
+    from core._flavor import FORCE_COUNTRY
+    if FORCE_COUNTRY:
+        from core import country as _c
+        _c.set_active(FORCE_COUNTRY)
+        _c.reset_active = lambda: None   # keep pinned past licence re-validation
+except Exception:
+    pass
+branding.apply_country_branding()
 LOGO_PATH = branding.logo_path()
 
 from core.models        import Database
@@ -240,8 +252,9 @@ class CompanyDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Accounts HQ")
-    app.setWindowIcon(QIcon(LOGO_PATH))
+    # Brand/flavor already applied at import (above) so LOGO_PATH is correct.
+    app.setApplicationName(branding.PRODUCT_NAME)
+    app.setWindowIcon(QIcon(branding.icon_path()))
     app.setStyle("Fusion")
 
     # Splash screen while the app warms up — a Nuitka standalone cold-start

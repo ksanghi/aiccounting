@@ -15,7 +15,7 @@ from ui.theme   import THEME, VOUCHER_COLOURS
 from core.date_format import qt_format, format_iso
 from ui.widgets import make_label, make_separator, SmartDateEdit
 from ui.table_utils import NumericTableItem, DateTableItem, make_sortable, populating
-from core.i18n   import format_currency
+from core.i18n   import format_currency, currency_symbol
 
 
 _VOUCHER_ID_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -51,9 +51,10 @@ class DayBookPage(QWidget):
             kpi_row = QHBoxLayout()
             kpi_row.setSpacing(12)
             self._kpi_count    = KPITile("Vouchers in range", "0", "")
-            self._kpi_receipts = KPITile("Total receipts", "₹ 0", "", status="good")
-            self._kpi_payments = KPITile("Total payments", "₹ 0", "", status="warn")
-            self._kpi_net      = KPITile("Net (Rcpts − Pmts)", "₹ 0", "")
+            _z = f"{currency_symbol()} 0"
+            self._kpi_receipts = KPITile("Total receipts", _z, "", status="good")
+            self._kpi_payments = KPITile("Total payments", _z, "", status="warn")
+            self._kpi_net      = KPITile("Net (Rcpts − Pmts)", _z, "")
             for t in (self._kpi_count, self._kpi_receipts,
                       self._kpi_payments, self._kpi_net):
                 t.setMaximumHeight(96)

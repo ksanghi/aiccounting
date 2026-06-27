@@ -1,0 +1,572 @@
+"""
+License Manager
+- Validates license key against server
+- Caches license locally (7 day offline grace)
+- Feature gate checks
+- Transaction counter with overage logic
+- Upgrade nudge calculations
+"""
+import json
+import hashlib
+import os
+import platform
+import urllib.request
+import urllib.error
+from pathlib import Path
+from datetime import datetime, date, timedelta
+
+from core.paths import license_file as _license_file_path
+from core.app_release import current_release
+
+BASE_DIR     = Path(__file__).parent.parent
+LICENSE_FILE = _license_file_path()
+SERVER_URL   = os.environ.get(
+    "ACCGENIE_LICENSE_SERVER",
+    "https://license.ai-consultants.in/api/v1",
+)
+
+DEV_KEY = "ACCG-DEV-FULL"
+
+# Per-version operator config — baked from config/pricing.xlsx at build time.
+# Edit the xlsx and re-run build/bake_config.py to change these.
+from core._baked_config import (
+    PLANS,
+    PLAN_LIMITS,
+    OVERAGE_RATES,
+    PLAN_FEATURES,
+    FEATURE_UPGRADE_MAP,
+    PLAN_PRICES,
+)
+
+DEMO_TXN_LIMIT = PLAN_LIMITS["DEMO"]
+
+
+class FeatureNotAvailable(Exception):
+    def __init__(self, feature: str, current_plan: str, required_plan: str):
+        self.feature      = feature
+        self.current_plan = current_plan
+        self.required_plan = required_plan
+        super().__init__(f"{feature} requires {required_plan} plan")
+
+
+class LicenseManager:
+
+    def reload(self) -> None:
+        """Re-read license.json from disk, discarding the in-memory copy.
+        The License page calls this before refreshing its display because
+        voucher_form increments txn_used through a *separate* LicenseManager
+        instance — without a reload the page would show a stale count."""
+        self._data = self._load_local()
+
+    def __init__(self):
+        self._data = self._load_local()
+
+    # ── Machine ID ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def get_machine_id() -> str:
+        raw = platform.node() + platform.machine()
+        return hashlib.md5(raw.encode()).hexdigest()[:16]
+
+    # ── Local cache ───────────────────────────────────────────────────────────
+
+    def _load_local(self) -> dict:
+        try:
+            if LICENSE_FILE.exists():
+                with open(LICENSE_FILE) as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return self._demo_license()
+
+    def _demo_license(self) -> dict:
+        """Default DEMO license for new installs — all features, 10 vouchers."""
+        return {
+            "license_key":     "DEMO",
+            "plan":            "DEMO",
+            "features":        PLAN_FEATURES["DEMO"],
+            "txn_limit":       PLAN_LIMITS["DEMO"],
+            "txn_used":        0,
+            "user_limit":      1,
+            "seats_allowed":   0,   # DEMO doesn't consume server-side seats
+            "seats_used":      0,
+            "expires_at":      "2099-12-31",
+            "company_name":    "",
+            "country_code":    "IN",
+            "validated_at":    datetime.now().isoformat(),
+            "offline_until":   (datetime.now() + timedelta(days=7)).isoformat(),
+            "overage_count":   0,
+        }
+
+    def _drop_to_demo(self) -> None:
+        """
+        Reset the cached license to DEMO while preserving local voucher counts.
+        Used when the server reports our seat was released elsewhere, or after
+        the user clicks 'Release this machine's seat'.
+        """
+        self._sync_local_counters()
+        kept_txn_used      = self._data.get("txn_used", 0)
+        kept_overage_count = self._data.get("overage_count", 0)
+        self._data = self._demo_license()
+        self._data["txn_used"]      = kept_txn_used
+        self._data["overage_count"] = kept_overage_count
+        self._save_local()
+
+    def _save_local(self):
+        LICENSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LICENSE_FILE, "w") as f:
+            json.dump(self._data, f, indent=2)
+
+    def _sync_local_counters(self) -> None:
+        """Pull the latest txn_used / overage_count from disk into _data.
+
+        These are LOCAL tallies that other LicenseManager instances mutate
+        independently — voucher_form increments txn_used through its own
+        instance on every post. Any code path that rewrites the whole
+        license.json blob (validate, startup re-validate, drop-to-demo)
+        must sync these first, or it clobbers a fresh count with its own
+        stale in-memory value. That bug silently reset the count whenever
+        the License page re-validated against the server."""
+        disk = self._load_local()
+        self._data["txn_used"] = disk.get(
+            "txn_used", self._data.get("txn_used", 0)
+        )
+        self._data["overage_count"] = disk.get(
+            "overage_count", self._data.get("overage_count", 0)
+        )
+
+    # ── Properties ────────────────────────────────────────────────────────────
+
+    @property
+    def plan(self) -> str:
+        return self._data.get("plan", "FREE")
+
+    @property
+    def license_key(self) -> str:
+        return self._data.get("license_key", "")
+
+    @property
+    def txn_used(self) -> int:
+        return self._data.get("txn_used", 0)
+
+    @property
+    def txn_limit(self) -> int:
+        return self._data.get("txn_limit", PLAN_LIMITS.get(self.plan, 5000))
+
+    @property
+    def overage_count(self) -> int:
+        return self._data.get("overage_count", 0)
+
+    @property
+    def expires_at(self) -> str:
+        return self._data.get("expires_at", "2099-12-31")
+
+    @property
+    def is_expired(self) -> bool:
+        try:
+            return date.today() > date.fromisoformat(self.expires_at)
+        except Exception:
+            return False
+
+    @property
+    def days_to_expiry(self) -> int:
+        try:
+            return (date.fromisoformat(self.expires_at) - date.today()).days
+        except Exception:
+            return 999
+
+    @property
+    def user_limit(self) -> int:
+        if self.plan == "PREMIUM":
+            return 999
+        return self._data.get("user_limit", 1)
+
+    @property
+    def seats_allowed(self) -> int:
+        return int(self._data.get("seats_allowed") or 0)
+
+    @property
+    def seats_used(self) -> int:
+        return int(self._data.get("seats_used") or 0)
+
+    @property
+    def seats_remaining(self) -> int:
+        return max(0, self.seats_allowed - self.seats_used)
+
+    @property
+    def company_name(self) -> str:
+        return self._data.get("company_name", "")
+
+    @property
+    def country(self) -> str:
+        """ISO-2 country code the license was issued for. Selects the
+        active CountryProfile (tax rules / screens / locale). Legacy
+        licenses cached before A13 have no country_code — default IN."""
+        return (self._data.get("country_code") or "IN").strip().upper()
+
+    @property
+    def txn_percent(self) -> float:
+        if self.txn_limit == 0:
+            return 0.0
+        return min(100.0, self.txn_used / self.txn_limit * 100)
+
+    @property
+    def is_in_grace(self) -> bool:
+        """Is this a cached license within the 7-day offline grace period?"""
+        try:
+            until = datetime.fromisoformat(self._data.get("offline_until", ""))
+            return datetime.now() < until
+        except Exception:
+            return False
+
+    # ── Feature checks ────────────────────────────────────────────────────────
+
+    def has_feature(self, feature: str) -> bool:
+        if self.is_expired:
+            read_features = [
+                "daybook", "ledger_balances",
+                "trial_balance", "profit_loss", "balance_sheet",
+                "cash_book", "bank_book", "ledger_account", "receipts_payments",
+                "export_excel", "export_pdf",
+            ]
+            return feature in read_features
+        # The baked PLAN_FEATURES list for this plan is the source of truth —
+        # the cached `features` array in license.json may have been written
+        # by a prior version that used different feature ids (e.g. the old
+        # "reports" umbrella before per-report gating in 1.0.5). Trust the
+        # binary's plan map; fall back to whatever the server cached, in
+        # case future versions of the server expose features the binary
+        # doesn't know about yet.
+        baked = set(PLAN_FEATURES.get(self.plan, []))
+        cached = set(self._data.get("features") or [])
+        return feature in (baked | cached)
+
+    def require_feature(self, feature: str):
+        if not self.has_feature(feature):
+            required = FEATURE_UPGRADE_MAP.get(feature, "PREMIUM")
+            raise FeatureNotAvailable(feature, self.plan, required)
+
+    def upgrade_required_for(self, feature: str) -> str | None:
+        if self.has_feature(feature):
+            return None
+        return FEATURE_UPGRADE_MAP.get(feature, "PREMIUM")
+
+    # ── Transaction management ────────────────────────────────────────────────
+
+    def can_post_voucher(self) -> tuple[bool, str, float]:
+        """
+        Returns (allowed, message, overage_cost).
+        FREE plan: hard block at limit.
+        Paid plans: always allow, track overage.
+        """
+        if self.is_expired:
+            return False, "License expired. Renew to post new vouchers.", 0.0
+
+        used  = self.txn_used
+        limit = self.txn_limit
+
+        if self.plan == "DEMO":
+            if used >= limit:
+                return (
+                    False,
+                    f"Demo limit of {limit} transactions reached. "
+                    f"Activate a paid plan to continue.",
+                    0.0,
+                )
+            return True, "", 0.0
+
+        if self.plan == "FREE":
+            if used >= limit:
+                return (
+                    False,
+                    f"Free plan limit of {limit:,} transactions reached. "
+                    f"Upgrade to continue.",
+                    0.0,
+                )
+            return True, "", 0.0
+
+        # Paid plans — always allow
+        if used < limit:
+            return True, "", 0.0
+
+        # Overage
+        overage = used - limit + 1
+        rate    = OVERAGE_RATES.get(self.plan, 0.30)
+        cost    = round(overage * rate, 2)
+        return (
+            True,
+            f"Over plan limit by {overage:,} txn. Overage: Rs.{cost:.2f}",
+            cost,
+        )
+
+    def record_transaction_posted(
+        self, kind: str = "single_voucher", count: int = 1,
+    ) -> int:
+        """Count `count` posted transactions of type `kind` toward
+        `txn_used`. The per-transaction increment is the weight
+        assigned to `kind` in `core/txn_weights.py` (baked from
+        `config/pricing.xlsx` per release).
+
+        Every code path that creates / edits / cancels a billable unit
+        MUST call this — single voucher post, multi-party Payment /
+        Receipt, bank-reco bulk post, ledger-reco, AI doc reader,
+        edit, cancel. No bypasses.
+
+        Bulk paths (bank reco, AI doc reader) should pass
+        `count=N` instead of calling N times — saves N-1 disk writes.
+
+        Returns the total delta applied. A zero-weight kind (e.g.
+        'edit', 'cancel' in v1) returns 0 and doesn't touch
+        `txn_used`. A negative weight would refund — supported but
+        not used today.
+        """
+        from core.txn_weights import weight_for
+        if count <= 0:
+            return 0
+        delta = weight_for(kind) * count
+        if delta == 0:
+            return 0
+        # Sync first so concurrent increments from other instances aren't lost.
+        self._sync_local_counters()
+        self._data["txn_used"] = self._data.get("txn_used", 0) + delta
+        if self.txn_used > self.txn_limit:
+            self._data["overage_count"] = (
+                self._data.get("overage_count", 0) + max(0, delta)
+            )
+        self._save_local()
+        return delta
+
+    def record_voucher_posted(self) -> int:
+        """Back-compat alias for record_transaction_posted('single_voucher').
+
+        Existing call sites used this name. New callers should use
+        `record_transaction_posted(kind)` with the right kind string
+        from `core.txn_weights.Kind`.
+        """
+        return self.record_transaction_posted("single_voucher")
+
+    def upgrade_savings(self) -> dict | None:
+        """Calculate if upgrading would save money. Returns suggestion dict or None."""
+        if self.plan == "PREMIUM":
+            return None
+        overage = self.overage_count
+        if overage < 100:
+            return None
+
+        rate         = OVERAGE_RATES.get(self.plan, 0.30)
+        overage_cost = round(overage * rate, 2)
+        next_plan    = PLANS[PLANS.index(self.plan) + 1]
+        upgrade_cost = PLAN_PRICES[next_plan] - PLAN_PRICES[self.plan]
+
+        if overage_cost > upgrade_cost * 0.5:
+            return {
+                "current_plan": self.plan,
+                "next_plan":    next_plan,
+                "overage_txn":  overage,
+                "overage_cost": overage_cost,
+                "upgrade_cost": upgrade_cost,
+                "would_save":   round(overage_cost - upgrade_cost, 2),
+            }
+        return None
+
+    # ── Server validation ─────────────────────────────────────────────────────
+
+    def validate_with_server(self, license_key: str) -> tuple[bool, str]:
+        """Validates key with license server. Returns (success, message)."""
+        if license_key == DEV_KEY:
+            # Re-sync local counters from disk before rewriting the blob.
+            self._sync_local_counters()
+            self._data.update({
+                "license_key":   DEV_KEY,
+                "plan":          "PREMIUM",
+                "features":      PLAN_FEATURES["PREMIUM"],
+                "txn_limit":     PLAN_LIMITS["PREMIUM"],
+                "txn_used":      self._data.get("txn_used", 0),
+                "user_limit":    999,
+                "seats_allowed": 0,   # DEV bypasses seat counting
+                "seats_used":    0,
+                "expires_at":    "2099-12-31",
+                "company_name":  "Developer",
+                "country_code":  "IN",
+                "validated_at":  datetime.now().isoformat(),
+                "offline_until": (datetime.now() + timedelta(days=3650)).isoformat(),
+                "overage_count": 0,
+            })
+            self._save_local()
+            return True, "Developer key activated — all features unlocked."
+
+        try:
+            payload = json.dumps({
+                "license_key": license_key,
+                "machine_id":  self.get_machine_id(),
+                "app_version": current_release(),
+                # Which app is asking — the server rejects a license whose
+                # product doesn't match (a product's license only works with
+                # its own app). Empty for legacy builds → no server check.
+                "product":     os.environ.get("APP_LICENSE_PRODUCT", ""),
+            }).encode()
+
+            req = urllib.request.Request(
+                f"{SERVER_URL}/license/validate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+
+            if not data.get("valid"):
+                return False, data.get("error", "Invalid license key")
+
+            # Belt-and-suspenders product match (also enforced server-side):
+            # an app only accepts its own product's license.
+            _expected = (os.environ.get("APP_LICENSE_PRODUCT") or "").strip().lower()
+            _got = (data.get("product") or "").strip().lower()
+            if _expected and _got and _got != _expected:
+                _names = {"accgenie": "Accounts HQ", "rwagenie": "RWA HQ",
+                          "tradehq": "tradeHQ"}
+                return False, (
+                    f"This is a {_names.get(_got, _got)} license — it won't work "
+                    f"in {_names.get(_expected, _expected)}. Please use a "
+                    f"{_names.get(_expected, _expected)} license."
+                )
+
+            plan = data.get("plan", "FREE")
+            # Re-sync local counters from disk before rewriting the blob —
+            # voucher_form may have incremented txn_used since this instance
+            # last loaded.
+            self._sync_local_counters()
+            self._data.update({
+                "license_key":   license_key,
+                "plan":          plan,
+                "features":      data.get("features", PLAN_FEATURES["FREE"]),
+                "txn_limit":     data.get("txn_limit", PLAN_LIMITS.get(plan, 5000)),
+                # txn_used is tracked locally — the server does NOT track it
+                # yet and always returns 0. Overwriting with the server value
+                # silently reset the customer's count on every License-page
+                # refresh. Preserve whatever's already on disk.
+                "txn_used":      self._data.get("txn_used", 0),
+                "user_limit":    data.get("user_limit", 1),
+                "seats_allowed": data.get("seats_allowed") or 0,
+                "seats_used":    data.get("seats_used") or 0,
+                "expires_at":    data.get("expires_at", "2026-12-31"),
+                "company_name":  data.get("company_name", ""),
+                "country_code":  (data.get("country_code") or "IN").upper(),
+                "validated_at":  datetime.now().isoformat(),
+                "offline_until": (datetime.now() + timedelta(days=7)).isoformat(),
+                # overage_count is also a local tally — don't reset it.
+                "overage_count": self._data.get("overage_count", 0),
+            })
+            self._save_local()
+            # The licence country may have changed — drop the cached
+            # CountryProfile so the next lookup re-reads it (A13).
+            try:
+                from core import country
+                country.reset_active()
+            except Exception:
+                pass
+            return True, "License activated!"
+
+        except urllib.error.URLError:
+            if license_key == self.license_key and self.is_in_grace:
+                return True, "Server unreachable — using cached license."
+            return False, "Cannot reach license server. Check internet connection."
+        except Exception as e:
+            return False, str(e)
+
+    def refresh_from_server(self):
+        """Silent background refresh."""
+        if self.license_key in ("DEMO", "FREE-DEMO", DEV_KEY, "", None):
+            return
+        self.validate_with_server(self.license_key)
+
+    def validate_on_startup(self, timeout: float = 3.0) -> None:
+        """
+        Silent re-validation at app startup. Falls back to the cached license
+        on any network error so a slow / offline boot doesn't block the UI.
+        Caller should run this on a worker thread to avoid blocking the splash.
+        """
+        if self.license_key in ("DEMO", "FREE-DEMO", DEV_KEY, "", None):
+            return
+        try:
+            payload = json.dumps({
+                "license_key": self.license_key,
+                "machine_id":  self.get_machine_id(),
+                "app_version": current_release(),
+            }).encode()
+            req = urllib.request.Request(
+                f"{SERVER_URL}/license/validate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read())
+            if not data.get("valid"):
+                return  # Don't crash startup if server says revoked — UI surfaces it later.
+            # Sync local counters before the whole-blob save so a voucher
+            # posted during startup isn't clobbered.
+            self._sync_local_counters()
+            self._data["seats_allowed"] = data.get("seats_allowed") or 0
+            self._data["seats_used"]    = data.get("seats_used") or 0
+            self._save_local()
+        except Exception:
+            # Offline / DNS / timeout — keep the cached license, the 7-day
+            # grace handles posting.
+            return
+
+    def release_this_machine_seat(self) -> tuple[bool, str]:
+        """
+        Tell the server to free this machine's seat for this license key, then
+        drop the local cache to DEMO (preserving the local voucher count).
+        Returns (success, message) — success means the seat was released
+        cleanly OR was already absent server-side. Network failure returns
+        False; caller should keep retrying instead of force-dropping.
+        """
+        key = self.license_key
+        if key in ("DEMO", "FREE-DEMO", DEV_KEY, "", None):
+            return False, "No paid license is active on this machine."
+        try:
+            payload = json.dumps({
+                "license_key": key,
+                "machine_id":  self.get_machine_id(),
+            }).encode()
+            req = urllib.request.Request(
+                f"{SERVER_URL}/license/deactivate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            if not data.get("ok"):
+                return False, data.get("error") or "Server refused to release the seat."
+            self._drop_to_demo()
+            return True, (
+                "This machine's seat has been released. "
+                "You can activate the same key on a different machine now."
+            )
+        except urllib.error.URLError:
+            return False, "Cannot reach license server. Check internet connection."
+        except Exception as e:
+            return False, str(e)
+
+    # ── Display helpers ───────────────────────────────────────────────────────
+
+    def status_summary(self) -> dict:
+        used    = self.txn_used
+        limit   = self.txn_limit
+        overage = max(0, used - limit)
+        rate    = OVERAGE_RATES.get(self.plan, 0.30)
+        return {
+            "plan":           self.plan,
+            "license_key":    self.license_key,
+            "txn_used":       used,
+            "txn_limit":      limit,
+            "txn_pct":        self.txn_percent,
+            "overage_count":  overage,
+            "overage_cost":   round(overage * rate, 2),
+            "expires_at":     self.expires_at,
+            "days_to_expiry": self.days_to_expiry,
+            "is_expired":     self.is_expired,
+        }

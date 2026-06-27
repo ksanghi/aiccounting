@@ -437,6 +437,12 @@ QComboBox::down-arrow {{
     margin-right: 8px;
     width: 14px;
 }}
+/* Comfortable, fully-readable height for dropdowns app-wide — the default
+   render (~26px) was cramped, especially the period combos. ~30px reads
+   cleanly and still fits inside the table rows (all >=32px). */
+QComboBox, QDateEdit {{
+    min-height: 20px;
+}}
 QComboBox QAbstractItemView {{
     background-color: {t['bg_card']};
     border: 1px solid {t['border']};

@@ -13,8 +13,8 @@ import os
 # Current released versions. Update on each blessed release (e.g. 1.0 -> 1.0.1
 # for a fix, 1.0 -> 1.1 for features).
 RELEASE_VERSIONS = {
-    "accgenie": "1.0",   # Accounts HQ
-    "rwagenie": "1.0",   # RWA HQ
+    "accgenie": "1.2",   # Accounts HQ
+    "rwagenie": "1.2",   # RWA HQ
 }
 
 DEFAULT_PRODUCT = "accgenie"

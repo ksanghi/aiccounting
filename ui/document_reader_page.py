@@ -107,15 +107,16 @@ class ProcessThread(QThread):
 # ── Drop zone widget ──────────────────────────────────────────────────────────
 
 _DEFAULT_FILTER = (
-    "All supported (*.pdf *.xlsx *.xls *.csv *.jpg *.jpeg *.png *.docx *.txt)"
+    "All supported (*.pdf *.xlsx *.xls *.csv *.ofx *.qfx *.jpg *.jpeg *.png *.docx *.txt)"
     ";;PDF (*.pdf)"
     ";;Excel (*.xlsx *.xls)"
     ";;CSV (*.csv)"
+    ";;Bank statement / OFX (*.ofx *.qfx)"
     ";;Images (*.jpg *.jpeg *.png)"
     ";;Word (*.docx)"
     ";;Text (*.txt)"
 )
-_DEFAULT_HINT = "PDF  ·  Excel  ·  CSV  ·  JPG  ·  PNG  ·  Word  ·  TXT"
+_DEFAULT_HINT = "PDF  ·  Excel  ·  CSV  ·  OFX/QFX  ·  JPG  ·  PNG  ·  Word  ·  TXT"
 
 
 class DropZone(QFrame):

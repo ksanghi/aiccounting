@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ stmt.ledger }} · statement{% endblock %}
+{% block content %}
+<a href="/c/{{ slug }}/ledgers" class="text-sm text-amber-600">← Ledgers</a>
+<h1 class="text-xl font-bold mt-1 mb-1">{{ stmt.ledger }}</h1>
+<p class="text-xs text-slate-400 mb-4">{{ stmt.group }} · {{ from_ }} → {{ to }}</p>
+<div class="bg-white border rounded-xl p-4 overflow-x-auto">
+<table class="w-full text-sm">
+  <thead><tr class="text-left text-slate-400 border-b"><th class="py-1">Date</th><th>Voucher</th><th>Type</th><th>Particulars</th><th class="text-right">Dr</th><th class="text-right">Cr</th><th class="text-right">Balance</th></tr></thead>
+  <tbody>
+  <tr class="border-b text-slate-500"><td colspan="6" class="py-1">Opening</td><td class="text-right">{{ "%.2f"|format(stmt.opening or 0) }}</td></tr>
+  {% for r in stmt.transactions %}
+    <tr class="border-b last:border-0"><td class="py-1">{{ r.date }}</td><td>{{ r.voucher_no }}</td><td>{{ r.type }}</td><td class="text-slate-500">{{ r.party }}</td><td class="text-right">{{ "%.2f"|format(r.dr or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.cr or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.balance or 0) }}</td></tr>
+  {% endfor %}
+  <tr class="font-semibold"><td colspan="6" class="py-1 text-right">Closing</td><td class="text-right">{{ "%.2f"|format(stmt.closing or 0) }}</td></tr>
+  </tbody>
+</table>
+</div>
+{% endblock %}

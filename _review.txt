@@ -1,0 +1,19 @@
+===== ACCOUNTSHQ =====
+[FREE] headline: 5,000 transactions, 1 user
+[FREE] bullets : AI self voucher post | All basic reports | Bank & ledger reconciliation| Export to Excel and PDF | Backup | 1 company  
+[STANDARD] headline: 20,000 transactions, 2 users
+[STANDARD] bullets : Everything in Free | A/R-A/P aging, cash flow reporting  | Reports print / email | Unlimited companies
+[PRO] headline: 50,000 transactions, 5 users
+[PRO] bullets : Everything in Standard | GST  and TDS returns | Voice  entry 
+[PREMIUM] headline: 100,000 transactions, 10 users
+[PREMIUM] bullets : Everything in Pro | WhatsApp notifications | Audit export | API access 
+
+===== RWAHQ =====
+[FREE] headline: Up to 300 flats, 5,000 transactions, 1 user
+[FREE] bullets : Member directory | Receipt tracking | Notice board, polls | Visitor passes | Basic reports | AI self voucher post | All basic reports | Bank & ledger reconciliation| Export to Excel and PDF | Backup 
+[STANDARD] headline: Up to 1,000 flats, 20,000 transactions, 2 users
+[STANDARD] bullets : Everything in Free | Auto-billing & late fees | Facilities booking | Asset register | Advanced reports | A/R-A/P aging, cash flow reporting  | Reports print / email 
+[PRO] headline: Up to 2,500 flats, 50,000 transactions, 5 users
+[PRO] bullets : Everything in Standard | WhatsApp invoices | Document storage | Vendor management | GST  and TDS returns | Voice  entry 
+[PREMIUM] headline: Unlimited flats, large societies, 100,000 transactions, 10 users
+[PREMIUM] bullets : Everything in Pro | Unlimited flats | Multi-block / phase | Priority email support | WhatsApp notifications | Audit export | API access 

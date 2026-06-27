@@ -113,12 +113,23 @@ def call_messages(feature: str, payload: dict, timeout: float = 120.0) -> dict:
         #   401 → licence / machine binding not valid
         if e.code == 402:
             raise AIRouteError(
-                "Out of AI credits — top up your wallet to continue."
+                "Out of AI credits — top up your wallet to continue, or add "
+                "your own Anthropic key in Settings → AI."
             ) from e
         if e.code == 503:
             raise AIServiceUnavailable(
                 "The AI service isn't configured on the licence server yet. "
                 "Contact support."
+            ) from e
+        if e.code in (401, 403):
+            # The feature IS unlocked — this is the wallet/billing authorisation
+            # failing, not feature access. Say the actionable thing, not a bare
+            # "licence not valid".
+            raise AIRouteError(
+                "This AI run couldn't be charged to your wallet — your Accounts "
+                "HQ licence isn't active for AI on the server. Add value to / "
+                "activate your wallet on the Licence page, or add your own "
+                "Anthropic key in Settings → AI."
             ) from e
         raise AIRouteError(
             f"AI request failed (HTTP {e.code}): {body[:300]}"

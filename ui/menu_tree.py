@@ -25,6 +25,12 @@ from collections import OrderedDict
 
 # (needle_lower, section, group) — first substring match wins.
 _RULES: list[tuple[str, str, str]] = [
+    # ── Must win over later rules ────────────────────────────────────────────
+    # "AI Documents Inbox" contains "documents", which would otherwise hit the
+    # RWA "documents" rule below (putting it under RWA · Society — and making a
+    # stray RWA section appear in AHQ). Pin it to Tools first.
+    ("ai documents",     "Tools", "AI & Documents"),
+
     # ── RWA · Society (RWA HQ only) ──────────────────────────────────────────
     ("pending approval", "RWA · Society", "People"),
     ("members",          "RWA · Society", "People"),
@@ -73,6 +79,10 @@ _RULES: list[tuple[str, str, str]] = [
     ("hsn",              "Reports", "Tax"),
     ("gst",              "Reports", "Tax"),
     ("tds",              "Reports", "Tax"),
+    # US (Books HQ) tax reports — Reports ▸ Tax, not the "More" catch-all.
+    ("1099",             "Reports", "Tax"),
+    ("schedule c",       "Reports", "Tax"),
+    ("mileage",          "Reports", "Tax"),
     ("reports",          "Reports", "Financial"),        # bare locked "Reports" page
 
     # ── Tools ────────────────────────────────────────────────────────────────
@@ -88,6 +98,8 @@ _RULES: list[tuple[str, str, str]] = [
     ("period lock",      "Tools", "Data"),
     ("users",            "Tools", "Admin"),
     ("audit",            "Tools", "Admin"),
+    ("user manual",      "Tools", "Help"),
+    ("manual",           "Tools", "Help"),
 
     # ── Settings ─────────────────────────────────────────────────────────────
     ("ai credits",       "Settings", ""),   # AI wallet — billing/account
@@ -111,7 +123,7 @@ GROUP_ORDER: dict[str, list[str]] = {
     "RWA · Society": ["People", "Community", "Property", "Billing"],
     "Accounting":    ["Entry", "Reconciliation"],
     "Reports":       ["Books", "Financial", "Tax"],
-    "Tools":         ["Sync & Onboarding", "AI & Documents", "Data", "Admin"],
+    "Tools":         ["Sync & Onboarding", "AI & Documents", "Data", "Admin", "Help"],
     "Settings":      [""],
     "More":          [""],
 }

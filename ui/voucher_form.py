@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QSizePolicy, QMessageBox, QStackedWidget,
     QSpacerItem, QFileDialog, QDialog
 )
+from core.i18n import format_currency, currency_symbol
 from PySide6.QtCore import Qt, QDate, Signal, QTimer, QThread
 from PySide6.QtGui  import QFont, QShortcut, QKeySequence
 
@@ -298,13 +299,13 @@ class _MultiPartyVoucherDialog(QDialog):
 
     def _refresh_total(self):
         total = sum(r["amount"].value() for r in self._rows)
-        self._total_lbl.setText(f"Total ₹ {total:,.2f}")
+        self._total_lbl.setText(f"Total {format_currency(total)}")
         # Mirror into the bento footer tiles when available.
         try:
             if getattr(self, "_tile_lines", None) is not None:
                 self._tile_lines.set_value(str(len(self._rows)))
             if getattr(self, "_tile_total", None) is not None:
-                self._tile_total.set_value(f"₹ {total:,.2f}")
+                self._tile_total.set_value(f"{format_currency(total)}")
             if getattr(self, "_tile_balance", None) is not None:
                 # Multi-party always balances by construction (bank leg
                 # = sum of party legs). Surface that visually.
@@ -395,7 +396,7 @@ class _MultiPartyVoucherDialog(QDialog):
         QMessageBox.information(
             self, "Posted",
             f"✓  {posted.voucher_number}\n"
-            f"₹{posted.total_amount:,.2f} across {len(party_lines)} parties",
+            f"{format_currency(posted.total_amount)} across {len(party_lines)} parties",
         )
         self.accept()
 
@@ -878,6 +879,37 @@ class VoucherEntryPage(QWidget):
         self._gst_combo.setFixedWidth(96)
         self._gst_combo.currentIndexChanged.connect(self._update_balance_smart)
 
+        # US (Books HQ): one configured sales-tax rate, relabelled from GST.
+        self._cur = "₹"
+        try:
+            from core import country
+            _prof = country.active_profile()
+            self._cur = _prof.currency_symbol or "₹"
+            if _prof.tax_system == "US_SALES_TAX":
+                self._gst_label.setText("Sales Tax")
+                # sales_tax is a PRO feature — lower tiers see "No tax" only.
+                try:
+                    from core.license_manager import LicenseManager
+                    _has_sales_tax = LicenseManager().has_feature("sales_tax")
+                except Exception:
+                    _has_sales_tax = False
+                rate = 0.0
+                if _has_sales_tax:
+                    rrow = self.tree.db.execute(
+                        "SELECT sales_tax_rate FROM companies WHERE id=?",
+                        (self.tree.company_id,)).fetchone()
+                    rate = float(rrow["sales_tax_rate"] or 0) if rrow else 0.0
+                # Block signals: balance widgets aren't built yet at this point.
+                self._gst_combo.blockSignals(True)
+                self._gst_combo.clear()
+                self._gst_combo.addItem("No tax", 0)
+                if rate > 0:
+                    self._gst_combo.addItem(f"{rate:g}%", rate)
+                    self._gst_combo.setCurrentIndex(1)
+                self._gst_combo.blockSignals(False)
+        except Exception:
+            pass
+
         self._gst_amount_value = QLabel("Tax ₹ 0.00")
         self._gst_amount_value.setMinimumHeight(36)
         self._gst_amount_value.setStyleSheet(
@@ -1281,11 +1313,12 @@ class VoucherEntryPage(QWidget):
         gst = self._gst_combo.currentData() if self._gst_combo.isVisible() else 0
         tax = round(amt * gst / 100, 2)
         gross = round(amt + tax, 2)
+        cur = getattr(self, "_cur", "₹")
         if hasattr(self, "_gst_amount_value"):
-            self._gst_amount_value.setText(f"₹ {tax:,.2f}")
-            self._total_amount_value.setText(f"₹ {gross:,.2f}")
-        self._bal_dr.setText(f"{get_dr_label(short=True)}  ₹{gross:,.2f}")
-        self._bal_cr.setText(f"{get_cr_label(short=True)}  ₹{gross:,.2f}")
+            self._gst_amount_value.setText(f"{cur} {tax:,.2f}")
+            self._total_amount_value.setText(f"{cur} {gross:,.2f}")
+        self._bal_dr.setText(f"{get_dr_label(short=True)}  {cur}{gross:,.2f}")
+        self._bal_cr.setText(f"{get_cr_label(short=True)}  {cur}{gross:,.2f}")
         self._bal_diff.setText("✓ Balanced" if gross > 0 else "")
         self._bal_diff.setStyleSheet(f"color:{THEME['success']}; font-size:11px;")
 
@@ -1294,8 +1327,8 @@ class VoucherEntryPage(QWidget):
         total_dr = sum(r.dr_amount for r in self._journal_rows)
         total_cr = sum(r.cr_amount for r in self._journal_rows)
         diff = round(total_dr - total_cr, 2)
-        self._bal_dr.setText(f"{get_dr_label(short=True)}  ₹{total_dr:,.2f}")
-        self._bal_cr.setText(f"{get_cr_label(short=True)}  ₹{total_cr:,.2f}")
+        self._bal_dr.setText(f"{get_dr_label(short=True)}  {format_currency(total_dr)}")
+        self._bal_cr.setText(f"{get_cr_label(short=True)}  {format_currency(total_cr)}")
         if abs(diff) < 0.01:
             self._bal_diff.setText("Balanced ✓")
             self._bal_diff.setStyleSheet(
@@ -1303,7 +1336,7 @@ class VoucherEntryPage(QWidget):
             )
         else:
             sign = "+" if diff > 0 else ""
-            self._bal_diff.setText(f"Diff {sign}₹{diff:,.2f}")
+            self._bal_diff.setText(f"Diff {sign}{format_currency(diff)}")
             self._bal_diff.setStyleSheet(
                 f"color:{THEME['danger']}; font-size:12px; font-weight:bold;"
             )
@@ -1340,7 +1373,7 @@ class VoucherEntryPage(QWidget):
                           if a.get("bill_ref_id"))
                 if n:
                     self._alloc_btn.setText(
-                        f"🧾  {n} bill(s) allocated · ₹{tot:,.2f}  (edit)")
+                        f"🧾  {n} bill(s) allocated · {format_currency(tot)}  (edit)")
                 else:
                     self._alloc_btn.setText("🧾  On-account (no bill)  (edit)")
         except Exception as e:
@@ -1514,7 +1547,7 @@ class VoucherEntryPage(QWidget):
                 )
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Updated")
-                msg.setText(f"✎  {posted.voucher_number} updated\n₹{posted.total_amount:,.2f}")
+                msg.setText(f"✎  {posted.voucher_number} updated\n{format_currency(posted.total_amount)}")
                 msg.setInformativeText(narration or vtype)
                 msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 msg.exec()
@@ -1543,7 +1576,7 @@ class VoucherEntryPage(QWidget):
             if _prefs.get("after_post_toast", True):
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Posted")
-                msg.setText(f"✓  {posted.voucher_number}\n₹{posted.total_amount:,.2f}")
+                msg.setText(f"✓  {posted.voucher_number}\n{format_currency(posted.total_amount)}")
                 msg.setInformativeText(narration or vtype)
                 msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 msg.exec()

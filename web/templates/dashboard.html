@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ company.display_name }} · Books HQ{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-xl font-bold">{{ company.display_name }}</h1>
+  <a href="/c/{{ slug }}/vouchers/new" class="bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-md px-4 py-2 text-sm">+ New voucher</a>
+</div>
+<div class="grid sm:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white border rounded-xl p-4"><div class="text-xs text-slate-500">Ledgers</div><div class="text-2xl font-bold">{{ n_ledgers }}</div></div>
+  <div class="bg-white border rounded-xl p-4"><div class="text-xs text-slate-500">Vouchers (YTD)</div><div class="text-2xl font-bold">{{ n_vouchers }}</div></div>
+  <div class="bg-white border rounded-xl p-4"><div class="text-xs text-slate-500">Net profit (YTD)</div><div class="text-2xl font-bold">{{ "%.2f"|format(pnl.net_profit or 0) }}</div></div>
+</div>
+<div class="bg-white border rounded-xl p-4">
+  <div class="font-semibold mb-3">Recent vouchers</div>
+  {% if recent %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-400 border-b"><th class="py-1">Date</th><th>Number</th><th>Type</th><th>Narration</th><th class="text-right">Amount</th></tr></thead>
+    <tbody>
+    {% for v in recent %}
+      <tr class="border-b last:border-0"><td class="py-1">{{ v.voucher_date }}</td><td>{{ v.voucher_number }}</td><td>{{ v.voucher_type }}</td><td class="text-slate-500">{{ v.narration }}</td><td class="text-right">{{ "%.2f"|format(v.total_amount or 0) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-slate-400">No vouchers yet. <a href="/c/{{ slug }}/vouchers/new" class="text-amber-600">Post your first one →</a></p>
+  {% endif %}
+</div>
+{% endblock %}

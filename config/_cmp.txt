@@ -1,0 +1,9 @@
+=== CURRENT (pricing_CURRENT_2026-06-13) ACCOUNTSHQ Plan summary ===
+  DEMO: Full-feature trial, hard-capped at txn_limit. Mirrors PREMIUM features.
+  FREE: Permanent free tier — Basic books with AI posting · 5,000 transactions · 1 user · no card
+  STANDARD: Full bookkeeping with AI posting · A/R-A/P aging, Cash Flow, migration · 20,000 transactions · 2 users
+  PRO: Everything in Standard + GST, TDS reports · 50,000 transactions · 5 users
+  PREMIUM: Unlimited transactions · WhatsApp, audit export, API · 10 users
+
+=== Jun 11 backup (pricing.xlsx.bak) ACCOUNTSHQ Plan summary ===
+  ?: (can't read: openpyxl does not support .bak file format, please check you can open it with Excel first. Supported formats are: .xlsx,.xlsm,.xltx,.xltm)

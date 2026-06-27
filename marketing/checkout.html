@@ -149,17 +149,19 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
       <label for="email">Email (your licence key is sent here) *</label>
       <input id="email" type="email" placeholder="you@example.com" required>
     </div>
+    <div id="extra-fields">
     <div class="field">
       <label for="name">Your name *</label>
       <input id="name" type="text" placeholder="Krishan Sanghi" required>
     </div>
     <div class="field">
-      <label for="phone">Mobile (Razorpay needs this)</label>
+      <label for="phone">Mobile (optional)</label>
       <input id="phone" type="tel" placeholder="98XXX12345">
     </div>
     <div class="field">
       <label for="company">Society / Company name (optional)</label>
       <input id="company" type="text" placeholder="Sunshine Apartments CHS">
+    </div>
     </div>
 
     <div id="alert" class="alert"></div>
@@ -218,7 +220,7 @@ const CATALOG = {
       { code: "STANDARD", inr: 1999, name: "Standard",
         desc: "20,000 transactions, 2 users, reports, exports, reconciliation" },
       { code: "PRO",      inr: 4999, name: "Pro",
-        desc: "50,000 transactions, 5 users, GST + TDS, AI document reader" },
+        desc: "50,000 transactions, 5 users, GST + TDS, AI Documents Inbox" },
       { code: "PREMIUM",  inr: 9999, name: "Premium",
         desc: "100,000 transactions, 10 users, WhatsApp, audit export, API" },
     ],
@@ -317,6 +319,13 @@ function renderPlans() {
   if (btn) {
     btn.textContent = cur.inr === 0 ? "Get free key →" : "Pay with Razorpay →";
   }
+  // Free download = email only: hide name/phone/company and drop the name
+  // "required" so a free key is one field + one click. Paid plans keep the
+  // full form (Razorpay uses the name + contact).
+  const extra = document.getElementById("extra-fields");
+  const nameEl = document.getElementById("name");
+  if (extra)  extra.style.display = cur.inr === 0 ? "none" : "";
+  if (nameEl) nameEl.required = cur.inr !== 0;
 }
 
 // Public installer URL per product. Only RWA HQ has a real installer in
@@ -359,7 +368,8 @@ async function startCheckout() {
     showAlert("error", "Please enter a valid email — the licence key gets sent there.");
     return;
   }
-  if (!name) {
+  const curPlan = (CATALOG[state.product].plans.find(p => p.code === state.plan) || {});
+  if (curPlan.inr !== 0 && !name) {
     showAlert("error", "Please enter your name.");
     return;
   }

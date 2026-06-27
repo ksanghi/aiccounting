@@ -38,6 +38,7 @@ DOC_TYPES = (
     "debit_note",
     "credit_note",
     "bank_statement",
+    "ledger_statement",
     "other",
 )
 
@@ -50,6 +51,7 @@ VOUCHER_AI_DOCTYPE = {
     "debit_note":       "purchase_invoice",
     "credit_note":      "sales_invoice",
     "bank_statement":   "bank_statement",
+    "ledger_statement": "bank_statement",
     "other":            "expense_receipt",
 }
 

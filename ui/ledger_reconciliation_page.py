@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QInputDialog, QPlainTextEdit, QButtonGroup,
     QRadioButton, QScrollArea,
 )
+from core.i18n import format_currency, currency_symbol
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 
 from ui.theme import THEME
@@ -281,6 +282,16 @@ class LedgerReconciliationPage(QWidget):
         )
         self._status_lbl.setWordWrap(True)
         dl.addWidget(self._status_lbl)
+
+        # Hand-off from the AI Documents Inbox: a pre-loaded ledger statement
+        # waits here for the user to confirm the party ledger + period, then import.
+        self._import_handoff_btn = QPushButton("⬇  Import this statement")
+        self._import_handoff_btn.setObjectName("btn_primary")
+        self._import_handoff_btn.setVisible(False)
+        self._import_handoff_btn.clicked.connect(
+            lambda: self._on_file_dropped(self._pending_file_path))
+        dl.addWidget(self._import_handoff_btn)
+
         layout.addWidget(drop_card)
 
         # ── Imported statements + history ──
@@ -405,10 +416,10 @@ class LedgerReconciliationPage(QWidget):
             self._history_table.insertRow(r)
             self._history_table.setItem(r, 0, DateTableItem(row["as_of_date"]))
             self._history_table.setItem(r, 1, QTableWidgetItem(
-                f"₹ {row['book_balance']:,.2f}"
+                f"{format_currency(row['book_balance'])}"
             ))
             self._history_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {row['statement_balance']:,.2f}"
+                f"{format_currency(row['statement_balance'])}"
             ))
             self._history_table.setItem(r, 3, QTableWidgetItem(
                 row["finalised_at"][:16]
@@ -440,6 +451,23 @@ class LedgerReconciliationPage(QWidget):
             QMessageBox.critical(self, "Delete failed", str(e))
             return
         self._refresh_history()
+
+    def preload_statement(self, path: str, party_name: str = "",
+                          account_number: str = ""):
+        """Hand-off from the AI Documents Inbox: pre-load a ledger statement and
+        stop at the confirm step — the user picks/confirms the party ledger +
+        period, then clicks "Import this statement". `import_statement` dedups by
+        file-hash, so an in-progress reconciliation is never overwritten."""
+        import os
+        self._stack.setCurrentWidget(self._setup_page)
+        self._pending_file_path = path
+        bits = [f"📄  Statement from the inbox: <b>{os.path.basename(path)}</b>"]
+        if party_name:
+            bits.append("Detected: " + party_name)
+        bits.append("Pick the party ledger and period above, then click "
+                    "“Import this statement”.")
+        self._status_lbl.setText("<br>".join(bits))
+        self._import_handoff_btn.setVisible(True)
 
     def _on_file_dropped(self, path: str):
         if not self._ledger_id:
@@ -713,7 +741,7 @@ class LedgerReconciliationPage(QWidget):
         for r, m in enumerate(matched):
             self._matched_table.setItem(r, 0, DateTableItem(m["txn_date"]))
             self._matched_table.setItem(r, 1, QTableWidgetItem(m["sign"]))
-            self._matched_table.setItem(r, 2, QTableWidgetItem(f"₹ {m['amount']:,.2f}"))
+            self._matched_table.setItem(r, 2, QTableWidgetItem(f"{format_currency(m['amount'])}"))
             self._matched_table.setItem(r, 3, QTableWidgetItem(m.get("voucher_number") or ""))
             self._matched_table.setItem(r, 4, QTableWidgetItem(m.get("voucher_type") or ""))
             self._matched_table.setItem(r, 5, QTableWidgetItem(m.get("narration") or ""))
@@ -738,7 +766,7 @@ class LedgerReconciliationPage(QWidget):
             self._unmatched_stmt_table.setItem(r, 0, date_item)
             self._unmatched_stmt_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
             self._unmatched_stmt_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {s['amount']:,.2f}"
+                f"{format_currency(s['amount'])}"
             ))
             self._unmatched_stmt_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
             self._unmatched_stmt_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
@@ -778,8 +806,8 @@ class LedgerReconciliationPage(QWidget):
             self._unmatched_book_table.setItem(r, 1, QTableWidgetItem(b["voucher_number"] or ""))
             self._unmatched_book_table.setItem(r, 2, QTableWidgetItem(b["voucher_type"]))
             amt = (
-                f"Dr ₹ {b['dr_amount']:,.2f}" if b["dr_amount"]
-                else f"Cr ₹ {b['cr_amount']:,.2f}"
+                f"Dr {format_currency(b['dr_amount'])}" if b["dr_amount"]
+                else f"Cr {format_currency(b['cr_amount'])}"
             )
             self._unmatched_book_table.setItem(r, 3, QTableWidgetItem(amt))
             self._unmatched_book_table.setItem(r, 4, QTableWidgetItem(b.get("narration") or ""))
@@ -800,7 +828,7 @@ class LedgerReconciliationPage(QWidget):
             self._ignored_table.setItem(r, 0, DateTableItem(line["txn_date"]))
             self._ignored_table.setItem(r, 1, QTableWidgetItem(line["sign"]))
             self._ignored_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {line['amount']:,.2f}"
+                f"{format_currency(line['amount'])}"
             ))
             self._ignored_table.setItem(r, 3, QTableWidgetItem(line.get("narration") or ""))
             self._ignored_table.setItem(r, 4, QTableWidgetItem(line.get("reference") or ""))
@@ -892,7 +920,7 @@ class LedgerReconciliationPage(QWidget):
                 on_post_callback=on_posted,
                 banner_text=(
                     f"+ New voucher for {self._ledger_name} · "
-                    f"₹ {amount:,.2f} ({prefill['party_side']})  ·  "
+                    f"{format_currency(amount)} ({prefill['party_side']})  ·  "
                     f"pick a voucher type below"
                 ),
             )
@@ -939,8 +967,8 @@ class LedgerReconciliationPage(QWidget):
             t.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             t.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
             amt = (
-                f"Dr ₹ {c['dr_amount']:,.2f}" if c["dr_amount"]
-                else f"Cr ₹ {c['cr_amount']:,.2f}"
+                f"Dr {format_currency(c['dr_amount'])}" if c["dr_amount"]
+                else f"Cr {format_currency(c['cr_amount'])}"
             )
             t.setItem(r, 4, QTableWidgetItem(amt))
         from ui.table_utils import make_sortable as _ms2
@@ -1005,7 +1033,7 @@ class LedgerReconciliationPage(QWidget):
         dl = QVBoxLayout(dlg)
         dl.addWidget(QLabel(
             f"<b>{len(candidates)}</b> candidate(s). Tick the rows whose "
-            f"amounts together equal <b>₹ {stmt_amount:,.2f}</b> "
+            f"amounts together equal <b>{format_currency(stmt_amount)}</b> "
             f"(Ctrl+click for multi-select)."
         ))
         t = QTableWidget(len(candidates), 5)
@@ -1027,8 +1055,8 @@ class LedgerReconciliationPage(QWidget):
             t.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             t.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
             amt = (
-                f"Dr ₹ {c['dr_amount']:,.2f}" if c["dr_amount"]
-                else f"Cr ₹ {c['cr_amount']:,.2f}"
+                f"Dr {format_currency(c['dr_amount'])}" if c["dr_amount"]
+                else f"Cr {format_currency(c['cr_amount'])}"
             )
             t.setItem(r, 4, QTableWidgetItem(amt))
         dl.addWidget(t)
@@ -1054,11 +1082,11 @@ class LedgerReconciliationPage(QWidget):
             diff = picked - stmt_amount
             within = bool(rows) and abs(diff) <= TOL
             status = ("matches ✓" if within else
-                      (f"short by ₹ {-diff:,.2f}" if diff < 0
-                       else f"over by ₹ {diff:,.2f}"))
+                      (f"short by {format_currency(-diff)}" if diff < 0
+                       else f"over by {format_currency(diff)}"))
             total_lbl.setText(
-                f"Selected {len(rows)} row(s) · sum ₹ {picked:,.2f} "
-                f"vs ₹ {stmt_amount:,.2f} — {status}"
+                f"Selected {len(rows)} row(s) · sum {format_currency(picked)} "
+                f"vs {format_currency(stmt_amount)} — {status}"
             )
             total_lbl.setStyleSheet(
                 f"color:{THEME['success'] if within else THEME['danger']}; "
@@ -1175,12 +1203,12 @@ class LedgerReconciliationPage(QWidget):
         as_of = stmt["period_to"]
         book = self.reconciler._book_balance(self._ledger_id, as_of)
         stmt_close = stmt["statement_closing"]
-        self._summary_book.setText(f"Book balance: ₹ {book:,.2f}")
+        self._summary_book.setText(f"Book balance: {format_currency(book)}")
         if stmt_close is None:
             self._summary_stmt.setText("Statement balance: not detected from import")
             diff = 0.0
         else:
-            self._summary_stmt.setText(f"Statement balance: ₹ {stmt_close:,.2f}")
+            self._summary_stmt.setText(f"Statement balance: {format_currency(stmt_close)}")
             # MIRROR mode: bank balance from your POV is opposite-signed of theirs.
             # For v1 just compute raw diff and surface it.
             diff = round(book - stmt_close, 2)
@@ -1190,7 +1218,7 @@ class LedgerReconciliationPage(QWidget):
                 f"color:{THEME['success']}; font-size:16px; font-weight:bold;"
             )
         else:
-            self._summary_diff.setText(f"Difference: ₹ {diff:,.2f}")
+            self._summary_diff.setText(f"Difference: {format_currency(diff)}")
             self._summary_diff.setStyleSheet(
                 f"color:{THEME['danger']}; font-size:16px; font-weight:bold;"
             )

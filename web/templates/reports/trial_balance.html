@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Trial Balance{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">Trial Balance</h1>
+<form method="get" class="flex gap-2 items-end mb-4 text-sm">
+  <div><label class="block text-xs text-slate-500">As of</label><input type="date" name="as_of" value="{{ as_of }}" class="border rounded-md px-2 py-1.5"></div>
+  <button class="bg-slate-800 text-white rounded-md px-3 py-1.5">Apply</button>
+</form>
+<div class="bg-white border rounded-xl p-4">
+<table class="w-full text-sm">
+  <thead><tr class="text-left text-slate-400 border-b"><th class="py-1">Ledger</th><th>Group</th><th class="text-right">Debit</th><th class="text-right">Credit</th></tr></thead>
+  <tbody>
+  {% set tdr = namespace(v=0) %}{% set tcr = namespace(v=0) %}
+  {% for r in rows %}
+    {% set tdr.v = tdr.v + (r.closing_dr or 0) %}{% set tcr.v = tcr.v + (r.closing_cr or 0) %}
+    <tr class="border-b last:border-0"><td class="py-1">{{ r.ledger }}</td><td class="text-slate-500">{{ r.group }}</td><td class="text-right">{{ "%.2f"|format(r.closing_dr or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.closing_cr or 0) }}</td></tr>
+  {% endfor %}
+  <tr class="font-bold border-t"><td class="py-1">Total</td><td></td><td class="text-right">{{ "%.2f"|format(tdr.v) }}</td><td class="text-right">{{ "%.2f"|format(tcr.v) }}</td></tr>
+  </tbody>
+</table>
+</div>
+{% endblock %}

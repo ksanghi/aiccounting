@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QTabWidget, QSizePolicy, QDialog,
     QFormLayout, QInputDialog, QMenu, QPlainTextEdit, QScrollArea,
 )
+from core.i18n import format_currency, currency_symbol
 from PySide6.QtCore import Qt, QDate, Signal, QThread
 from PySide6.QtGui  import QColor
 
@@ -141,7 +142,7 @@ class _CreateVoucherDialog(QDialog):
         layout.setSpacing(14)
 
         head = QLabel(
-            f"<b>{self.voucher_type}</b>  ·  ₹ {stmt_line['amount']:,.2f}  "
+            f"<b>{self.voucher_type}</b>  ·  {format_currency(stmt_line['amount'])}  "
             f"·  {stmt_line['txn_date']}"
         )
         head.setStyleSheet(f"color:{THEME['accent']}; font-size:14px;")
@@ -331,7 +332,7 @@ class _FindCandidateDialog(QDialog):
             layout.addWidget(QLabel(
                 f"<b>{len(candidates)}</b> candidate(s) on the matching side. "
                 f"Tick the rows whose amounts together equal the bank line of "
-                f"<b>Rs. {self.stmt_amount:,.2f}</b>. Use Ctrl+click for "
+                f"<b>{format_currency(self.stmt_amount)}</b>. Use Ctrl+click for "
                 f"multi-select."
             ))
         else:
@@ -371,9 +372,9 @@ class _FindCandidateDialog(QDialog):
             self._table.setItem(r, 2, QTableWidgetItem(c["voucher_type"]))
             self._table.setItem(r, 3, QTableWidgetItem(c.get("narration") or ""))
             amt = (
-                f"Dr Rs. {c['dr_amount']:,.2f}"
+                f"Dr {format_currency(c['dr_amount'])}"
                 if c["dr_amount"] else
-                f"Cr Rs. {c['cr_amount']:,.2f}"
+                f"Cr {format_currency(c['cr_amount'])}"
             )
             self._table.setItem(r, 4, QTableWidgetItem(amt))
         # Enable sort AFTER populating so the inserts don't re-sort live.
@@ -411,18 +412,18 @@ class _FindCandidateDialog(QDialog):
         n = len(rows)
         if n == 0:
             self._total_lbl.setText(
-                f"Selected: 0 rows · target Rs. {self.stmt_amount:,.2f}"
+                f"Selected: 0 rows · target {format_currency(self.stmt_amount)}"
             )
             self._ok_btn.setEnabled(False)
             return
         within = abs(diff) <= self.tolerance
         status = "matches ✓" if within else (
-            f"short by Rs. {-diff:,.2f}" if diff < 0
-            else f"over by Rs. {diff:,.2f}"
+            f"short by {format_currency(-diff)}" if diff < 0
+            else f"over by {format_currency(diff)}"
         )
         self._total_lbl.setText(
-            f"Selected: {n} row(s) · sum Rs. {picked_total:,.2f} "
-            f"vs target Rs. {self.stmt_amount:,.2f} — {status}"
+            f"Selected: {n} row(s) · sum {format_currency(picked_total)} "
+            f"vs target {format_currency(self.stmt_amount)} — {status}"
         )
         self._total_lbl.setStyleSheet(
             f"color:{THEME['success'] if within else THEME['danger']}; "
@@ -590,6 +591,110 @@ class _BulkCreateVoucherDialog(QDialog):
 
 
 # ── Main page ────────────────────────────────────────────────────────────────
+
+class _FeedWorker(QThread):
+    """Runs a network callable (SimpleFIN claim / fetch / refresh) off the UI thread."""
+    done   = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, fn, parent=None):
+        super().__init__(parent)
+        self._fn = fn
+
+    def run(self):
+        try:
+            self.done.emit(self._fn())
+        except Exception as e:               # surface any provider/network error
+            self.failed.emit(str(e))
+
+
+class _SimpleFinConnectDialog(QDialog):
+    """Paste a SimpleFIN setup token → claim + list accounts → pick the one that
+    feeds this bank ledger. On accept exposes .access_url / .account_id / .label."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QLineEdit, QComboBox
+        self.setWindowTitle("Connect a bank feed — SimpleFIN")
+        self.resize(480, 250)
+        self.access_url = ""
+        self.account_id = None
+        self.label = ""
+
+        v = QVBoxLayout(self)
+        intro = QLabel(
+            "Your customer creates a one-time <b>setup token</b> at the SimpleFIN "
+            "Bridge (bridge.simplefin.org), links their bank, and pastes the token "
+            "here. We store nothing with SimpleFIN — they pay the Bridge directly.")
+        intro.setWordWrap(True)
+        v.addWidget(intro)
+
+        self._token = QLineEdit()
+        self._token.setPlaceholderText("Paste SimpleFIN setup token…")
+        v.addWidget(self._token)
+
+        self._connect_btn = QPushButton("Connect")
+        self._connect_btn.clicked.connect(self._do_connect)
+        v.addWidget(self._connect_btn)
+
+        self._status = QLabel("")
+        self._status.setWordWrap(True)
+        v.addWidget(self._status)
+
+        self._acct_combo = QComboBox()
+        self._acct_combo.setVisible(False)
+        v.addWidget(self._acct_combo)
+
+        row = QHBoxLayout()
+        row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        row.addWidget(cancel)
+        self._save_btn = QPushButton("Save connection")
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self._do_save)
+        row.addWidget(self._save_btn)
+        v.addLayout(row)
+
+    def _do_connect(self):
+        tok = self._token.text().strip()
+        if not tok:
+            self._status.setText("Paste a setup token first.")
+            return
+        from core import bank_feed
+        self._connect_btn.setEnabled(False)
+        self._status.setText("Connecting to SimpleFIN…")
+        self._w = _FeedWorker(lambda: bank_feed.begin_simplefin(tok), self)
+        self._w.done.connect(self._on_connected)
+        self._w.failed.connect(self._on_failed)
+        self._w.start()
+
+    def _on_connected(self, result):
+        self._connect_btn.setEnabled(True)
+        self.access_url, accounts = result
+        if not accounts:
+            self._status.setText("Connected, but no accounts were returned.")
+            return
+        self._acct_combo.clear()
+        for a in accounts:
+            self._acct_combo.addItem(
+                f"{a['org']} · {a['name']} ({a['txn_count']} txns)", a["id"])
+        self._acct_combo.setVisible(True)
+        self._save_btn.setEnabled(True)
+        self._status.setText(
+            f"Connected — {len(accounts)} account(s). Pick the one that feeds this ledger.")
+
+    def _on_failed(self, msg):
+        self._connect_btn.setEnabled(True)
+        self._status.setText(f"Could not connect: {msg}")
+
+    def _do_save(self):
+        if self._acct_combo.currentIndex() < 0:
+            return
+        self.account_id = self._acct_combo.currentData()
+        self.label = self._acct_combo.currentText()
+        self.accept()
+
 
 class BankReconciliationPage(QWidget):
     """Constructor: (db, company_id, tree, voucher_engine, calculator, license_mgr)."""
@@ -779,7 +884,42 @@ class BankReconciliationPage(QWidget):
         self._status_lbl.setWordWrap(True)
         drop_lay.addWidget(self._status_lbl)
 
+        # Hand-off from the AI Documents Inbox: a pre-loaded statement waits
+        # here for the user to confirm the bank ledger + period, then import.
+        self._import_handoff_btn = QPushButton("⬇  Import this statement")
+        self._import_handoff_btn.setObjectName("btn_primary")
+        self._import_handoff_btn.setVisible(False)
+        self._import_handoff_btn.clicked.connect(
+            lambda: self._on_file_dropped(self._pending_file_path))
+        drop_lay.addWidget(self._import_handoff_btn)
+
         layout.addWidget(drop_card)
+
+        # Live bank feed (SimpleFIN) — auto-pull instead of dropping a file.
+        feed_card = QFrame()
+        feed_card.setObjectName("card")
+        feed_lay = QVBoxLayout(feed_card)
+        feed_lay.setContentsMargins(20, 16, 20, 16)
+        feed_lay.setSpacing(8)
+        feed_title = QLabel("Or connect a live bank feed (US)")
+        feed_title.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px; font-weight:bold;")
+        feed_lay.addWidget(feed_title)
+        feed_row = QHBoxLayout()
+        self._feed_connect_btn = QPushButton("🔗  Connect feed (SimpleFIN)")
+        self._feed_connect_btn.clicked.connect(self._open_feed_connect)
+        self._feed_refresh_btn = QPushButton("⟳  Refresh feed")
+        self._feed_refresh_btn.clicked.connect(self._refresh_feed)
+        feed_row.addWidget(self._feed_connect_btn)
+        feed_row.addWidget(self._feed_refresh_btn)
+        feed_row.addStretch()
+        feed_lay.addLayout(feed_row)
+        self._feed_status = QLabel("")
+        self._feed_status.setWordWrap(True)
+        self._feed_status.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px;")
+        feed_lay.addWidget(self._feed_status)
+        layout.addWidget(feed_card)
 
         # Imported statements (un-finalised + finalised) with delete action
         imp_card = QFrame()
@@ -968,11 +1108,19 @@ class BankReconciliationPage(QWidget):
                 if active_to_resume is None:
                     active_to_resume = dict(row)
 
-            del_btn = self._compact_btn("Delete")
-            del_btn.clicked.connect(
-                lambda _, sid=row["id"], summary=row: self._on_delete_statement(sid, summary)
+            # Secondary actions live in a compact "⋯" menu so the primary
+            # Resume button isn't crowded out of the column (matches the
+            # bank-reco row actions: one visible action + the rest in a menu).
+            more_btn = self._compact_btn("⋯")
+            more_btn.setToolTip("More actions")
+            more_menu = QMenu(more_btn)
+            del_act = more_menu.addAction("🗑  Delete")
+            del_act.triggered.connect(
+                lambda _=False, sid=row["id"], summary=row:
+                    self._on_delete_statement(sid, summary)
             )
-            ch.addWidget(del_btn)
+            more_btn.setMenu(more_menu)
+            ch.addWidget(more_btn)
             ch.addStretch()
             self._imports_table.setCellWidget(r, 5, cell)
 
@@ -1011,10 +1159,10 @@ class BankReconciliationPage(QWidget):
         for r, row in enumerate(rows):
             self._history_table.setItem(r, 0, DateTableItem(row["as_of_date"]))
             self._history_table.setItem(r, 1, NumericTableItem(
-                f"₹ {row['book_balance']:,.2f}", row["book_balance"]
+                f"{format_currency(row['book_balance'])}", row["book_balance"]
             ))
             self._history_table.setItem(r, 2, NumericTableItem(
-                f"₹ {row['statement_balance']:,.2f}", row["statement_balance"]
+                f"{format_currency(row['statement_balance'])}", row["statement_balance"]
             ))
             self._history_table.setItem(r, 3, QTableWidgetItem(
                 f"{row['matched_count']}  /  "
@@ -1053,6 +1201,24 @@ class BankReconciliationPage(QWidget):
             QMessageBox.critical(self, "Delete failed", str(e))
             return
         self._refresh_history()
+
+    def preload_statement(self, path: str, bank_name: str = "",
+                          account_number: str = ""):
+        """Hand-off from the AI Documents Inbox: pre-load a statement file and
+        stop at the confirm step — the user picks/confirms the bank ledger +
+        period, then clicks "Import this statement". `import_statement` dedups
+        by file-hash, so an in-progress reconciliation is never overwritten."""
+        import os
+        self._stack.setCurrentWidget(self._setup_page)
+        self._pending_file_path = path
+        bits = [f"📄  Statement from the inbox: <b>{os.path.basename(path)}</b>"]
+        det = [d for d in (bank_name, f"A/c {account_number}" if account_number else "") if d]
+        if det:
+            bits.append("Detected: " + " · ".join(det))
+        bits.append("Pick the bank account and period above, then click "
+                    "“Import this statement”.")
+        self._status_lbl.setText("<br>".join(bits))
+        self._import_handoff_btn.setVisible(True)
 
     def _on_file_dropped(self, path: str):
         if not self._bank_ledger_id:
@@ -1228,6 +1394,61 @@ class BankReconciliationPage(QWidget):
         self._status_lbl.setText("")
         QMessageBox.critical(self, "Import failed", msg)
 
+    # ── Bank feed (SimpleFIN) ─────────────────────────────────────────────────
+    def _open_feed_connect(self):
+        if not self._bank_ledger_id:
+            QMessageBox.warning(self, "Pick a bank first",
+                                "Select a bank ledger before connecting a feed.")
+            return
+        dlg = _SimpleFinConnectDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.access_url and dlg.account_id:
+            from core import bank_feed
+            bank_feed.save_connection(
+                self.db, self.company_id, self._bank_ledger_id, "simplefin",
+                dlg.access_url, str(dlg.account_id), dlg.label)
+            self._feed_status.setText(
+                f"Connected: {dlg.label}. Click ‘Refresh feed’ to pull transactions.")
+
+    def _refresh_feed(self):
+        if not self._bank_ledger_id:
+            QMessageBox.warning(self, "Pick a bank first", "Select a bank ledger first.")
+            return
+        from core import bank_feed
+        conns = bank_feed.connections_for(self.db, self.company_id, self._bank_ledger_id)
+        if not conns:
+            QMessageBox.information(
+                self, "No feed connected",
+                "No bank feed is connected for this ledger yet. "
+                "Click ‘Connect feed (SimpleFIN)’ first.")
+            return
+        self._feed_status.setText("Pulling transactions…")
+        self._feed_refresh_btn.setEnabled(False)
+        conn = conns[0]
+        sd = self._period_from_edit.date().toString("yyyy-MM-dd")
+        ed = self._period_to_edit.date().toString("yyyy-MM-dd")
+        self._feed_worker = _FeedWorker(
+            lambda: bank_feed.refresh(self.reconciler, self.db, self.company_id,
+                                      conn, start_date=sd, end_date=ed), self)
+        self._feed_worker.done.connect(self._on_feed_refreshed)
+        self._feed_worker.failed.connect(self._on_feed_failed)
+        self._feed_worker.start()
+
+    def _on_feed_refreshed(self, results):
+        self._feed_refresh_btn.setEnabled(True)
+        new = [r for r in results if r.get("statement_id")]
+        if not new:
+            self._feed_status.setText("Up to date — no new transactions.")
+            return
+        last = new[-1]
+        self._feed_status.setText(
+            f"Pulled {len(results)} account(s); {len(new)} new statement(s) imported.")
+        if last.get("result") is not None:
+            self._on_import_done(last["statement_id"], last["result"])
+
+    def _on_feed_failed(self, msg):
+        self._feed_refresh_btn.setEnabled(True)
+        self._feed_status.setText(f"Feed refresh failed: {msg}")
+
     # ── Step 2: Review ────────────────────────────────────────────────────────
 
     def _build_review_page(self) -> QWidget:
@@ -1293,7 +1514,7 @@ class BankReconciliationPage(QWidget):
         )
         self._unmatched_stmt_table = self._make_table(
             ["Date", "Sign", "Amount", "Narration", "Reference", "Status", ""],
-            [110, 60, 120, 0, 130, 110, 320],
+            [110, 60, 120, 0, 130, 110, 110],
         )
         # Multi-row select so the user can ctrl/shift-click a batch of
         # lines (e.g. every JIO debit) and act on them in one go.
@@ -1518,7 +1739,7 @@ class BankReconciliationPage(QWidget):
                 self._matched_table.setItem(r, 0, DateTableItem(m["txn_date"]))
                 self._matched_table.setItem(r, 1, QTableWidgetItem(m["sign"]))
                 self._matched_table.setItem(r, 2, NumericTableItem(
-                    f"₹ {m['amount']:,.2f}", m["amount"]
+                    f"{format_currency(m['amount'])}", m["amount"]
                 ))
                 self._matched_table.setItem(r, 3, QTableWidgetItem(m.get("voucher_number") or ""))
                 self._matched_table.setItem(r, 4, QTableWidgetItem(m.get("voucher_type") or ""))
@@ -1546,35 +1767,45 @@ class BankReconciliationPage(QWidget):
                 self._unmatched_stmt_table.setItem(r, 0, date_item)
                 self._unmatched_stmt_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
                 self._unmatched_stmt_table.setItem(r, 2, NumericTableItem(
-                    f"₹ {s['amount']:,.2f}", s["amount"]
+                    f"{format_currency(s['amount'])}", s["amount"]
                 ))
                 self._unmatched_stmt_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
                 self._unmatched_stmt_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
                 self._unmatched_stmt_table.setItem(r, 5, QTableWidgetItem(s["match_status"]))
 
+                # One compact "Actions ▾" context menu instead of 4 inline
+                # buttons (Create voucher / Find candidate / Split match /
+                # Ignore) that didn't fit the cell. Frees the room for the
+                # Narration column and keeps every action one click away.
                 actions = QWidget()
                 ah = QHBoxLayout(actions)
                 ah.setContentsMargins(6, 0, 6, 0)
                 ah.setSpacing(4)
-                cv = self._compact_btn("Create voucher")
-                cv.clicked.connect(lambda _, line=s: self._on_create_voucher(line))
-                fc = self._compact_btn("Find candidate")
-                fc.clicked.connect(lambda _, line=s: self._on_find_candidate(line))
-                ah.addWidget(cv)
-                ah.addWidget(fc)
+                act_btn = self._compact_btn("Actions")
+                act_btn.setToolTip("Actions for this statement line")
+                menu = QMenu(act_btn)
+                a_cv = menu.addAction("📝  Create voucher")
+                a_cv.triggered.connect(
+                    lambda _=False, line=s: self._on_create_voucher(line))
+                a_fc = menu.addAction("🔍  Find candidate")
+                a_fc.triggered.connect(
+                    lambda _=False, line=s: self._on_find_candidate(line))
                 # Split-match: settlement scenarios where one bank line pairs
                 # with N book lines summing to the bank amount. Standard+ only.
                 if self._has_feature("bank_reco_split"):
-                    sm = self._compact_btn("Split match")
-                    sm.setToolTip(
+                    a_sm = menu.addAction("➗  Split match")
+                    a_sm.setToolTip(
                         "Match this bank line to several ledger entries that "
                         "together total the bank amount (settlement scenario)."
                     )
-                    sm.clicked.connect(lambda _, line=s: self._on_split_match(line))
-                    ah.addWidget(sm)
-                ig = self._compact_btn("Ignore")
-                ig.clicked.connect(lambda _, line=s: self._on_ignore(line))
-                ah.addWidget(ig)
+                    a_sm.triggered.connect(
+                        lambda _=False, line=s: self._on_split_match(line))
+                menu.addSeparator()
+                a_ig = menu.addAction("🚫  Ignore")
+                a_ig.triggered.connect(
+                    lambda _=False, line=s: self._on_ignore(line))
+                act_btn.setMenu(menu)
+                ah.addWidget(act_btn)
                 ah.addStretch()
                 self._unmatched_stmt_table.setCellWidget(r, 6, actions)
 
@@ -1589,9 +1820,9 @@ class BankReconciliationPage(QWidget):
                 self._unmatched_book_table.setItem(r, 1, QTableWidgetItem(b["voucher_number"] or ""))
                 self._unmatched_book_table.setItem(r, 2, QTableWidgetItem(b["voucher_type"]))
                 amt = (
-                    f"Dr ₹ {b['dr_amount']:,.2f}"
+                    f"Dr {format_currency(b['dr_amount'])}"
                     if b["dr_amount"] else
-                    f"Cr ₹ {b['cr_amount']:,.2f}"
+                    f"Cr {format_currency(b['cr_amount'])}"
                 )
                 amt_val = float(b["dr_amount"] or b["cr_amount"] or 0)
                 self._unmatched_book_table.setItem(r, 3, NumericTableItem(amt, amt_val))
@@ -1617,7 +1848,7 @@ class BankReconciliationPage(QWidget):
                 self._ignored_table.setItem(r, 0, DateTableItem(s["txn_date"]))
                 self._ignored_table.setItem(r, 1, QTableWidgetItem(s["sign"]))
                 self._ignored_table.setItem(r, 2, NumericTableItem(
-                    f"₹ {s['amount']:,.2f}", s["amount"]
+                    f"{format_currency(s['amount'])}", s["amount"]
                 ))
                 self._ignored_table.setItem(r, 3, QTableWidgetItem(s.get("narration") or ""))
                 self._ignored_table.setItem(r, 4, QTableWidgetItem(s.get("reference") or ""))
@@ -1925,12 +2156,12 @@ class BankReconciliationPage(QWidget):
         as_of = stmt["period_to"]
         book = self.reconciler._book_balance(self._bank_ledger_id, as_of)
         stmt_close = stmt["statement_closing"]
-        self._summary_book.setText(f"Book balance: ₹ {book:,.2f}")
+        self._summary_book.setText(f"Book balance: {format_currency(book)}")
         if stmt_close is None:
             self._summary_stmt.setText("Statement balance: not detected from import")
             diff = 0.0
         else:
-            self._summary_stmt.setText(f"Statement balance: ₹ {stmt_close:,.2f}")
+            self._summary_stmt.setText(f"Statement balance: {format_currency(stmt_close)}")
             diff = round(book - stmt_close, 2)
         if abs(diff) < 0.01:
             self._summary_diff.setText("Difference: ✓ ₹ 0.00 (reconciled)")
@@ -1938,7 +2169,7 @@ class BankReconciliationPage(QWidget):
                 f"color:{THEME['success']}; font-size:16px; font-weight:bold;"
             )
         else:
-            self._summary_diff.setText(f"Difference: ₹ {diff:,.2f}")
+            self._summary_diff.setText(f"Difference: {format_currency(diff)}")
             self._summary_diff.setStyleSheet(
                 f"color:{THEME['danger']}; font-size:16px; font-weight:bold;"
             )

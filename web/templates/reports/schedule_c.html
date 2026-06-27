@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Schedule C{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">Schedule C (Form 1040)</h1>
+<form method="get" class="flex gap-2 items-end mb-4 text-sm">
+  <div><label class="block text-xs text-slate-500">From</label><input type="date" name="from" value="{{ from_ }}" class="border rounded-md px-2 py-1.5"></div>
+  <div><label class="block text-xs text-slate-500">To</label><input type="date" name="to" value="{{ to }}" class="border rounded-md px-2 py-1.5"></div>
+  <button class="bg-slate-800 text-white rounded-md px-3 py-1.5">Apply</button>
+</form>
+<div class="bg-white border rounded-xl p-4">
+  <div class="flex justify-between font-semibold border-b pb-2 mb-2"><span>Gross receipts</span><span>{{ "%.2f"|format(d.gross_receipts or 0) }}</span></div>
+  <table class="w-full text-sm">
+  {% for r in d.lines %}<tr class="border-b last:border-0"><td class="py-1 text-slate-400 w-16">Line {{ r.line }}</td><td>{{ r.label }}</td><td class="text-right">{{ "%.2f"|format(r.amount or 0) }}</td></tr>{% endfor %}
+  </table>
+  <div class="flex justify-between border-t pt-2 mt-2"><span>Total expenses</span><span>{{ "%.2f"|format(d.total_expenses or 0) }}</span></div>
+  <div class="flex justify-between font-bold mt-1"><span>Net profit</span><span>{{ "%.2f"|format(d.net_profit or 0) }}</span></div>
+  {% if d.mileage and d.mileage.miles %}<p class="text-xs text-slate-400 mt-3">Includes standard mileage: {{ d.mileage.miles }} mi × {{ d.mileage.rate }} = {{ "%.2f"|format(d.mileage.amount or 0) }}</p>{% endif %}
+</div>
+{% endblock %}

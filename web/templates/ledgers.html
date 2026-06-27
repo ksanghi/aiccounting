@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Ledgers · {{ company.display_name }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4"><h1 class="text-xl font-bold">Ledgers</h1></div>
+<div class="grid md:grid-cols-3 gap-6">
+  <div class="md:col-span-2 bg-white border rounded-xl p-4">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400 border-b"><th class="py-1">Ledger</th><th>Group</th><th class="text-right">Balance</th></tr></thead>
+      <tbody>
+      {% for l in ledgers %}
+        <tr class="border-b last:border-0">
+          <td class="py-1"><a href="/c/{{ slug }}/ledgers/{{ l.id }}/statement" class="text-amber-600 hover:underline">{{ l.name }}</a></td>
+          <td class="text-slate-500">{{ l.group_name }}</td>
+          <td class="text-right">{{ "%.2f"|format(l.balance or 0) }} {{ l.bal_type }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="bg-white border rounded-xl p-4 h-fit">
+    <div class="font-semibold mb-3">Add ledger</div>
+    <form method="post" action="/c/{{ slug }}/ledgers" class="space-y-2 text-sm">
+      <input name="name" placeholder="Ledger name" required class="w-full border rounded-md px-3 py-2">
+      <select name="group_name" class="w-full border rounded-md px-3 py-2">{% for g in groups %}<option>{{ g }}</option>{% endfor %}</select>
+      <div class="grid grid-cols-2 gap-2">
+        <input name="opening_balance" type="number" step="0.01" value="0" class="w-full border rounded-md px-3 py-2">
+        <select name="opening_type" class="w-full border rounded-md px-3 py-2"><option>Dr</option><option>Cr</option></select>
+      </div>
+      <button class="bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-md px-4 py-2 w-full">Add</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

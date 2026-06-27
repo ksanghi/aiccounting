@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}New voucher · {{ company.display_name }}{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">New voucher</h1>
+<div class="flex flex-wrap gap-2 mb-5">
+  {% for vt in vtypes %}
+  <a href="/c/{{ slug }}/vouchers/new?type={{ vt }}"
+     class="px-3 py-1.5 rounded-full text-xs font-semibold border {{ 'bg-amber-500 text-white border-amber-500' if vt==vtype else 'bg-white text-slate-600 border-slate-300 hover:border-amber-400' }}">
+    {{ vt.replace('_',' ').title() }}</a>
+  {% endfor %}
+</div>
+{% if error %}<div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-3">{{ error }}</div>{% endif %}
+
+{% set labels = {
+  'PAYMENT': ['Paid for (expense / party)', 'Paid from (bank / cash)'],
+  'RECEIPT': ['Received from (customer / income)', 'Received into (bank / cash)'],
+  'CONTRA': ['From (bank / cash)', 'To (bank / cash)'],
+  'SALES': ['Customer', 'Sales account'],
+  'PURCHASE': ['Vendor', 'Purchase account'],
+  'DEBIT_NOTE': ['Vendor', 'Purchase return account'],
+  'CREDIT_NOTE': ['Customer', 'Sales return account'],
+} %}
+
+<form method="post" action="/c/{{ slug }}/vouchers" class="bg-white border rounded-xl p-5 max-w-2xl space-y-4">
+  <input type="hidden" name="vtype" value="{{ vtype }}">
+  <div class="grid sm:grid-cols-2 gap-4">
+    <div><label class="block text-xs font-semibold text-slate-600 mb-1">Date</label>
+      <input type="date" name="voucher_date" value="{{ today }}" required class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"></div>
+    <div><label class="block text-xs font-semibold text-slate-600 mb-1">Reference (optional)</label>
+      <input name="reference" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"></div>
+  </div>
+
+  {% if vtype == 'JOURNAL' %}
+  <div>
+    <div class="text-xs font-semibold text-slate-600 mb-2">Lines (debits must equal credits)</div>
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-slate-400"><th class="pb-1">Ledger</th><th class="w-28">Debit</th><th class="w-28">Credit</th></tr></thead>
+      <tbody>
+      {% for i in range(6) %}
+      <tr>
+        <td class="pr-2 py-1"><select name="j_ledger" class="w-full border border-slate-300 rounded-md px-2 py-1.5"><option value="">—</option>{% for l in ledgers %}<option value="{{ l.id }}">{{ l.name }} · {{ l.group_name }}</option>{% endfor %}</select></td>
+        <td class="pr-2"><input name="j_dr" type="number" step="0.01" class="w-full border border-slate-300 rounded-md px-2 py-1.5"></td>
+        <td><input name="j_cr" type="number" step="0.01" class="w-full border border-slate-300 rounded-md px-2 py-1.5"></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div><label class="block text-xs font-semibold text-slate-600 mb-1">{{ labels[vtype][0] }}</label>
+    <select name="ledger_a" required class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"><option value="">— select —</option>{% for l in ledgers %}<option value="{{ l.id }}">{{ l.name }} · {{ l.group_name }}</option>{% endfor %}</select></div>
+  <div><label class="block text-xs font-semibold text-slate-600 mb-1">{{ labels[vtype][1] }}</label>
+    <select name="ledger_b" required class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"><option value="">— select —</option>{% for l in ledgers %}<option value="{{ l.id }}">{{ l.name }} · {{ l.group_name }}</option>{% endfor %}</select></div>
+  <div class="grid sm:grid-cols-2 gap-4">
+    <div><label class="block text-xs font-semibold text-slate-600 mb-1">{{ 'Base amount' if vtype in ['SALES','PURCHASE','DEBIT_NOTE','CREDIT_NOTE'] else 'Amount' }}</label>
+      <input name="amount" type="number" step="0.01" required class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"></div>
+    {% if vtype in ['SALES','PURCHASE','DEBIT_NOTE','CREDIT_NOTE'] %}
+    <div><label class="block text-xs font-semibold text-slate-600 mb-1">Sales tax %</label>
+      <input name="gst_rate" type="number" step="0.01" value="0" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div><label class="block text-xs font-semibold text-slate-600 mb-1">Narration</label>
+    <textarea name="narration" rows="2" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"></textarea></div>
+  <button class="bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-md px-5 py-2 text-sm">Post voucher</button>
+</form>
+{% endblock %}

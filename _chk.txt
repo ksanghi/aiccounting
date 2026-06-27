@@ -1,0 +1,4 @@
+FREE: Permanent free tier — Basic books with AI posting · 5,000 transactions · 1 user · no card
+STANDARD: Full bookkeeping with AI posting · A/R-A/P aging, Cash Flow, migration · 20,000 transactions · 2 users
+PRO: Everything in Standard + GST, TDS reports · 50,000 transactions · 5 users
+PREMIUM: Unlimited transactions · WhatsApp, audit export, API · 10 users

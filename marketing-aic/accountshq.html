@@ -44,6 +44,15 @@
   .nav-cta { background: var(--accent); color: white; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
   .nav-cta:hover { background: #4F46E5; }
 
+  /* Always-on download tile — the single download (matches RWA HQ pattern) */
+  .dl-tile { position:fixed; right:22px; bottom:22px; z-index:60; display:inline-flex; align-items:center; gap:11px;
+    background:var(--accent-warm); color:#1A1205; font-weight:800; font-size:15px; padding:13px 22px; border-radius:14px;
+    box-shadow:0 16px 34px -12px rgba(245,165,36,0.6), 0 6px 16px -6px rgba(0,0,0,0.45); transition:transform .12s ease, box-shadow .2s ease; text-decoration:none; }
+  .dl-tile:hover { transform:translateY(-2px); box-shadow:0 24px 46px -12px rgba(245,165,36,0.78); }
+  .dl-tile .ar { font-size:19px; line-height:1; }
+  .dl-tile small { display:block; font-weight:600; font-size:11px; color:#6b5306; margin-top:1px; }
+  @media (max-width:640px){ .dl-tile { left:14px; right:14px; bottom:14px; justify-content:center; border-radius:12px; } }
+
   /* ── Hero ──────────────────────────────────────── */
   .hero {
     position: relative; overflow: hidden;
@@ -554,7 +563,7 @@
         <g><rect class="hub" x="430" y="300" width="220" height="120" rx="14"/>
            <text class="ht" x="540" y="338" text-anchor="middle">Accounts HQ</text>
            <text class="hs" x="540" y="358" text-anchor="middle">your books - on your PC</text>
-           <text class="hs" x="540" y="378" text-anchor="middle">Document Inbox - AI drafts</text>
+           <text class="hs" x="540" y="378" text-anchor="middle">AI Documents Inbox</text>
            <text class="hs" x="540" y="396" text-anchor="middle">Reconcile - Reports</text></g>
         <g><rect class="nbox" x="852" y="170" width="190" height="58" rx="10"/>
            <text class="nt" x="947" y="196" text-anchor="middle">Anthropic AI</text>
@@ -599,8 +608,7 @@
           <svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </summary>
         <div class="acc-body">
-          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>AI document reader</b> <span class="adv-badge">Advanced</span> — <span>reads bills, invoices and statements into draft vouchers for you to approve.</span></div></div>
-          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Document Inbox</b> <span class="adv-badge">Advanced</span> — <span>queue, preview, review and approve incoming documents in one place.</span></div></div>
+          <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>AI Documents Inbox</b> <span class="adv-badge">Advanced</span> — <span>drop, email or scan bills, invoices and statements; the AI reads each into a draft voucher, ready for you to review and post — or auto-post the confident ones.</span></div></div>
           <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Verbal / voice entry</b> <span class="adv-badge">Advanced</span> — <span>speak a transaction and get a balanced draft voucher.</span></div></div>
           <div class="acc-feat adv"><span class="tick">✓</span><div class="ft"><b>Bill-wise referencing</b> <span class="adv-badge">Advanced</span> — <span>allocate receipts and payments against specific outstanding bills.</span></div></div>
         </div>
@@ -664,6 +672,15 @@
   </div>
 </section>
 
+<!-- ── See it in action (shared carousel — carousel.js + screens.js) ── -->
+<section id="in-action" style="max-width:1120px;margin:0 auto;padding:64px 24px;">
+  <h2 style="text-align:center;font-size:clamp(24px,3vw,34px);font-weight:800;letter-spacing:-.02em;margin:0 0 10px;color:#0F172A;">See Accounts HQ in action</h2>
+  <p style="text-align:center;color:#475569;font-size:16px;max-width:660px;margin:0 auto 36px;">Real screens, real data from a working set of books — this is what your day looks like. Click any screen to zoom in.</p>
+  <div data-ahq-carousel></div>
+</section>
+<script src="screens.js"></script>
+<script src="carousel.js"></script>
+
 <!-- ── Pricing ─────────────────────────────────────────────────────── -->
 <section class="pricing" id="pricing">
   <div class="container">
@@ -685,7 +702,7 @@
           <li>Day book + ledger balances</li>
           <li>Backup &amp; restore</li>
         </ul>
-        <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=FREE">Download free</a>
+        <a class="price-btn" href="see-in-action.html">Download free</a>
       </div>
 
       <div class="price-card featured">
@@ -712,7 +729,7 @@
           <li>5 users</li>
           <li>Everything in Standard</li>
           <li>GST returns + TDS reports</li>
-          <li>AI document reader</li>
+          <li>AI Documents Inbox</li>
           <li>Voice voucher entry</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=PRO">Buy Pro</a>
@@ -742,7 +759,7 @@
     itself. Your data never leaves your machine — not even to us.
   </p>
   <div class="cta-row">
-    <a class="btn-primary" href="#">Download for Windows</a>
+    <a class="btn-primary" href="#pricing">See plans &amp; pricing</a>
     <a class="btn-ghost" href="#features-all" style="background: transparent; color: white; border-color: rgba(255,255,255,0.3);">See features</a>
   </div>
 </section>
@@ -760,6 +777,8 @@
   <p>© 2026 AI Consultants · <a href="mailto:info@ai-consultants.in">info@ai-consultants.in</a></p>
   <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>AI Consultants</b>.</p>
 </footer>
+
+<a class="dl-tile" href="see-in-action.html"><span class="ar">⬇</span><span>Download Accounts HQ<small>Free · for Windows</small></span></a>
 
 <script>
 /* Live hero mock — the voucher posts itself. Degrades to the static screenshot if JS or motion is off. */

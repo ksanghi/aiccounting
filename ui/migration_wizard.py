@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QFileDialog, QSizePolicy,
     QLineEdit, QComboBox, QDateEdit, QFormLayout,
 )
+from core.i18n import format_currency, currency_symbol
 from PySide6.QtCore import Qt, Signal, QDate
 
 from ui.theme import THEME
@@ -504,9 +505,9 @@ class MigrationWizard(QDialog):
         summary = (
             f"<b>{c['ledgers']} ledger(s)</b> in "
             f"<b>{c['groups']} new group(s)</b>  ·  "
-            f"Opening Dr: ₹{c['opening_total_dr']:,.2f}  ·  "
-            f"Opening Cr: ₹{c['opening_total_cr']:,.2f}  ·  "
-            f"diff ₹{c['opening_diff']:+,.2f}"
+            f"Opening Dr: {format_currency(c['opening_total_dr'])}  ·  "
+            f"Opening Cr: {format_currency(c['opening_total_cr'])}  ·  "
+            f"diff {format_currency(c['opening_diff'])}"
         )
 
         # If vouchers are also in the payload, validate them and append
@@ -537,7 +538,7 @@ class MigrationWizard(QDialog):
             self._preview_table.setItem(r, 0, QTableWidgetItem(ld.name))
             self._preview_table.setItem(r, 1, QTableWidgetItem(ld.group_name))
             self._preview_table.setItem(r, 2, QTableWidgetItem(
-                f"₹ {ld.opening_balance:,.2f}"
+                f"{format_currency(ld.opening_balance)}"
             ))
             self._preview_table.setItem(r, 3, QTableWidgetItem(ld.opening_type))
         from ui.table_utils import make_sortable as _ms
@@ -623,7 +624,7 @@ class MigrationWizard(QDialog):
             lines += [
                 f"Groups added:   {c.get('groups_added', 0)}",
                 f"Ledgers added:  {c.get('ledgers_added', 0)}",
-                f"Opening diff:   ₹ {c.get('opening_diff', 0):+,.2f}",
+                f"Opening diff:   {format_currency(c.get('opening_diff', 0))}",
             ]
             skipped = c.get("skipped") or []
             if skipped:

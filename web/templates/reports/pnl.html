@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Profit & Loss{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">Profit &amp; Loss</h1>
+<form method="get" class="flex gap-2 items-end mb-4 text-sm">
+  <div><label class="block text-xs text-slate-500">From</label><input type="date" name="from" value="{{ from_ }}" class="border rounded-md px-2 py-1.5"></div>
+  <div><label class="block text-xs text-slate-500">To</label><input type="date" name="to" value="{{ to }}" class="border rounded-md px-2 py-1.5"></div>
+  <button class="bg-slate-800 text-white rounded-md px-3 py-1.5">Apply</button>
+</form>
+<div class="grid sm:grid-cols-2 gap-4">
+  <div class="bg-white border rounded-xl p-4">
+    <div class="font-semibold mb-2">Income</div>
+    <table class="w-full text-sm">
+    {% for r in d.income %}<tr class="border-b last:border-0"><td class="py-1">{{ r.ledger }}</td><td class="text-right">{{ "%.2f"|format(r.amount or 0) }}</td></tr>{% endfor %}
+    <tr class="font-bold"><td class="py-1">Total income</td><td class="text-right">{{ "%.2f"|format(d.total_income or 0) }}</td></tr>
+    </table>
+  </div>
+  <div class="bg-white border rounded-xl p-4">
+    <div class="font-semibold mb-2">Expenses</div>
+    <table class="w-full text-sm">
+    {% for r in d.expenses %}<tr class="border-b last:border-0"><td class="py-1">{{ r.ledger }}</td><td class="text-right">{{ "%.2f"|format(r.amount or 0) }}</td></tr>{% endfor %}
+    <tr class="font-bold"><td class="py-1">Total expense</td><td class="text-right">{{ "%.2f"|format(d.total_expense or 0) }}</td></tr>
+    </table>
+  </div>
+</div>
+<div class="bg-white border rounded-xl p-4 mt-4 flex justify-between font-bold"><span>Net profit</span><span>{{ "%.2f"|format(d.net_profit or 0) }}</span></div>
+{% endblock %}

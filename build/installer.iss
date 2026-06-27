@@ -18,11 +18,19 @@
 #ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
+; AppId — distinct per product so installs never collide / upgrade each other.
+; Accounts HQ keeps the original; Books HQ passes its own via /DAppId.
+#ifndef AppId
+  #define AppId "{{A1CC5E22-1234-4E78-9ABC-AICCOUNTING001}"
+#endif
+#ifndef SetupIcon
+  #define SetupIcon "accountshq.ico"
+#endif
 #define AppPublisher "AI Consultants"
 #define AppExeName  AppName + ".exe"
 
 [Setup]
-AppId={{A1CC5E22-1234-4E78-9ABC-AICCOUNTING001}
+AppId={#AppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -38,6 +46,9 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName} {#AppVersion}
 UninstallDisplayIcon={app}\{#AppExeName}
+; Installer's own icon (the Setup.exe). The app/shortcut icons come from the
+; exe, which Nuitka stamps via --windows-icon-from-ico in build.bat.
+SetupIconFile=..\ui\{#SetupIcon}
 DisableProgramGroupPage=yes
 ; Always show the "Select Destination Location" page so the user can choose
 ; the install folder (was being skipped).

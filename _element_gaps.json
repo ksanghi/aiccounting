@@ -1,0 +1,196 @@
+{
+ "Day Book": {
+  "missing_kpi_tiles": [
+   "₹ 3,06,356.00",
+   "₹ 6,69,344.00",
+   "₹ 9,75,700.00"
+  ],
+  "route": "/daybook"
+ },
+ "Balance Sheet": {
+  "missing_columns": [
+   "Side"
+  ],
+  "route": "/balance-sheet"
+ },
+ "Cash-Flow Planning": {
+  "missing_columns": [
+   "Expect by",
+   "Projected Cash"
+  ],
+  "route": "/cash-flow"
+ },
+ "Bank Reconciliation": {
+  "missing_buttons": [
+   "Browse File",
+   "Continue to Summary →",
+   "Create vouchers for selected →",
+   "F2",
+   "F3",
+   "Finalise reconciliation",
+   "Ignore selected",
+   "Select all visible",
+   "Undo all auto-matches",
+   "← Back to Review",
+   "← Setup",
+   "⟳  Refresh feed",
+   "⬇  Import this statement",
+   "🔗  Connect feed (SimpleFIN)"
+  ],
+  "missing_columns": [
+   "Amount",
+   "As of",
+   "Book bal.",
+   "Date",
+   "File",
+   "Finalised",
+   "Lines (m / u / o)",
+   "Matched / Unmatched (s/b)",
+   "Method",
+   "Narration",
+   "Note",
+   "Period",
+   "Reference",
+   "Sign",
+   "Status",
+   "Stmt bal.",
+   "Type"
+  ],
+  "missing_kpi_tiles": [
+   "IGNORED",
+   "MATCHED",
+   "UNMATCHED · BOOK",
+   "UNMATCHED · STMT"
+  ],
+  "route": "/bankreco"
+ },
+ "Ledger Reconciliation": {
+  "missing_buttons": [
+   "Browse File",
+   "Continue to Summary →",
+   "F2",
+   "F3",
+   "Finalise reconciliation",
+   "Ignore selected",
+   "Select all visible",
+   "Undo all auto-matches",
+   "← Back to Review",
+   "← Back to Setup",
+   "⬇  Import this statement"
+  ],
+  "missing_columns": [
+   "Amount",
+   "As of",
+   "Book bal.",
+   "Date",
+   "File",
+   "Finalised",
+   "Lines (m / u / o)",
+   "Narration",
+   "Note",
+   "Period",
+   "Reference",
+   "Sign",
+   "Status",
+   "Stmt bal.",
+   "Type"
+  ],
+  "route": "/ledger-reco"
+ },
+ "AI Documents Inbox": {
+  "missing_buttons": [
+   "Skip ▸",
+   "⚡  Process with AI",
+   "✓  Approve & Post",
+   "✕  Reject",
+   "➡  Send to Reconciliation",
+   "⟳  Scan Folder",
+   "📂  Open Inbox Folder",
+   "📧  Connect Email"
+  ],
+  "missing_checkboxes": [
+   "Auto-post (no review)"
+  ],
+  "missing_columns": [
+   "Conf"
+  ],
+  "missing_dropdowns": 5,
+  "route": "/documents"
+ },
+ "Backup & Restore": {
+  "missing_buttons": [
+   "📂  Backup to…"
+  ],
+  "missing_columns": [
+   "Date & Time",
+   "Location",
+   "Size"
+  ],
+  "route": "/backup"
+ },
+ "Migration": {
+  "missing_buttons": [
+   "Launch migration wizard"
+  ],
+  "missing_columns": [
+   "Counts",
+   "Errors",
+   "File",
+   "Source",
+   "Started",
+   "Status"
+  ],
+  "route": "/migration"
+ },
+ "License & Plan": {
+  "missing_buttons": [
+   "Change key",
+   "Re-validate",
+   "Release this machine's seat",
+   "Upgrade now",
+   "Upgrade →"
+  ],
+  "route": "/license"
+ },
+ "AI Credits": {
+  "missing_buttons": [
+   "⟳  Refresh",
+   "＋  Top up credits"
+  ],
+  "missing_columns": [
+   "Cost",
+   "Feature",
+   "When"
+  ],
+  "route": "/ai-credits"
+ },
+ "Period Locks": {
+  "missing_columns": [
+   "End",
+   "Start",
+   "Status"
+  ],
+  "route": "/period-locks"
+ },
+ "Settings": {
+  "missing_buttons": [
+   "13-Jun-2026   (day-month-year)",
+   "13/06/2026   (day/month/year)",
+   "2026-06-13   (ISO, year-month-day)",
+   "By / To\nTraditional Indian accounting style",
+   "Check for updates",
+   "Debit / Credit\nStandard accounting terminology",
+   "Get a key →",
+   "Paid To / Recd From\nPlain language — recommended for most users",
+   "Test key",
+   "Tile launcher\nNo rail. One key press shows every screen as tiles, grouped by category.",
+   "☀  Light"
+  ],
+  "missing_checkboxes": [
+   "Ask for a comment when ignoring a statement line",
+   "Show success toast after posting a voucher"
+  ],
+  "missing_dropdowns": 3,
+  "route": "/company-settings"
+ }
+}

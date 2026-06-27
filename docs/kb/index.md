@@ -1,4 +1,4 @@
-# Accounts HQ — Help Knowledge Base
+# Accounts HQ & RWA HQ — Help Knowledge Base
 
 > **DRAFT v1 (2026-06-09).** Drafted from the app's code for review. Please verify each
 > article against the live app and correct anything off (exact button labels, tax rates,
@@ -21,7 +21,19 @@ This KB is the source of truth for the website/in-app help bot. One topic per fi
 10. [Settings, plans & period locks](settings-and-plans.md)
 11. [Troubleshooting & common questions](troubleshooting.md)
 
+## RWA HQ articles (society management + resident app)
+12. [What RWA HQ is and how it's used](rwahq-overview.md)
+13. [Getting started — install, create society, Quick Setup](rwahq-getting-started.md)
+14. [Units (Flats/Plots) and members](rwahq-units-members.md)
+15. [Maintenance billing, dues and collection](rwahq-dues-billing.md)
+16. [Notices and complaints](rwahq-notices-complaints.md)
+17. [Visitor passes](rwahq-visitor-passes.md)
+18. [The resident mobile app](rwahq-resident-app.md)
+19. [Broadcasts, joining residents and cloud sync](rwahq-broadcasts-sync.md)
+
 ## House rules for the bot (when this powers AI answers)
+- The KB now covers **two products** — Accounts HQ (accounting) and RWA HQ (society
+  management + resident app). Answer from the article matching the product asked about.
 - Answer **only** from these articles. If the answer isn't here, say so and offer
   `info@ai-consultants.in`. Never invent steps or tax figures.
 - Accounts HQ is a **Windows desktop** app; data lives on the user's own PC.

@@ -22,6 +22,13 @@ from core.i18n   import format_currency
 
 def _fy_start() -> QDate:
     today = QDate.currentDate()
+    # US (Books HQ) tax year is the calendar year; India's FY starts 1 Apr.
+    try:
+        from core import country
+        if country.active_profile().tax_system == "US_SALES_TAX":
+            return QDate(today.year(), 1, 1)
+    except Exception:
+        pass
     y = today.year() if today.month() >= 4 else today.year() - 1
     return QDate(y, 4, 1)
 
@@ -1103,6 +1110,62 @@ class GSTR1Page(_ReportBase):
 
 # ── 8d. GSTR-2B reconciliation (ITC matching) ─────────────────────────────────
 
+from PySide6.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
+from PySide6.QtGui import QPixmap
+
+
+class _GstDirectLoginDialog(QDialog):
+    """GST-portal login for the FREE direct 2B pull (A17): the taxpayer's own
+    password + the live captcha (no GSP, no charge). Shows the captcha image
+    fetched from the portal; OTP (if the portal asks) is collected after this."""
+
+    def __init__(self, portal, gstin: str, username: str, parent=None):
+        super().__init__(parent)
+        self._portal = portal
+        self.setWindowTitle("GST portal login — free 2B pull")
+        self.setMinimumWidth(360)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel(f"GSTIN <b>{gstin}</b> · user <b>{username}</b>"))
+        form = QFormLayout()
+        self._pwd = QLineEdit()
+        self._pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("GST password", self._pwd)
+        self._cap_img = QLabel("loading captcha…")
+        self._cap_img.setStyleSheet("background:#fff; padding:4px; border:1px solid #ccc;")
+        cap_row = QHBoxLayout()
+        cap_row.addWidget(self._cap_img, 1)
+        refresh = QPushButton("↻")
+        refresh.setFixedWidth(34)
+        refresh.setToolTip("Get a new captcha")
+        refresh.clicked.connect(self._load_captcha)
+        cap_row.addWidget(refresh)
+        form.addRow("Captcha", cap_row)
+        self._cap = QLineEdit()
+        form.addRow("Type the captcha", self._cap)
+        lay.addLayout(form)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+        self._load_captcha()
+
+    def _load_captcha(self):
+        try:
+            img = self._portal.get_captcha()
+            pm = QPixmap()
+            pm.loadFromData(img)
+            self._cap_img.setPixmap(pm)
+        except Exception as e:
+            self._cap_img.setText(f"captcha failed: {e}")
+
+    def password(self) -> str:
+        return self._pwd.text()
+
+    def captcha(self) -> str:
+        return self._cap.text().strip()
+
+
 class GSTR2BReconPage(_ReportBase):
     TITLE    = "GSTR-2B Reconciliation"
     SUBTITLE = "Match the portal's 2B against your purchases — find ITC at risk"
@@ -1122,6 +1185,56 @@ class GSTR2BReconPage(_ReportBase):
                         "(needs an OTP; a small per-pull charge applies to your wallet).")
         pull.clicked.connect(self._pull_from_portal)
         row.addWidget(pull)
+
+        direct = QPushButton("🔓  Pull free (direct login)")
+        direct.setFixedHeight(30)
+        direct.setToolTip("Pull GSTR-2B straight from the GST portal on your OWN login "
+                          "— free, no per-pull charge. Needs your GST password + captcha "
+                          "(and an OTP if the portal asks).")
+        direct.clicked.connect(self._pull_direct)
+        row.addWidget(direct)
+
+    def _pull_direct(self):
+        """FREE direct 2B pull (A17): log into the GST portal with the user's OWN
+        credentials + captcha (+ OTP if asked), fetch + decrypt 2B, feed the same
+        reconcile engine. No GSP, no wallet charge. Engine in core/gst_portal_direct."""
+        from core.gst_portal_direct import (
+            GstPortalDirect, GstPortalError, to_reconcile_rows)
+        from PySide6.QtWidgets import QInputDialog
+        co = self.rpt.get_company()
+        gstin = (co.get("gstin") or "").strip()
+        username = (co.get("gst_username") or "").strip()
+        if not gstin or not username:
+            QMessageBox.information(self, "GST details needed",
+                "Set the company's GSTIN and GST portal username first "
+                "(Company settings → GST details).")
+            return
+        fd, _ = self._dates()
+        year, month = fd[:4], fd[5:7]
+        portal = GstPortalDirect(username, gstin)
+        dlg = _GstDirectLoginDialog(portal, gstin, username, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            res = portal.login(dlg.password(), dlg.captcha()) or {}
+            if res.get("otp_required") or res.get("otp"):
+                otp, ok = QInputDialog.getText(self, "GST OTP",
+                    f"Enter the OTP sent to the mobile registered for {gstin}:")
+                if not ok or not otp.strip():
+                    return
+                portal.verify_otp(otp.strip())
+            payload = portal.fetch_2b(f"{month}{year}")
+            self._portal_rows = to_reconcile_rows(payload)
+            self._loaded_name = f"Portal 2B (direct) {month}/{year}"
+            QMessageBox.information(self, "GSTR-2B pulled (free)",
+                f"Fetched {len(self._portal_rows)} invoice(s) for {month}/{year} — no charge.")
+            self.refresh()
+        except GstPortalError as e:
+            QMessageBox.warning(self, "Direct pull",
+                f"{e}\n\nThis free route is still being calibrated against the live "
+                "portal — the exact error/response helps lock the contract in.")
+        except Exception as e:
+            QMessageBox.critical(self, "Direct pull failed", str(e))
 
     def _pull_from_portal(self):
         """Auto-pull the 2B via the server (Sandbox GSP). Server holds the GSP
@@ -1520,6 +1633,10 @@ class CashFlowPlanningPage(_ReportBase):
         wl = QVBoxLayout(ws); wl.setContentsMargins(12, 10, 12, 10); wl.setSpacing(4)
         wl.addWidget(self._mini("PLAN THE BIG ITEMS  (≈80% of receipts & payments)"))
         self._ws = _make_table(["Party", "Direction", "Outstanding", "Expect by"])
+        # Give rows enough height that the per-row period combo ("Expect by")
+        # isn't squished/clipped — the default table row is too short for a
+        # styled combo (padding + border + arrow need ~36px to render fully).
+        self._ws.verticalHeader().setDefaultSectionSize(36)
         wh = self._ws.horizontalHeader()
         # Party doesn't need a wide column — cap it and elide long names; let
         # the "Expect by" combo column take the slack.
@@ -1881,3 +1998,246 @@ class LedgerAccountPage(_ReportBase):
             return
         exp.ledger_book(self._wrap_for_export(), self.rpt.get_company(),
                         f"Ledger - {self._data['ledger']}", path)
+
+
+# ── US: 1099 Contractors (report-only) ─────────────────────────────────────────
+
+class Form1099Page(_ReportBase):
+    TITLE    = "1099 Contractors"
+    SUBTITLE = "Payments to flagged contractors — Form 1099-NEC (≥ $600 reportable)"
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(
+            ["#", "Contractor", "Form", "Total Paid", "Reportable"],
+            stretch_cols=[1])
+        self._body.addWidget(self._table, 1)
+
+    def refresh(self):
+        fd, td = self._dates()
+        self._data = self.rpt.form_1099(fd, td)
+        rows = self._data["contractors"]
+        t = self._table
+        t.setSortingEnabled(False)
+        t.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            rep = r["reportable"]
+            t.setItem(i, 0, _item(str(i + 1), right=True))
+            t.setItem(i, 1, _item(r["name"]))
+            t.setItem(i, 2, _item(r["form_type"]))
+            t.setItem(i, 3, _item(_fmt(r["total_paid"]), right=True))
+            t.setItem(i, 4, _item("✓ Yes" if rep else "—",
+                      colour=THEME["success"] if rep else THEME["text_secondary"]))
+        make_sortable(t)
+        self._register_filter_target(t)
+        d = self._data
+        self._status.setText(
+            f"Period: {fd}  →  {td}  |  "
+            f"{d['reportable_count']} reportable (≥ ${d['threshold']:.0f})  |  "
+            f"Total paid: {_fmt(d['total_paid'])}")
+
+    def _export_rows(self, fmt_amt):
+        return [[i + 1, r["name"], r["form_type"],
+                 fmt_amt(r["total_paid"]), "Yes" if r["reportable"] else "No"]
+                for i, r in enumerate(self._data["contractors"])]
+
+    def _do_excel(self, exp, path):
+        d = self._data
+        exp.simple_table("1099 Contractors",
+            f"1099 Contractors: {d['from_date']} to {d['to_date']}",
+            ["#", "Contractor", "Form", "Total Paid", "Reportable"],
+            self._export_rows(lambda v: v), self.rpt.get_company(), path,
+            widths=[5, 32, 12, 16, 12])
+
+    def _do_pdf(self, exp, path):
+        d = self._data
+        exp.simple_table("1099 Contractors",
+            f"1099 Contractors: {d['from_date']} to {d['to_date']}",
+            ["#", "Contractor", "Form", "Total Paid", "Reportable"],
+            self._export_rows(_fmt), self.rpt.get_company(), path)
+
+
+# ── US: Schedule C (sole-proprietor profit/loss summary) ───────────────────────
+
+class ScheduleCPage(_ReportBase):
+    TITLE    = "Schedule C"
+    SUBTITLE = "Form 1040 Schedule C — gross receipts and expenses by line (reporting aid)"
+
+    def _extra_filters(self, row):
+        from PySide6.QtWidgets import QDoubleSpinBox
+        from core.schedule_c import DEFAULT_MILEAGE_RATE
+        row.addWidget(make_label("Mileage $/mi"))
+        self._rate = QDoubleSpinBox()
+        self._rate.setDecimals(3); self._rate.setMaximum(5)
+        self._rate.setSingleStep(0.005); self._rate.setValue(DEFAULT_MILEAGE_RATE)
+        self._rate.setFixedWidth(80); self._rate.setFixedHeight(30)
+        row.addWidget(self._rate)
+
+    def _build_shell(self):
+        super()._build_shell()
+        self._table = _make_table(["Line", "Category", "Amount"], stretch_cols=[1])
+        self._body.addWidget(self._table, 1)
+
+    def refresh(self):
+        fd, td = self._dates()
+        d = self._data = self.rpt.schedule_c(fd, td, mileage_rate=self._rate.value())
+        body = list(d["lines"])
+        if d["uncategorised"]:
+            body.append({"line": "—", "label": "Uncategorised expenses",
+                         "amount": d["uncategorised"]})
+        t = self._table
+        t.setSortingEnabled(False)
+        t.setRowCount(len(body))
+        for i, r in enumerate(body):
+            t.setItem(i, 0, _item(r["line"]))
+            t.setItem(i, 1, _item(r["label"]))
+            t.setItem(i, 2, _item(_fmt(r["amount"]), right=True))
+        self._register_filter_target(t)
+        m = d["mileage"]
+        net = d["net_profit"]
+        col = THEME["success"] if net >= 0 else THEME["danger"]
+        self._status.setText(
+            f"Gross receipts {_fmt(d['gross_receipts'])}  |  "
+            f"Total expenses {_fmt(d['total_expenses'])}  |  "
+            f"<span style='color:{col};font-weight:bold'>Net profit {_fmt(net)}</span>  |  "
+            f"Mileage {m['miles']:.0f} mi × ${m['rate']:.3f} = {_fmt(m['amount'])}")
+        self._status.setTextFormat(Qt.TextFormat.RichText)
+
+    def _export_rows(self, fmt_amt):
+        d = self._data
+        rows = [[r["line"], r["label"], fmt_amt(r["amount"])] for r in d["lines"]]
+        if d["uncategorised"]:
+            rows.append(["—", "Uncategorised expenses", fmt_amt(d["uncategorised"])])
+        rows.append(["", "Total expenses", fmt_amt(d["total_expenses"])])
+        rows.append(["", "Gross receipts", fmt_amt(d["gross_receipts"])])
+        rows.append(["", "Net profit / (loss)", fmt_amt(d["net_profit"])])
+        return rows
+
+    def _do_excel(self, exp, path):
+        d = self._data
+        exp.simple_table("Schedule C",
+            f"Schedule C: {d['from_date']} to {d['to_date']}",
+            ["Line", "Category", "Amount"], self._export_rows(lambda v: v),
+            self.rpt.get_company(), path, widths=[8, 40, 16])
+
+    def _do_pdf(self, exp, path):
+        d = self._data
+        exp.simple_table("Schedule C",
+            f"Schedule C: {d['from_date']} to {d['to_date']}",
+            ["Line", "Category", "Amount"], self._export_rows(_fmt),
+            self.rpt.get_company(), path)
+
+
+# ── US: Mileage log (standard-mileage method) ──────────────────────────────────
+
+class MileagePage(QWidget):
+    """Business-mileage trip log. The standard-mileage deduction (miles × rate)
+    feeds the Schedule C report line 9 — entries here are a log, NOT vouchers."""
+
+    def __init__(self, db, company_id, parent=None):
+        super().__init__(parent)
+        from core.schedule_c import MileageLog
+        self._log = MileageLog(db, company_id)
+        self._build()
+        self.refresh()
+
+    def _build(self):
+        from PySide6.QtWidgets import QDoubleSpinBox
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 0, 24, 24); root.setSpacing(8)
+        title = QLabel("Mileage Log"); title.setObjectName("page_title")
+        root.addWidget(title)
+        sub = QLabel("Business miles for the standard-mileage deduction (Schedule C line 9)")
+        sub.setObjectName("page_subtitle")
+        root.addWidget(sub)
+
+        bar = QFrame(); bar.setObjectName("card")
+        brow = QHBoxLayout(bar); brow.setContentsMargins(12, 10, 12, 10); brow.setSpacing(10)
+        brow.addWidget(make_label("Date"))
+        self._date = SmartDateEdit(QDate.currentDate())
+        self._date.setDisplayFormat(qt_format()); self._date.setFixedHeight(30)
+        brow.addWidget(self._date)
+        brow.addWidget(make_label("Miles"))
+        self._miles = QDoubleSpinBox(); self._miles.setMaximum(100000)
+        self._miles.setDecimals(1); self._miles.setFixedWidth(90); self._miles.setFixedHeight(30)
+        brow.addWidget(self._miles)
+        brow.addWidget(make_label("Purpose"))
+        self._purpose = QLineEdit(); self._purpose.setPlaceholderText("e.g. client visit")
+        self._purpose.setFixedHeight(30)
+        brow.addWidget(self._purpose, 2)
+        brow.addWidget(make_label("Vehicle"))
+        self._vehicle = QLineEdit(); self._vehicle.setPlaceholderText("optional")
+        self._vehicle.setFixedHeight(30); self._vehicle.setFixedWidth(110)
+        brow.addWidget(self._vehicle)
+        add = QPushButton("➕  Add trip"); add.setObjectName("btn_primary"); add.setFixedHeight(30)
+        add.clicked.connect(self._add)
+        brow.addWidget(add)
+        root.addWidget(bar)
+
+        fbar = QFrame(); fbar.setObjectName("card")
+        frow = QHBoxLayout(fbar); frow.setContentsMargins(12, 8, 12, 8); frow.setSpacing(10)
+        frow.addWidget(make_label("From"))
+        self._from = SmartDateEdit(_fy_start())
+        self._from.setDisplayFormat(qt_format()); self._from.setFixedHeight(30)
+        frow.addWidget(self._from)
+        frow.addWidget(make_label("To"))
+        self._to = SmartDateEdit(QDate.currentDate())
+        self._to.setDisplayFormat(qt_format()); self._to.setFixedHeight(30)
+        frow.addWidget(self._to)
+        self._search = QLineEdit(); self._search.setPlaceholderText("🔍 Filter rows…")
+        self._search.setClearButtonEnabled(True); self._search.setFixedHeight(30)
+        self._search.setMinimumWidth(160)
+        self._search.textChanged.connect(lambda txt: apply_text_filter(self._table, txt))
+        frow.addWidget(self._search, 2)
+        frow.addStretch()
+        ref = QPushButton("↻  Refresh"); ref.setFixedHeight(30); ref.clicked.connect(self.refresh)
+        frow.addWidget(ref)
+        delb = QPushButton("🗑  Delete"); delb.setFixedHeight(30); delb.clicked.connect(self._delete)
+        frow.addWidget(delb)
+        root.addWidget(fbar)
+
+        self._table = _make_table(["Date", "Miles", "Purpose", "Vehicle"], stretch_cols=[2])
+        root.addWidget(self._table, 1)
+        self._status = QLabel("")
+        self._status.setStyleSheet(
+            f"color:{THEME['text_secondary']}; font-size:11px; padding:4px;")
+        root.addWidget(self._status)
+
+    def _dates(self):
+        return (self._from.date().toString("yyyy-MM-dd"),
+                self._to.date().toString("yyyy-MM-dd"))
+
+    def _add(self):
+        if self._miles.value() <= 0:
+            return
+        self._log.add(self._date.date().toString("yyyy-MM-dd"), self._miles.value(),
+                      self._purpose.text().strip(), self._vehicle.text().strip())
+        self._miles.setValue(0); self._purpose.clear(); self._vehicle.clear()
+        self.refresh()
+
+    def _delete(self):
+        r = self._table.currentRow()
+        if r < 0:
+            return
+        it = self._table.item(r, 0)
+        eid = it.data(Qt.ItemDataRole.UserRole) if it else None
+        if eid is not None:
+            self._log.delete(int(eid))
+            self.refresh()
+
+    def refresh(self):
+        fd, td = self._dates()
+        rows = self._log.entries(fd, td)
+        t = self._table
+        t.setSortingEnabled(False)
+        t.setRowCount(len(rows))
+        for i, e in enumerate(rows):
+            d_item = _item(format_iso(e["trip_date"]))
+            d_item.setData(Qt.ItemDataRole.UserRole, e["id"])
+            t.setItem(i, 0, d_item)
+            t.setItem(i, 1, _item(f"{e['miles']:.1f}", right=True))
+            t.setItem(i, 2, _item(e["purpose"] or ""))
+            t.setItem(i, 3, _item(e["vehicle"] or ""))
+        make_sortable(t)
+        total = self._log.total_miles(fd, td)
+        self._status.setText(f"{len(rows)} trips  |  Total {total:.1f} business miles")

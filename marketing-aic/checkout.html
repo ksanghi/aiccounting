@@ -60,6 +60,10 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 .plan-price { font-size:22px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px; }
 .plan-price .per { font-size:12px; color:var(--ink-mute); font-weight:500; }
 .plan-desc { font-size:11px; color:var(--ink-mute); line-height:1.5; }
+.plan-tag { font-size:11px; font-weight:600; color:var(--ink); margin-bottom:6px; }
+.plan-feats { margin:0; padding-left:16px; }
+.plan-feats li { font-size:11px; color:var(--ink-mute); line-height:1.6; }
+.plan-feats li:first-child { font-weight:700; color:var(--ink); list-style:none; margin-left:-16px; padding:1px 8px; background:#FFF1C2; border-radius:5px; box-shadow:0 0 0 1px #F0D384 inset; }
 
 /* Product toggle */
 .product-toggle {
@@ -116,6 +120,15 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
   color:white; display:inline-flex; align-items:center; justify-content:center;
   font-size:32px; margin-bottom:18px;
 }
+
+/* Site footer — same link set as the other store pages, themed to the
+   light checkout palette. */
+footer {
+  background:var(--bg-soft); color:var(--ink-dim); border-top:1px solid var(--line);
+  padding:36px 24px; text-align:center; font-size:13px;
+}
+footer a { color:var(--ink-mute); margin:0 10px; text-decoration:none; line-height:2; }
+footer a:hover { color:var(--accent); }
 </style>
 </head>
 <body>
@@ -149,17 +162,19 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
       <label for="email">Email (your licence key is sent here) *</label>
       <input id="email" type="email" placeholder="you@example.com" required>
     </div>
+    <div id="extra-fields">
     <div class="field">
       <label for="name">Your name *</label>
       <input id="name" type="text" placeholder="Krishan Sanghi" required>
     </div>
     <div class="field">
-      <label for="phone">Mobile (Razorpay needs this)</label>
+      <label for="phone">Mobile (optional)</label>
       <input id="phone" type="tel" placeholder="98XXX12345">
     </div>
     <div class="field">
       <label for="company">Society / Company name (optional)</label>
       <input id="company" type="text" placeholder="Sunshine Apartments CHS">
+    </div>
     </div>
 
     <div id="alert" class="alert"></div>
@@ -195,12 +210,31 @@ h1 { font-size:24px; font-weight:700; letter-spacing:-0.02em; margin-bottom:6px;
 
 </div>
 
+<footer>
+  <div>
+    <a href="index.html">Home</a>
+    <a href="pricing.html">Pricing</a>
+    <a href="contact.html">Contact</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="terms.html">Terms</a>
+    <a href="refund.html">Refund Policy</a>
+    <a href="shipping.html">Delivery</a>
+  </div>
+  <div style="margin-top:14px">&copy; 2026 AI Consultants. All rights reserved.</div>
+  <p style="margin-top:8px;font-size:11px;color:#94A3B8">Operated by <b>Analysis and Ideas Consultants</b>.</p>
+</footer>
+
 <script>
 // ── Config ──────────────────────────────────────────────────────────────────
 // Point this at wherever the Accounts HQ license server is reachable.
 // In production: https://license.ai-consultants.in
 // For local dev:  http://localhost:8000
-const API_BASE = "https://license.ai-consultants.in";
+// On staging the page AND the API are served from the same host, so use
+// same-origin there — that way the test Razorpay keys set on staging are
+// actually used. Production is unchanged.
+const API_BASE = (location.hostname.indexOf("staging") !== -1)
+  ? location.origin
+  : "https://license.ai-consultants.in";
 
 // Catalog of all products + their plan tiers. To add a new product:
 // 1. Append an entry below (display = button label, plans = tier list).
@@ -213,38 +247,38 @@ const CATALOG = {
     display: "Accounts HQ · Accounting",
     razorpayName: "Accounts HQ",
     plans: [
-      { code: "FREE",     inr: 0,    name: "Free",
-        desc: "100 transactions / month, single user — no card needed" },
-      { code: "STANDARD", inr: 1999, name: "Standard",
-        desc: "20,000 transactions, 2 users, reports, exports, reconciliation" },
-      { code: "PRO",      inr: 4999, name: "Pro",
-        desc: "50,000 transactions, 5 users, GST + TDS, AI document reader" },
-      { code: "PREMIUM",  inr: 9999, name: "Premium",
-        desc: "100,000 transactions, 10 users, WhatsApp, audit export, API" },
+      { code: "FREE", inr: 0, name: "Free", tag: "5,000 transactions, 1 user",
+        bullets: ["AI auto-posts vouchers", "All basic reports", "Bank & ledger reconciliation", "Export to Excel and PDF", "Backup", "1 company"] },
+      { code: "STANDARD", inr: 1999, name: "Standard", tag: "20,000 transactions, 2 users",
+        bullets: ["Everything in Free", "A/R-A/P aging, cash flow reporting", "Print & email reports", "Unlimited companies"] },
+      { code: "PRO", inr: 4999, name: "Pro", tag: "50,000 transactions, 5 users",
+        bullets: ["Everything in Standard", "GST & TDS \u2014 return-ready reports", "Voice  entry"] },
+      { code: "PREMIUM", inr: 9999, name: "Premium", tag: "100,000 transactions, 10 users",
+        bullets: ["Everything in Pro", "WhatsApp notifications", "Audit export", "API access"] },
     ],
   },
   rwagenie: {
     display: "RWA HQ · For Societies",
     razorpayName: "RWA HQ",
     plans: [
-      { code: "FREE",     inr: 0,     name: "Free",
-        desc: "Up to 300 flats, flat ledger, notices, polls, visitor pass — no card needed" },
-      { code: "STANDARD", inr: 2999,  name: "Standard",
-        desc: "Up to 1,000 flats, auto-billing & late fees, facilities booking, asset register" },
-      { code: "PRO",      inr: 5999,  name: "Pro",
-        desc: "Up to 2,500 flats + WhatsApp invoices, document storage, vendor management" },
-      { code: "PREMIUM",  inr: 14999, name: "Premium",
-        desc: "Unlimited flats, multi-block / phase, priority email support" },
+      { code: "FREE", inr: 0, name: "Free", tag: "Up to 300 flats, 5,000 transactions, 1 user",
+        bullets: ["Member directory", "Receipt tracking", "Notice board, polls", "Visitor passes", "AI auto-posts vouchers", "All basic reports", "Bank & ledger reconciliation", "Export to Excel and PDF", "Backup"] },
+      { code: "STANDARD", inr: 2999, name: "Standard", tag: "Up to 1,000 flats, 20,000 transactions, 2 users",
+        bullets: ["Everything in Free", "Auto-billing & late fees", "Facilities booking", "Asset register", "Advanced reports", "A/R-A/P aging, cash flow reporting", "Print & email reports"] },
+      { code: "PRO", inr: 5999, name: "Pro", tag: "Up to 2,500 flats, 50,000 transactions, 5 users",
+        bullets: ["Everything in Standard", "WhatsApp invoices", "Document storage", "Vendor management", "GST & TDS \u2014 return-ready reports", "Voice  entry"] },
+      { code: "PREMIUM", inr: 14999, name: "Premium", tag: "Unlimited flats, large societies, 100,000 transactions, 10 users",
+        bullets: ["Everything in Pro", "Unlimited flats", "Multi-block / phase", "Priority email support", "WhatsApp notifications", "Audit export", "API access"] },
     ],
   },
   tradehq: {
     display: "tradeHQ · Wealth cockpit",
     razorpayName: "tradeHQ",
     plans: [
-      { code: "FREE",     inr: 0,    name: "Free",
-        desc: "Single broker, manual ledger upload — no card needed" },
-      { code: "STANDARD", inr: 2400, name: "Standard",
-        desc: "All brokers auto-pull (TOTP), full family wealth view, AI news, up to 6 family members" },
+      { code: "FREE",     inr: 0,    name: "Free", tag: "1 broker, manual pull",
+        bullets: ["1 broker account", "Manual pull from broker", "Dashboard & holdings", "1 family member"] },
+      { code: "STANDARD", inr: 2400, name: "Standard", tag: "Rs. 200 / month, single family",
+        bullets: ["All brokers — auto-pull via TOTP login", "Full family wealth view", "Asset allocation pie", "AI news screener (cached daily)", "Accounts HQ cash-flow bridge", "Up to 6 family members"] },
     ],
   },
 };
@@ -255,6 +289,8 @@ const CATALOG = {
 const PRODUCT_ALIASES = {
   rwahq:       "rwagenie",
   accountshq:  "accgenie",
+  books:       "bookshq",
+  bookhq:      "bookshq",
 };
 
 let state = {
@@ -306,9 +342,12 @@ function renderPlans() {
       <div class="plan-price">${
         p.inr === 0
           ? "Free <span class=\"per\">forever</span>"
-          : "₹" + p.inr.toLocaleString("en-IN") + " <span class=\"per\">/ year</span>"
+          : (CATALOG[state.product].symbol || "₹")
+            + p.inr.toLocaleString(CATALOG[state.product].locale || "en-IN")
+            + " <span class=\"per\">/ year</span>"
       }</div>
-      <div class="plan-desc">${p.desc}</div>
+      <div class="plan-tag">${p.tag || ""}</div>
+      <ul class="plan-feats">${(p.bullets || []).map(b => `<li>${b}</li>`).join("")}</ul>
     </div>
   `).join("");
   // Pay button reflects whether this plan needs Razorpay.
@@ -317,6 +356,13 @@ function renderPlans() {
   if (btn) {
     btn.textContent = cur.inr === 0 ? "Get free key →" : "Pay with Razorpay →";
   }
+  // Free download = email only: hide name/phone/company and drop the name
+  // "required" so a free key is one field + one click. Paid plans keep the
+  // full form (Razorpay uses the name + contact).
+  const extra = document.getElementById("extra-fields");
+  const nameEl = document.getElementById("name");
+  if (extra)  extra.style.display = cur.inr === 0 ? "none" : "";
+  if (nameEl) nameEl.required = cur.inr !== 0;
 }
 
 // Public installer URL per product. Only RWA HQ has a real installer in
@@ -324,6 +370,7 @@ function renderPlans() {
 // downloads index. Keep in sync with email_service.py _INSTALLER_URL.
 const INSTALLER_URLS = {
   rwagenie: "https://apps.ai-consultants.in/downloads/RWAHQ-Setup.exe",
+  accgenie: "https://apps.ai-consultants.in/downloads/AccountsHQ-Setup.exe",
 };
 
 function setDownloadLink() {
@@ -359,7 +406,8 @@ async function startCheckout() {
     showAlert("error", "Please enter a valid email — the licence key gets sent there.");
     return;
   }
-  if (!name) {
+  const curPlan = (CATALOG[state.product].plans.find(p => p.code === state.plan) || {});
+  if (curPlan.inr !== 0 && !name) {
     showAlert("error", "Please enter your name.");
     return;
   }

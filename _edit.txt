@@ -1,0 +1,11 @@
+[AHQ STANDARD]
+  OLD: 'Everything in Free | A/R-A/P aging, cash flow reporting  | Reports print / email | Unlimited companies'
+  NEW: 'Everything in Free | A/R-A/P aging, cash flow reporting  | Print & email reports | Unlimited companies'
+
+[RWA STANDARD]
+  OLD: 'Everything in Free | Auto-billing & late fees | Facilities booking | Asset register | Advanced reports | A/R-A/P aging, cash flow reporting  | Reports print / email '
+  NEW: 'Everything in Free | Auto-billing & late fees | Facilities booking | Asset register | Advanced reports | A/R-A/P aging, cash flow reporting  | Print & email reports '
+
+[RWA FREE]
+  OLD: 'Member directory | Receipt tracking | Notice board, polls | Visitor passes | Basic reports | AI self voucher post | All basic reports | Bank & ledger reconciliation| Export to Excel and PDF | Backup '
+  NEW: 'Member directory | Receipt tracking | Notice board, polls | Visitor passes | AI self voucher post | All basic reports | Bank & ledger reconciliation| Export to Excel and PDF | Backup '

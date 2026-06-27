@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
     QTableWidget, QTableWidgetItem, QFrame, QFileDialog, QComboBox,
     QHeaderView, QAbstractItemView, QMessageBox, QPlainTextEdit,
-    QLineEdit, QFormLayout, QScrollArea,
+    QLineEdit, QFormLayout, QScrollArea, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer
 from PySide6.QtGui import QColor, QDesktopServices
@@ -41,6 +41,10 @@ from ai.doc_classifier import DOC_TYPES as _CLS_TYPES
 # Voucher types the AI emits (and that we can post as a simple 2-line entry).
 _VOUCHER_TYPES = ["PAYMENT", "RECEIPT", "JOURNAL", "CONTRA"]
 
+# Auto-post guardrail: a processed doc whose TYPE confidence is below this is
+# held back as a draft for review even when "Auto-post" is on.
+AUTO_POST_MIN_CONFIDENCE = 0.70
+
 # Human labels for the six classifier doc-types (queue + override combo).
 DOC_TYPE_LABELS = {
     "purchase_invoice": "Purchase Invoice",
@@ -48,6 +52,7 @@ DOC_TYPE_LABELS = {
     "debit_note":       "Debit Note",
     "credit_note":      "Credit Note",
     "bank_statement":   "Bank Statement",
+    "ledger_statement": "Ledger Statement",
     "other":            "Other / Hold",
 }
 _STATUS_COLOURS = {
@@ -63,34 +68,28 @@ _STATUS_COLOURS = {
 # ── Background workers ────────────────────────────────────────────────────────
 
 class ProcessThread(QThread):
-    """ONE pass: parse the file to text, then a single AI call that BOTH
-    classifies and extracts (ai.voucher_ai.extract_auto). The accountant
-    reads the doc once, the AI reads it once — no separate classify call.
-    Runs on the customer's own (BYOK) key."""
-    done  = Signal(int, dict, object)   # doc_id, auto-result, ExtractionResult
+    """Process ONE document via the unified ai.doc_processor.process_document:
+    local-first when the user named a type that has a local parser (no AI),
+    else AI — extract-with-type for a known type, or classify+extract for Auto.
+    Routing (own key vs wallet) follows the customer's setup choice."""
+    done  = Signal(int, object)   # doc_id, ProcessResult
     error = Signal(int, str)
 
-    def __init__(self, doc_id: int, filepath: str, ledger_names: list,
-                 company_name: str):
+    def __init__(self, doc_id: int, filepath: str, type_override,
+                 ledger_names: list, company_name: str):
         super().__init__()
         self.doc_id = doc_id
         self.filepath = filepath
+        self.type_override = type_override     # doc_type the user set, or None = Auto
         self.ledger_names = ledger_names
         self.company_name = company_name
 
     def run(self):
         try:
-            from ai.document_parser import DocumentParser
-            from ai.voucher_ai import VoucherAI
-            result = DocumentParser().parse(self.filepath)
-            if not result.success:
-                self.error.emit(self.doc_id,
-                                result.error or "Could not read the document.")
-                return
-            auto = VoucherAI().extract_auto(
-                result.full_text, self.ledger_names, self.company_name
-            )
-            self.done.emit(self.doc_id, auto, result)
+            from ai.doc_processor import process_document
+            pr = process_document(self.filepath, self.type_override,
+                                  self.ledger_names, self.company_name)
+            self.done.emit(self.doc_id, pr)
         except Exception as e:
             self.error.emit(self.doc_id, str(e))
 
@@ -134,8 +133,10 @@ class DocumentInboxPage(QWidget):
         self._email_thread = None
         self._batch_thread = None
         self._current_id = None
+        self._handoff = None   # (path, route, bank/party name, account) for a parsed statement
         self._drafts = []                 # drafts for the doc on screen
         self._drafts_by_doc = {}          # doc_id -> [draft dicts] (session memory)
+        self._auto_posted_log = []        # audit: (doc_id, voucher_id, confidence)
         self._posted_keys = set()         # (doc_id, idx) already posted this session
         self._draft_idx = 0               # which draft is showing in the panel
         self._dr_new = False              # current Dr ledger needs creating
@@ -158,12 +159,14 @@ class DocumentInboxPage(QWidget):
         layout.setContentsMargins(24, 0, 24, 24)
         layout.setSpacing(8)
 
-        title = QLabel("Document Inbox")
+        title = QLabel("AI Documents Inbox")
         title.setObjectName("page_title")
         layout.addWidget(title)
         sub = QLabel(
-            "Invoices, debit/credit notes and statements arrive here from "
-            "email & scanner — AI sorts each, you approve, it posts."
+            "Drop a file or let invoices, notes and statements arrive from "
+            "email & scanner — the AI reads each (or you name the type for a "
+            "local read), you review and post. Optional auto-post for the "
+            "confident ones."
         )
         sub.setObjectName("page_subtitle")
         layout.addWidget(sub)
@@ -252,6 +255,10 @@ class DocumentInboxPage(QWidget):
         type_row.addWidget(make_label("Document type"))
         self._type_combo = QComboBox()
         self._type_combo.setFixedHeight(28)
+        # "Auto" (data=None) = let the AI classify + extract. A concrete type =
+        # process AS that type — local parser first where one exists (e.g. bank
+        # statement, no AI), else AI extract with the known type (skips classify).
+        self._type_combo.addItem("Auto — let AI decide", None)
         for key in _CLS_TYPES:
             self._type_combo.addItem(DOC_TYPE_LABELS.get(key, key), key)
         type_row.addWidget(self._type_combo, 1)
@@ -282,12 +289,32 @@ class DocumentInboxPage(QWidget):
         act_row.addWidget(self._reject_btn)
         dl.addLayout(act_row)
 
+        # Auto-post (no review) — OFF by default. When on, each processed doc
+        # whose draft is confident + complete is posted straight to the books,
+        # unassisted. Risky (a misread posts a wrong voucher) so it warns on
+        # enable; AI-assisted (draft → review → post) stays the default.
+        self._auto_post_chk = QCheckBox("Auto-post (no review)")
+        self._auto_post_chk.setToolTip(
+            "When ticked, processed documents are posted to the books "
+            "automatically — no review step. A wrong AI read posts a wrong "
+            "voucher. Low-confidence or incomplete drafts are still held back.")
+        self._auto_post_chk.toggled.connect(self._on_auto_post_toggled)
+        dl.addWidget(self._auto_post_chk)
+
         self._detail_status = QLabel("")
         self._detail_status.setWordWrap(True)
         self._detail_status.setStyleSheet(
             f"color:{THEME['text_secondary']};font-size:11px;"
         )
         dl.addWidget(self._detail_status)
+
+        # Hand-off: a parsed bank/ledger statement goes to Reconciliation, not a
+        # voucher. Shown only for statements; opens the right reco screen with
+        # the file pre-loaded (user confirms the ledger + period there).
+        self._send_reco_btn = QPushButton("➡  Send to Reconciliation")
+        self._send_reco_btn.setVisible(False)
+        self._send_reco_btn.clicked.connect(self._send_to_reconciliation)
+        dl.addWidget(self._send_reco_btn)
 
         # Divider
         rule = QFrame()
@@ -458,6 +485,8 @@ class DocumentInboxPage(QWidget):
         doc = self._selected_doc()
         self._drafts = []
         self._draft_idx = 0
+        self._send_reco_btn.setVisible(False)
+        self._handoff = None
         if not doc:
             self._set_detail_enabled(False)
             self._show_voucher_panel(False)
@@ -488,6 +517,14 @@ class DocumentInboxPage(QWidget):
             self._show_draft(0)
         else:
             self._show_voucher_panel(False)
+
+        # A previously-classified bank/ledger statement → offer the hand-off again.
+        if doc.get("doc_type") in ("bank_statement", "ledger_statement"):
+            reco = ("Ledger Reconciliation" if doc["doc_type"] == "ledger_statement"
+                    else "Bank Reconciliation")
+            self._handoff = (doc["stored_path"], doc["doc_type"], "", "")
+            self._send_reco_btn.setText(f"➡  Send to {reco}")
+            self._send_reco_btn.setVisible(True)
 
     def _render_ai_summary(self, doc: dict):
         meta = {}
@@ -636,12 +673,15 @@ class DocumentInboxPage(QWidget):
 
     # ── AI readiness / helpers ──────────────────────────────────────────────
     def _ai_ready(self) -> bool:
+        # Routing follows the setup choice: wallet → AccGenie credits, byok →
+        # your own key. LOCKED only happens in own-key mode with no key saved.
         from core.ai_routing import routing, ROUTE_LOCKED
-        if routing.resolve("document_inbox") == ROUTE_LOCKED:
+        if routing.resolve("ai_document_reader") == ROUTE_LOCKED:
             QMessageBox.information(
-                self, "Anthropic key needed",
-                "The Document Inbox runs on your own Anthropic key. Add it in "
-                "Settings → AI / Anthropic Key."
+                self, "AI key needed",
+                "You're set to use your own AI key, but none is saved. Add your "
+                "Anthropic key in Settings → AI, or switch to wallet credits in "
+                "Setup."
             )
             return False
         return True
@@ -674,7 +714,14 @@ class DocumentInboxPage(QWidget):
     # ── Process one document (AI pass: classify + extract) ──────────────────
     def _process(self):
         doc = self._selected_doc()
-        if not doc or not self._ai_ready():
+        if not doc:
+            return
+        type_override = self._type_combo.currentData()   # None = Auto
+        # A local-parseable known type (e.g. bank statement) needs no AI — don't
+        # gate it on an AI key. Everything else does the AI-readiness check.
+        from ai.doc_processor import has_local_parser
+        needs_ai = not (type_override and has_local_parser(type_override))
+        if needs_ai and not self._ai_ready():
             return
         self._detail_status.setText("Reading the document…")
         self._process_btn.setEnabled(False)
@@ -682,7 +729,8 @@ class DocumentInboxPage(QWidget):
         self._drafts = []
 
         self._proc_thread = ProcessThread(
-            doc["id"], doc["stored_path"], self._ledger_names(), self._company_name
+            doc["id"], doc["stored_path"], type_override,
+            self._ledger_names(), self._company_name
         )
         self._proc_thread.done.connect(self._on_processed)
         self._proc_thread.error.connect(self._on_process_error)
@@ -694,15 +742,30 @@ class DocumentInboxPage(QWidget):
         self._inbox.mark_error(doc_id, msg)
         self.refresh()
 
-    def _on_processed(self, doc_id: int, auto: dict, result):
+    def _on_processed(self, doc_id: int, pr):
         self._process_btn.setEnabled(True)
-        doc_type = auto.get("doc_type", "other")
-        vouchers = auto.get("vouchers", []) or []
+        # Bank statement parsed locally → belongs in Bank Reconciliation, not
+        # the voucher-draft flow.
+        if getattr(pr, "route", "vouchers") in ("bank_statement", "ledger_statement"):
+            self._show_statement_result(
+                doc_id, pr, detail=(self._current_id == doc_id))
+            return
 
-        self._inbox.set_classified(
-            doc_id, doc_type, auto.get("confidence", 0.0), auto.get("summary", {})
-        )
-        self._charge(doc_id, result)
+        doc_type = pr.doc_type or "other"
+        vouchers = pr.vouchers or []
+
+        self._inbox.set_classified(doc_id, doc_type, pr.confidence, pr.summary)
+        if pr.used_ai and pr.text_result is not None:
+            self._charge(doc_id, pr.text_result)
+
+        # Auto-post (opt-in): if confident + complete, post straight away and stop.
+        if self._auto_post_chk.isChecked() and \
+                self._auto_post_doc(doc_id, vouchers, pr.confidence):
+            if self._current_id == doc_id:
+                self._detail_status.setText("✓ Auto-posted to the books (no review).")
+            self.refresh()
+            return
+
         self._drafts_by_doc[doc_id] = vouchers
 
         if self._current_id == doc_id:
@@ -711,14 +774,69 @@ class DocumentInboxPage(QWidget):
                 idx = self._type_combo.findData(doc_type)
                 self._type_combo.setCurrentIndex(max(0, idx))
                 self._render_ai_summary(d)
-            self._present_drafts(doc_type, vouchers, auto.get("confidence", 0.0))
+            self._present_drafts(doc_type, vouchers, pr.confidence)
         self.refresh()
 
-    def _present_drafts(self, doc_type: str, vouchers: list, conf: float):
-        if doc_type == "bank_statement":
+    def _show_statement_result(self, doc_id: int, pr, detail: bool):
+        """Bank/ledger statement parsed locally → belongs in Reconciliation, not
+        the voucher flow. Show a clear, count-bearing result and a "Send to
+        Reconciliation" hand-off (no AI was used)."""
+        is_ledger = getattr(pr, "route", "") == "ledger_statement"
+        kind = "ledger statement" if is_ledger else "bank statement"
+        reco = "Ledger Reconciliation" if is_ledger else "Bank Reconciliation"
+        bp = getattr(pr, "bank_parse", None)
+        n = len(getattr(bp, "lines", []) or [])
+        self._inbox.set_classified(
+            doc_id, pr.route, 1.0,
+            {"note": f"Parsed locally — {n} transaction(s). Import from {reco}."})
+        self.refresh()
+        if detail and self._current_id == doc_id:
+            doc = self._inbox.get(doc_id)
+            self._handoff = (
+                doc["stored_path"] if doc else "",
+                pr.route,
+                getattr(bp, "bank_name", "") or "",
+                getattr(bp, "account_number", "") or "",
+            )
+            self._show_voucher_panel(False)
             self._detail_status.setText(
-                "Detected a bank statement → import it in Bank Reconciliation. "
-                "Not posted from here."
+                f"✓  Read {n} transaction(s) from this {kind} locally — no AI used."
+            )
+            self._send_reco_btn.setText(f"➡  Send to {reco}")
+            self._send_reco_btn.setVisible(True)
+
+    def _send_to_reconciliation(self):
+        """Open the right reconciliation screen with the parsed statement file
+        pre-loaded, stopping at the confirm step (user picks the ledger + period,
+        then Import). import_statement dedups by file-hash, so an in-progress
+        reconciliation is never overwritten."""
+        if not self._handoff:
+            return
+        path, route, name, acct = self._handoff
+        label = ("Ledger Reconciliation" if route == "ledger_statement"
+                 else "Bank Reconciliation")
+        mw = self.window()
+        if not hasattr(mw, "select_page_by_label") or not mw.select_page_by_label(label):
+            QMessageBox.information(
+                self, "Reconciliation",
+                f"Open “{label}” from the menu, then import the file yourself.")
+            return
+        page = None
+        for lbl, _icon, widget, _btn in getattr(mw, "_pages", []):
+            if lbl == label:
+                page = widget
+                break
+        if page is not None and hasattr(page, "preload_statement"):
+            page.preload_statement(path, name, acct)
+
+    def _present_drafts(self, doc_type: str, vouchers: list, conf: float):
+        if doc_type in ("bank_statement", "ledger_statement"):
+            reco = ("Ledger Reconciliation" if doc_type == "ledger_statement"
+                    else "Bank Reconciliation")
+            kind = ("ledger statement" if doc_type == "ledger_statement"
+                    else "bank statement")
+            self._detail_status.setText(
+                f"Detected a {kind} → import it in {reco}. Not posted from here."
             )
             self._show_voucher_panel(False)
             return
@@ -847,6 +965,72 @@ class DocumentInboxPage(QWidget):
         return self._tree.add_ledger(name, grp)
 
     # ── Approve & post the voucher on screen ────────────────────────────────
+    # ── Auto-post (opt-in, no review) ───────────────────────────────────────
+    def _on_auto_post_toggled(self, on: bool) -> None:
+        if not on:
+            return
+        reply = QMessageBox.warning(
+            self, "Auto-post — no review",
+            "Every document the AI processes will be posted to your books "
+            "automatically, with no review step. A misread will post a wrong "
+            "voucher.\n\nLow-confidence or incomplete drafts are still held "
+            "back for you to check. Turn this on?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            self._auto_post_chk.blockSignals(True)
+            self._auto_post_chk.setChecked(False)
+            self._auto_post_chk.blockSignals(False)
+
+    def _auto_post_doc(self, doc_id: int, vouchers: list, confidence: float) -> bool:
+        """Post a processed doc's drafts straight to the books (the auto-post
+        path). Guardrails — bails (→ returns False, doc stays a draft) unless:
+        there are drafts, TYPE confidence ≥ floor, EVERY ledger already exists
+        (never auto-create from an AI guess), and every line is complete. Posted
+        vouchers carry source='AI_DOC'."""
+        if not vouchers or (confidence or 0) < AUTO_POST_MIN_CONFIDENCE:
+            return False
+        name_to_id = {l["name"]: l["id"] for l in self._tree.get_all_ledgers()}
+        from core.voucher_engine import (
+            VoucherEngine, VoucherDraft, VoucherLine, VoucherValidationError,
+        )
+        engine = VoucherEngine(self._engine.db, self._engine.company_id)
+        last_vid = None
+        for v in vouchers:
+            dr = (v.get("dr_ledger") or "").replace(" (NEW)", "").strip()
+            cr = (v.get("cr_ledger") or "").replace(" (NEW)", "").strip()
+            try:
+                amount = float(v.get("amount") or 0)
+            except (TypeError, ValueError):
+                amount = 0
+            date = (v.get("date") or "").strip()
+            if (dr not in name_to_id or cr not in name_to_id
+                    or amount <= 0 or not date):
+                return False        # incomplete / unknown ledger → keep as draft
+            draft = VoucherDraft(
+                voucher_type=(v.get("voucher_type") or "JOURNAL"),
+                voucher_date=date,
+                narration=(v.get("narration") or ""),
+                reference=(v.get("reference") or ""),
+                lines=[VoucherLine(ledger_id=name_to_id[dr], dr_amount=amount),
+                       VoucherLine(ledger_id=name_to_id[cr], cr_amount=amount)],
+            )
+            draft.source = "AI_DOC"
+            try:
+                last_vid = engine.post(draft)
+            except (VoucherValidationError, Exception):
+                return False        # any post failure → keep the doc as a draft
+            try:
+                from core.license_manager import LicenseManager
+                LicenseManager().record_transaction_posted("ai_voucher", count=1)
+            except Exception:
+                pass
+        self._inbox.mark_posted(
+            doc_id, voucher_id=last_vid if isinstance(last_vid, int) else None)
+        self._auto_posted_log.append((doc_id, last_vid, round(confidence or 0, 2)))
+        return True
+
     def _approve_current(self):
         if not self._drafts:
             return
@@ -1033,19 +1217,25 @@ class DocumentInboxPage(QWidget):
             f"Processing {self._batch_i + 1} of {len(self._batch)}…"
         )
         self._batch_thread = ProcessThread(
-            d["id"], d["stored_path"], self._ledger_names(), self._company_name
+            d["id"], d["stored_path"], None,        # batch = Auto for every doc
+            self._ledger_names(), self._company_name
         )
         self._batch_thread.done.connect(self._on_batch_done)
         self._batch_thread.error.connect(self._on_batch_error)
         self._batch_thread.start()
 
-    def _on_batch_done(self, doc_id: int, auto: dict, result):
-        self._inbox.set_classified(
-            doc_id, auto.get("doc_type", "other"),
-            auto.get("confidence", 0.0), auto.get("summary", {})
-        )
-        self._charge(doc_id, result)
-        self._drafts_by_doc[doc_id] = auto.get("vouchers", []) or []
+    def _on_batch_done(self, doc_id: int, pr):
+        if getattr(pr, "route", "vouchers") in ("bank_statement", "ledger_statement"):
+            self._show_statement_result(doc_id, pr, detail=False)
+        else:
+            self._inbox.set_classified(doc_id, pr.doc_type or "other",
+                                       pr.confidence, pr.summary)
+            if pr.used_ai and pr.text_result is not None:
+                self._charge(doc_id, pr.text_result)
+            # Auto-post (opt-in) — else hold the drafts for review.
+            if not (self._auto_post_chk.isChecked() and
+                    self._auto_post_doc(doc_id, pr.vouchers or [], pr.confidence)):
+                self._drafts_by_doc[doc_id] = pr.vouchers or []
         self._batch_i += 1
         self._run_batch_next()
 

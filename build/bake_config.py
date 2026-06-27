@@ -138,6 +138,32 @@ def read_pricing(path: Path) -> dict:
             if up in tier_codes:
                 feature_upgrade_map[fid] = up
 
+    # Books HQ shares the `accgenie` product + the same plan tiers, differing
+    # only by country (A13). Fold its US-EXCLUSIVE feature flags (sales_tax,
+    # form_1099, schedule_c, mileage_tracking, …) into the SAME plan_features
+    # map so has_feature() gates them by tier; the CountryProfile gates
+    # visibility. Only ids NOT already defined in ACCOUNTSHQ are added — this
+    # never loosens an existing India gate.
+    if "BOOKSHQ" in wb.sheetnames:
+        existing_fids = {
+            (str(r.get("id") or "")).strip()
+            for r in rows
+            if (str(r.get("row_type") or "")).strip() == "feature"
+        }
+        for row in _rows(wb["BOOKSHQ"], header_row=3):
+            if (str(row.get("row_type") or "")).strip() != "feature":
+                continue
+            fid = (str(row.get("id") or "")).strip()
+            if not fid or fid in existing_fids:
+                continue
+            for code in tier_codes:
+                val = row.get(code)
+                if (isinstance(val, str) and val.strip().upper() in ("Y", "YES", "TRUE", "1", "X")) or val is True:
+                    plan_features[code].append(fid)
+            up = (row.get("upgrade_to") or "")
+            if isinstance(up, str) and up.strip().upper() in tier_codes:
+                feature_upgrade_map[fid] = up.strip().upper()
+
     # Countries
     ws_c = wb["Countries"]
     countries = []

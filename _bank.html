@@ -1,0 +1,85 @@
+<!doctype html><html><head><meta charset='utf-8'><style>
+:root{--bg:#F1F4F9;--card:#FFFFFF;--card2:#F8FAFC;--accent:#0EA5A5;--accent-soft:#E0F4F3;
+--text:#0F172A;--sec:#5A6B8B;--dim:#94A3B8;--border:#E5E9F1;--border2:#D8DDE6;
+--good:#057A55;--good-soft:#EAF7EF;--good-bg:#D9F5E6;--warn:#B45309;--warn-soft:#FCF1DC;--warn-bg:#FDEBD0;
+--bad:#C83A3A;--bad-soft:#FCEAEA;--bad-bg:#FBE1E1;--info:#1849A9;--info-bg:#D8E5FC;}
+*{box-sizing:border-box;font-family:'Segoe UI','Inter',system-ui,sans-serif;}
+body{margin:0;background:var(--bg);color:var(--text);font-size:13px;}
+.app{display:flex;min-height:100vh;}
+.sidebar{width:220px;flex:0 0 220px;background:#fff;border-right:1px solid var(--border);}
+.logo{padding:20px 18px 14px;border-bottom:1px solid var(--border);font-weight:800;font-size:22px;letter-spacing:-.02em;}
+.logo .b{color:var(--accent);}
+.company{font-size:11px;color:var(--sec);padding:10px 18px 2px;font-weight:600;}
+.nav-sec{color:var(--dim);font-size:10px;letter-spacing:1.5px;padding:16px 22px 5px;font-weight:700;}
+.nav-item{padding:9px 22px;font-size:13px;color:var(--sec);border-left:3px solid transparent;}
+.nav-item.active{color:var(--accent);background:var(--accent-soft);border-left:3px solid var(--accent);font-weight:600;}
+.main{flex:1;}
+.ptitle{font-size:22px;font-weight:800;padding:22px 26px 2px;letter-spacing:-.02em;}
+.psub{font-size:12px;color:var(--sec);padding:0 26px 16px;}
+.content{padding:0 26px 26px;}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+.tile{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.tile.good{background:var(--good-soft);border-color:var(--good);}
+.tile.warn{background:var(--warn-soft);border-color:var(--warn);}
+.tile.bad{background:var(--bad-soft);border-color:var(--bad);}
+.tile .lbl{font-size:10px;font-weight:700;color:var(--sec);letter-spacing:.08em;text-transform:uppercase;}
+.tile .val{font-size:21px;font-weight:700;margin-top:5px;letter-spacing:-.02em;}
+.tile.good .val{color:var(--good);}.tile.warn .val{color:var(--warn);}.tile.bad .val{color:var(--bad);}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px;}
+.sec-lbl{color:var(--sec);font-size:10px;font-weight:700;letter-spacing:1px;margin:6px 0 8px;}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+table.cmp{width:100%;border-collapse:collapse;}
+table.cmp th{color:var(--dim);font-size:10px;font-weight:700;text-align:right;padding:4px 6px;letter-spacing:.5px;}
+table.cmp td{font-size:13px;padding:6px 6px;text-align:right;}
+table.cmp td.name{text-align:left;color:var(--sec);font-weight:600;}
+.up{color:var(--good);font-size:11px;}.down{color:var(--bad);font-size:11px;}
+.risk{display:flex;align-items:center;gap:10px;background:#EEF2F7;border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:6px;}
+.risk .ic{font-weight:700;width:16px;}
+.risk.bad{border-left:3px solid var(--bad);}.risk.bad .ic{color:var(--bad);}
+.risk.warn{border-left:3px solid var(--warn);}.risk.warn .ic{color:var(--warn);}
+.risk.good{border-left:3px solid var(--good);}.risk.good .ic{color:var(--good);}
+.risk .chev{margin-left:auto;color:var(--dim);font-size:16px;font-weight:700;}
+.act-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border);}
+.act-row .d{width:96px;color:var(--sec);}.act-row .r{width:150px;font-weight:600;}
+.act-row .n{flex:1;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.act-row .a{font-weight:600;text-align:right;}
+.qa{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.qa .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+.qa .card:hover{border-color:var(--accent);}
+.qa .t{font-weight:700;font-size:13px;}.qa .s{font-size:10px;color:var(--sec);margin-top:2px;}
+/* tabs + tables */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin:4px 0 0;}
+.tab{padding:9px 20px;color:var(--sec);font-size:13px;border-bottom:2px solid transparent;cursor:pointer;}
+.tab.active{color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;}
+.toolbar{display:flex;align-items:center;gap:8px;margin:12px 0 8px;}
+.search{flex:1;max-width:380px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--sec);font-size:12px;}
+.btn{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:12px;color:var(--text);}
+.btn.primary{background:var(--accent);color:#fff;border:none;font-weight:700;}
+.grid{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.grid th{background:var(--card2);color:var(--sec);font-size:11px;font-weight:700;letter-spacing:.5px;text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);}
+.grid td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;}
+.grid tr:nth-child(even) td{background:var(--card2);}
+.grid td.num{text-align:right;font-variant-numeric:tabular-nums;}
+.pill{font-size:10px;font-weight:700;border-radius:9px;padding:2px 9px;}
+.pill.cr{background:var(--good-bg);color:var(--good);}.pill.dr{background:var(--bad-bg);color:var(--bad);}
+.pill.warn{background:var(--warn-bg);color:var(--warn);}
+.adrop{background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:3px 10px;font-size:11px;color:var(--text);}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.bar .sum{color:var(--sec);font-size:11px;flex:1;}
+</style></head><body><div class='app'>
+<div class="sidebar">
+  <div class="logo">books<span class="b">HQ</span></div>
+  <div class="company">Sunrise Traders</div>
+  <div class="nav-sec">ACCOUNTING</div>
+  <div class="nav-item ">Home</div>
+  <div class="nav-item">Post Voucher</div>
+  <div class="nav-item">Day Book</div>
+  <div class="nav-item">Ledger Balances</div>
+  <div class="nav-sec">BANKING</div>
+  <div class="nav-item active">Bank Reconciliation</div>
+  <div class="nav-item">AI Documents Inbox</div>
+  <div class="nav-sec">REPORTS</div>
+  <div class="nav-item">Trial Balance</div>
+  <div class="nav-item">Profit &amp; Loss</div>
+  <div class="nav-item">GST Filing</div>
+</div><div class='main'><div class='ptitle'>Bank Reconciliation</div><div class='psub'>Match imported bank statements to your ledger entries.</div><div class='content'><div class='kpis'><div class='tile good'><div class='lbl'>Matched</div><div class='val'>47</div></div><div class='tile warn'><div class='lbl'>Unmatched · stmt</div><div class='val'>12</div></div><div class='tile warn'><div class='lbl'>Unmatched · book</div><div class='val'>5</div></div><div class='tile '><div class='lbl'>Ignored</div><div class='val'>3</div></div></div><div class='bar'><span class='btn'>← Setup</span><span class='sum'>HDFC Bank · 01 Jun → 30 Jun 2026 · 67 statement lines · 47 matched automatically</span><span class='btn primary'>Continue to Summary →</span></div><div class='tabs'><div class='tab'>Matched</div><div class='tab active'>Unmatched Statement</div><div class='tab'>Unmatched Book</div><div class='tab'>Ignored</div></div><div class='toolbar'><span class='search'>🔍 Filter narration / reference — e.g. JIO, AMAZON…</span><span class='btn'>Select all visible</span></div><table class='grid'><tr><th>Date</th><th>Sign</th><th style='text-align:right'>Amount</th><th>Narration</th><th>Reference</th><th>Status</th><th></th></tr><tr><td>02 Jun 2026</td><td><span class='pill cr'>CR</span></td><td class='num'>₹ 45,000</td><td>NEFT IN NOVA DISTRIBUTORS</td><td>N06021457</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>03 Jun 2026</td><td><span class='pill dr'>DR</span></td><td class='num'>₹ 1,180</td><td>UPI/JIO RECHARGE/PYTM</td><td>UPI440231</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>05 Jun 2026</td><td><span class='pill dr'>DR</span></td><td class='num'>₹ 12,500</td><td>AMAZON SELLER FEES</td><td>AMZ-9921</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>07 Jun 2026</td><td><span class='pill cr'>CR</span></td><td class='num'>₹ 88,400</td><td>RTGS SUNDARAM PACKAGING</td><td>R0706884</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>09 Jun 2026</td><td><span class='pill dr'>DR</span></td><td class='num'>₹ 6,750</td><td>ELECTRICITY BILL BSES</td><td>BSES06</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>11 Jun 2026</td><td><span class='pill dr'>DR</span></td><td class='num'>₹ 25,000</td><td>UPI/RENT/LANDLORD</td><td>UPI553120</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>12 Jun 2026</td><td><span class='pill cr'>CR</span></td><td class='num'>₹ 1,20,000</td><td>IMPS METRO RETAIL</td><td>I07121200</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr><tr><td>14 Jun 2026</td><td><span class='pill dr'>DR</span></td><td class='num'>₹ 3,299</td><td>AIRTEL BROADBAND</td><td>AIR0614</td><td><span class='pill warn'>Unmatched</span></td><td><span class='adrop'>Actions ▾</span></td></tr></table></div></div></div></body></html>

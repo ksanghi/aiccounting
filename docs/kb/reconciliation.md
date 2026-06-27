@@ -32,6 +32,13 @@ The summary shows **statement balance, book balance, and the difference**. When 
 difference is right, click **Finalise** to lock the reconciliation — matched vouchers are
 marked reconciled.
 
+## From the AI Documents Inbox
+You can send a statement straight here: in the **AI Documents Inbox**, process it as a
+*Bank statement* or *Ledger statement* (read locally, no AI), then click **Send to
+Reconciliation**. It opens this screen with the file pre-loaded — you just confirm the
+ledger and period and import. Importing dedups by file, so it won't disturb a
+reconciliation already underway.
+
 ## Good to know
 - A **reconciled voucher is protected** from editing. If you must change it, undo the match
   first.

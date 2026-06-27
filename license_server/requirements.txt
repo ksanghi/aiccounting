@@ -5,3 +5,4 @@ pydantic>=2.11
 pydantic-settings>=2.7
 python-dotenv>=1.0
 razorpay>=1.4
+python-multipart>=0.0.18

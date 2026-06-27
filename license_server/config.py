@@ -65,6 +65,21 @@ class Settings(BaseSettings):
     smtp_from_name: str = "AccGenie"
     smtp_use_tls:  bool = True
 
+    # ── Marketing email (cold blasts) — a SEPARATE relay/identity so a
+    # campaign can never affect the transactional sender above. If any
+    # mkt_smtp_* is blank, the marketing sender falls back to the smtp_*
+    # config. Set these to the Brevo relay + the mail.<domain> subdomain.
+    mkt_smtp_host:     str = ""
+    mkt_smtp_port:     int = 587
+    mkt_smtp_user:     str = ""
+    mkt_smtp_password: str = ""
+    mkt_smtp_from:     str = ""
+    mkt_smtp_from_name: str = "AI Consultants"
+    mkt_smtp_use_tls:  bool = True
+    # Brevo v3 API key (xkeysib-...) — for importing bounces + the bounce
+    # webhook that auto-suppresses hard bounces. Separate from the SMTP relay.
+    brevo_api_key:     str = ""
+
     # ── Ops alerts ───────────────────────────────────────────────────────────
     # Destination for security/abuse alerts (currently: seat-release
     # cooldown trips). Multiple addresses can be comma-separated. Empty

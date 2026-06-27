@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">{{ title }}</h1>
+<form method="get" class="flex gap-2 items-end mb-4 text-sm">
+  <div><label class="block text-xs text-slate-500">As of</label><input type="date" name="as_of" value="{{ as_of }}" class="border rounded-md px-2 py-1.5"></div>
+  <button class="bg-slate-800 text-white rounded-md px-3 py-1.5">Apply</button>
+</form>
+<div class="bg-white border rounded-xl p-4 overflow-x-auto">
+<table class="w-full text-sm">
+  <thead><tr class="text-left text-slate-400 border-b"><th class="py-1">Party</th><th class="text-right">0–30</th><th class="text-right">31–60</th><th class="text-right">61–90</th><th class="text-right">90+</th><th class="text-right">Total</th></tr></thead>
+  <tbody>
+  {% for r in d.rows %}
+    <tr class="border-b last:border-0"><td class="py-1">{{ r.ledger }}</td><td class="text-right">{{ "%.2f"|format(r.b0_30 or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.b31_60 or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.b61_90 or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.b90p or 0) }}</td><td class="text-right">{{ "%.2f"|format(r.total or 0) }}</td></tr>
+  {% endfor %}
+  {% if d.totals %}
+  <tr class="font-bold border-t"><td class="py-1">Total</td><td class="text-right">{{ "%.2f"|format(d.totals.b0_30 or 0) }}</td><td class="text-right">{{ "%.2f"|format(d.totals.b31_60 or 0) }}</td><td class="text-right">{{ "%.2f"|format(d.totals.b61_90 or 0) }}</td><td class="text-right">{{ "%.2f"|format(d.totals.b90p or 0) }}</td><td class="text-right">{{ "%.2f"|format((d.totals.b0_30 or 0)+(d.totals.b31_60 or 0)+(d.totals.b61_90 or 0)+(d.totals.b90p or 0)) }}</td></tr>
+  {% endif %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

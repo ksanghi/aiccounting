@@ -53,7 +53,11 @@ class AmountEdit(QDoubleSpinBox):
         self.setMaximum(99_99_99_999.99)
         self.setMinimum(0.0)
         self.setGroupSeparatorShown(True)
-        self.setPrefix("₹ ")
+        try:
+            from core.i18n import currency_symbol
+            self.setPrefix(f"{currency_symbol()} ")
+        except Exception:
+            self.setPrefix("₹ ")
         self.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self.setFixedHeight(36)
         self.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -348,6 +352,12 @@ class QuickAddLedgerDialog(QDialog):
                  allowed_group_ids=None, existing_ledger_id: int | None = None):
         super().__init__(parent)
         self.tree = tree
+        # US (Books HQ) profile → show Schedule C + 1099 fields, hide GST/HSN.
+        try:
+            from core import country
+            self._us = country.active_profile().tax_system == "US_SALES_TAX"
+        except Exception:
+            self._us = False
         self._allowed_group_ids = allowed_group_ids or []
         self._existing_id = existing_ledger_id
         self._existing = (
@@ -449,29 +459,37 @@ class QuickAddLedgerDialog(QDialog):
         self.gstin_edit = QLineEdit()
         self.gstin_edit.setPlaceholderText("Optional — auto-fills state code")
         self.gstin_edit.textChanged.connect(self._on_gstin_change)
-        form.addRow(make_label("GSTIN"), self.gstin_edit)
+        self._gstin_label = make_label("GSTIN")
+        form.addRow(self._gstin_label, self.gstin_edit)
 
         # PAN
         self.pan_edit = QLineEdit()
         self.pan_edit.setPlaceholderText("Optional")
-        form.addRow(make_label("PAN"), self.pan_edit)
+        self._pan_label = make_label("PAN")
+        form.addRow(self._pan_label, self.pan_edit)
 
         # HSN / SAC — default code for a sales/purchase ledger; drives the
         # GSTR-1 HSN summary. Optional, blank for non-goods/services ledgers.
         self.hsn_edit = QLineEdit()
         self.hsn_edit.setPlaceholderText("Optional — HSN (goods) / SAC (services) code")
-        form.addRow(make_label("HSN / SAC"), self.hsn_edit)
+        self._hsn_label = make_label("HSN / SAC")
+        form.addRow(self._hsn_label, self.hsn_edit)
 
-        # TDS
+        # TDS (India) / 1099 (US). Same two columns, relabelled per country.
         tds_row = QHBoxLayout()
         self.tds_combo = QComboBox()
-        self.tds_combo.addItem("Not applicable")
-        for sec, info in {
-            "194C": "Contractor", "194H": "Commission",
-            "194I": "Rent", "194J": "Professional",
-            "194A": "Interest", "194Q": "Purchases"
-        }.items():
-            self.tds_combo.addItem(f"{sec} — {info}", sec)
+        if self._us:
+            self.tds_combo.addItem("Not a 1099 contractor")
+            self.tds_combo.addItem("1099-NEC — Contractor", "1099-NEC")
+            self.tds_combo.addItem("1099-MISC — Rent / Other", "1099-MISC")
+        else:
+            self.tds_combo.addItem("Not applicable")
+            for sec, info in {
+                "194C": "Contractor", "194H": "Commission",
+                "194I": "Rent", "194J": "Professional",
+                "194A": "Interest", "194Q": "Purchases"
+            }.items():
+                self.tds_combo.addItem(f"{sec} — {info}", sec)
         self.tds_rate = QDoubleSpinBox()
         self.tds_rate.setSuffix(" %")
         self.tds_rate.setMaximum(30)
@@ -481,8 +499,32 @@ class QuickAddLedgerDialog(QDialog):
         self.tds_combo.currentIndexChanged.connect(self._on_tds_change)
         tds_row.addWidget(self.tds_combo, 3)
         tds_row.addWidget(self.tds_rate, 1)
-        form.addRow(make_label("TDS Section"), tds_row)
+        # US 1099 is report-only — no withholding rate.
+        self.tds_rate.setVisible(not self._us)
+        self._tds_label = make_label("1099 Reporting" if self._us else "TDS Section")
+        form.addRow(self._tds_label, tds_row)
         self._on_tds_change(0)
+
+        # Schedule C line (US only) — tags an expense ledger to a Form 1040
+        # Schedule C line for the year-end report.
+        self.schedc_combo = QComboBox()
+        self.schedc_combo.addItem("— none —", None)
+        if self._us:
+            from core.schedule_c import line_choices
+            for code, label in line_choices():
+                self.schedc_combo.addItem(label, code)
+        self._schedc_label = make_label("Schedule C line")
+        form.addRow(self._schedc_label, self.schedc_combo)
+
+        # Hide India-only tax fields under the US profile.
+        if self._us:
+            for w in (self._gstin_label, self.gstin_edit,
+                      self._pan_label, self.pan_edit,
+                      self._hsn_label, self.hsn_edit):
+                w.setVisible(False)
+        else:
+            self._schedc_label.setVisible(False)
+            self.schedc_combo.setVisible(False)
 
         layout.addLayout(form)
         layout.addWidget(make_separator())
@@ -555,6 +597,13 @@ class QuickAddLedgerDialog(QDialog):
                 self.tds_rate.setValue(float(e.get("tds_rate") or 0))
             except Exception:
                 pass
+        # Schedule C line (US)
+        sc = e.get("schedule_c_line")
+        if sc:
+            for i in range(self.schedc_combo.count()):
+                if self.schedc_combo.itemData(i) == sc:
+                    self.schedc_combo.setCurrentIndex(i)
+                    break
         # Bank fields
         self.acct_edit.setText(e.get("account_number") or "")
         self.ifsc_edit.setText(e.get("ifsc") or "")
@@ -619,11 +668,14 @@ class QuickAddLedgerDialog(QDialog):
         if self.tds_combo.currentIndex() > 0:
             kwargs["is_tds_applicable"] = True
             kwargs["tds_section"]       = self.tds_combo.currentData()
-            kwargs["tds_rate"]          = self.tds_rate.value()
+            # US 1099 is report-only — no withholding rate.
+            kwargs["tds_rate"]          = None if self._us else self.tds_rate.value()
         else:
             kwargs["is_tds_applicable"] = False
             kwargs["tds_section"] = None
             kwargs["tds_rate"] = None
+        # Schedule C line tag (US only)
+        kwargs["schedule_c_line"] = self.schedc_combo.currentData() if self._us else None
         # Bank fields — only meaningful when group is bank
         if self._is_bank_group(group):
             kwargs["account_number"] = self.acct_edit.text().strip() or None

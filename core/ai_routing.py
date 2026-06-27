@@ -104,24 +104,30 @@ class RoutingConfig:
         """'byok' or 'ag_key' for a feature — from the versioned table."""
         return feature_class(feature)
 
-    # Document AI is WALLET-ONLY by product decision: it runs on the built-in /
-    # AccGenie wallet key (metered as credits) and NEVER the customer's own
-    # key — settled when the HD-key / BYOK mix was dropped as too confusing.
-    # Forced to the wallet even if a key happens to be set, so a demo/free
-    # licence (no key) and a keyed account behave identically here.
-    _WALLET_ONLY = {"document_recognition"}
-
     def resolve(self, feature: str) -> str:
-        """Return ROUTE_CUSTOMER / ROUTE_WALLET / ROUTE_LOCKED for `feature`."""
-        if feature in self._WALLET_ONLY:
-            return ROUTE_WALLET
-        if self.has_own_key():
-            # A customer key covers everything else, heavy or light.
-            return ROUTE_CUSTOMER
-        # No customer key — light features fall back to the wallet,
-        # heavy (byok) features are locked.
-        if feature_class(feature) == "byok":
-            return ROUTE_LOCKED
+        """Route per the customer's setup billing choice (`ai_mode`) — the
+        choice is AUTHORITATIVE (Option A, agreed 2026-06-21):
+
+          wallet → the AccGenie wallet (pooled pay-as-you-go credits), even if
+                   an own key happens to be left in config;
+          byok   → the customer's own Anthropic key; ROUTE_LOCKED if none set.
+
+        `ai_mode`, not "is a key present": a wallet customer may still have an
+        old key in config, but choosing wallet must MEAN wallet. (Earlier the
+        route was decided by has_own_key, so a stray key silently overrode the
+        wallet choice; and `document_recognition` was separately hard-forced to
+        the wallet on 2026-06-10/commit 1936dee, which broke BYOK document AI.
+        Both gone — routing now follows the one setup choice.) The `feature`
+        arg is kept for callers/telemetry; routing no longer branches on it.
+        See DECISIONS 2026-06-21.
+        """
+        try:
+            from core.user_prefs import prefs
+            mode = (prefs.get("ai_mode", "wallet") or "wallet").strip().lower()
+        except Exception:
+            mode = "wallet"
+        if mode == "byok":
+            return ROUTE_CUSTOMER if self.has_own_key() else ROUTE_LOCKED
         return ROUTE_WALLET
 
 

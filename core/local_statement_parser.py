@@ -138,6 +138,19 @@ def _parse_date(raw: str) -> Optional[str]:
     return None
 
 
+def _ofx_date(raw) -> Optional[str]:
+    """OFX/QFX dates are YYYYMMDD[HHMMSS][tz] — take the leading YYYYMMDD."""
+    if not raw:
+        return None
+    digits = re.sub(r"[^0-9]", "", str(raw))[:8]
+    if len(digits) < 8:
+        return None
+    try:
+        return datetime.strptime(digits, "%Y%m%d").date().isoformat()
+    except ValueError:
+        return None
+
+
 def _parse_amount(raw) -> Optional[float]:
     if raw is None:
         return None
@@ -204,6 +217,29 @@ _BANK_SCHEMA = HeaderSchema(
 )
 
 
+# Ledger / party-statement schema (used by parse_ledger). Same transaction
+# shape as a bank statement (date + debit/credit + particulars), plus the
+# voucher columns a ledger export carries (Vch Type / Vch No).
+_LEDGER_SCHEMA = HeaderSchema(
+    date=(
+        "date", "txn date", "transaction date", "value date", "posting date",
+    ),
+    debit=("debit", "dr", "dr amount", "debit amount", "withdrawal"),
+    credit=("credit", "cr", "cr amount", "credit amount", "deposit"),
+    amount=("amount", "txn amount", "transaction amount"),
+    narration=(
+        "particulars", "narration", "description", "details", "remarks",
+        "vch type", "voucher type",
+    ),
+    reference=(
+        "vch no", "vch no.", "voucher no", "voucher no.", "vchno",
+        "ref no", "ref no.", "reference", "ref",
+    ),
+    voucher_no=("vch no", "vch no.", "voucher no", "voucher no.", "vchno"),
+    voucher_type=("vch type", "voucher type"),
+)
+
+
 def _pick_header(headers, candidates: tuple[str, ...]) -> Optional[int]:
     if not candidates:
         return None
@@ -256,6 +292,10 @@ class LocalDocumentParser:
 
     def parse_bank_statement(self, file_path: str) -> ParseResult:
         """Bank-statement consumer: finds transaction table with debit/credit/amount."""
+        # OFX / QFX (the standard US bank download) is structured records, not a
+        # table — parse it directly into the same ParseResult shape.
+        if Path(file_path).suffix.lower() in (".ofx", ".qfx"):
+            return self._parse_ofx(file_path)
         meta = self._extract_with_meta(file_path)
         if meta.get("error_result"):
             return meta["error_result"]
@@ -299,6 +339,114 @@ class LocalDocumentParser:
             statement_closing=closing,
             lines=lines,
             file_text=text,
+        )
+
+    def parse_ledger(self, file_path: str) -> ParseResult:
+        """Ledger / party-statement consumer: same transaction-line shape as a
+        bank statement (date + debit/credit + particulars), no bank/account
+        meta. Used for ledger reconciliation. No AI."""
+        if Path(file_path).suffix.lower() in (".ofx", ".qfx"):
+            return self._parse_ofx(file_path)
+        meta = self._extract_with_meta(file_path)
+        if meta.get("error_result"):
+            return meta["error_result"]
+        tables, text = meta["tables"], meta["text"]
+
+        period_from, period_to = self._detect_period(text)
+        lines = self._extract_lines(
+            tables,
+            schema=_LEDGER_SCHEMA,
+            row_to_line=self._bank_row_to_line,
+        )
+        if not lines:
+            return ParseResult(
+                success=False,
+                period_from=period_from,
+                period_to=period_to,
+                file_text=text,
+                error=(
+                    "Could not locate a transaction table in the ledger "
+                    "statement. The file may be a scanned image, or use a "
+                    "layout the local parser doesn't recognise. Try the AI parser."
+                ),
+            )
+        return ParseResult(
+            success=True,
+            period_from=period_from,
+            period_to=period_to,
+            lines=lines,
+            file_text=text,
+        )
+
+    # ── OFX / QFX (US bank download) ──────────────────────────────────────
+
+    def _parse_ofx(self, file_path: str) -> ParseResult:
+        """
+        Parse an OFX 1.x (SGML) or OFX 2.x (XML) / QFX bank statement. Tolerant
+        of missing close-tags (SGML tag-soup). Produces the same ParseResult
+        shape as the table parsers, so BankReconciler.import_statement and the
+        UI treat it identically.
+
+        OFX transaction (<STMTTRN>): DTPOSTED (date), TRNAMT (signed: negative=
+        money out=DR, positive=money in=CR), NAME/MEMO (narration), FITID/
+        CHECKNUM (reference). Statement meta: ACCTID (account), DTSTART/DTEND
+        (period), LEDGERBAL>BALAMT (closing balance), ORG (bank name).
+        """
+        path = Path(file_path)
+        if not path.exists():
+            return ParseResult(success=False, error=f"File not found: {file_path}")
+        try:
+            raw = path.read_bytes().decode("latin-1", errors="replace")
+        except Exception as e:
+            return ParseResult(success=False, error=f"Could not read file: {e}")
+
+        body = raw[raw.lower().find("<ofx"):] if "<ofx" in raw.lower() else raw
+
+        def tag(block: str, name: str) -> Optional[str]:
+            # value runs from after <TAG> until the next '<' or end-of-line
+            m = re.search(rf"<{name}>([^<\r\n]*)", block, re.IGNORECASE)
+            return m.group(1).strip() if m else None
+
+        acct    = tag(body, "ACCTID")
+        org     = tag(body, "ORG")
+        dtstart = _ofx_date(tag(body, "DTSTART"))
+        dtend   = _ofx_date(tag(body, "DTEND"))
+        closing = _parse_amount(tag(body, "BALAMT"))   # first BALAMT = LEDGERBAL
+
+        blocks = re.split(r"(?i)<STMTTRN>", body)[1:]
+        lines: list[dict] = []
+        for i, blk in enumerate(blocks):
+            blk = re.split(r"(?i)</STMTTRN>", blk, 1)[0]
+            txn_date = _ofx_date(tag(blk, "DTPOSTED")) or _ofx_date(tag(blk, "DTUSER"))
+            amt = _parse_amount(tag(blk, "TRNAMT"))
+            if not txn_date or amt is None or amt == 0:
+                continue
+            sign = "DR" if amt < 0 else "CR"
+            name = tag(blk, "NAME") or ""
+            memo = tag(blk, "MEMO") or ""
+            narration = (f"{name} {memo}".strip()) or name or memo
+            reference = tag(blk, "FITID") or tag(blk, "CHECKNUM") or ""
+            lines.append({
+                "line_index": i,
+                "txn_date":   txn_date,
+                "amount":     round(abs(amt), 2),
+                "sign":       sign,
+                "narration":  narration,
+                "reference":  reference,
+                "raw_row":    [blk.strip()[:300]],
+            })
+
+        if not lines:
+            return ParseResult(
+                success=False, bank_name=org, account_number=acct,
+                period_from=dtstart, period_to=dtend, statement_closing=closing,
+                file_text=raw[:5000],
+                error="No <STMTTRN> transactions found in the OFX/QFX file.",
+            )
+        return ParseResult(
+            success=True, bank_name=org, account_number=acct,
+            period_from=dtstart, period_to=dtend, statement_closing=closing,
+            lines=lines, file_text=raw[:5000],
         )
 
     # ── Format dispatch (shared primitive) ───────────────────────────────

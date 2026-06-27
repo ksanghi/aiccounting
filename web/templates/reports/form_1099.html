@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Form 1099{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">Form 1099 — reportable vendor payments</h1>
+<form method="get" class="flex gap-2 items-end mb-3 text-sm">
+  <div><label class="block text-xs text-slate-500">From</label><input type="date" name="from" value="{{ from_ }}" class="border rounded-md px-2 py-1.5"></div>
+  <div><label class="block text-xs text-slate-500">To</label><input type="date" name="to" value="{{ to }}" class="border rounded-md px-2 py-1.5"></div>
+  <button class="bg-slate-800 text-white rounded-md px-3 py-1.5">Apply</button>
+</form>
+<p class="text-xs text-slate-400 mb-3">Threshold ${{ "%.0f"|format(d.threshold or 600) }} · {{ d.reportable_count or 0 }} reportable</p>
+<div class="bg-white border rounded-xl p-4">
+<table class="w-full text-sm">
+  <thead><tr class="text-left text-slate-400 border-b"><th class="py-1">Vendor</th><th>Form</th><th class="text-right">Total paid</th><th class="text-center">Reportable</th></tr></thead>
+  <tbody>
+  {% for r in d.contractors %}
+    <tr class="border-b last:border-0"><td class="py-1">{{ r.name }}</td><td>{{ r.form_type }}</td><td class="text-right">{{ "%.2f"|format(r.total_paid or 0) }}</td><td class="text-center">{{ '✓' if r.reportable else '' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

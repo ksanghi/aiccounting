@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Your companies · Books HQ{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold">Your companies</h1>
+</div>
+<div class="grid sm:grid-cols-2 gap-4">
+  {% for c in companies %}
+  <a href="/c/{{ c.slug }}/" class="block bg-white border border-slate-200 rounded-xl p-5 hover:border-amber-400">
+    <div class="font-semibold">{{ c.display_name }}</div>
+    <div class="text-xs text-slate-400 mt-1">Opened {{ c.created_at.strftime('%b %d, %Y') if c.created_at else '' }}</div>
+  </a>
+  {% endfor %}
+  <form method="post" action="/companies" class="bg-white border border-dashed border-slate-300 rounded-xl p-5">
+    <div class="font-semibold mb-2">+ New company</div>
+    <input name="display_name" placeholder="Company name" required
+           class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm mb-2 focus:ring-2 focus:ring-amber-400 outline-none">
+    <button class="bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-md px-4 py-2 text-sm">Create</button>
+  </form>
+</div>
+{% endblock %}

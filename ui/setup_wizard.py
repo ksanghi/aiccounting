@@ -27,6 +27,24 @@ from PySide6.QtWidgets import (
 
 from ui.theme import THEME
 from core.user_prefs import prefs
+from core import branding
+
+
+# Per-product user-manual download. Lives next to the installers in
+# marketing/downloads/. The PDF itself is produced by the manual task (A6);
+# until it lands the link 404s, but the wizard button is ready.
+_MANUAL_URL = {
+    "accgenie": "https://apps.ai-consultants.in/downloads/AccountsHQ-Manual.pdf",
+    "rwagenie": "https://apps.ai-consultants.in/downloads/RWAHQ-Manual.pdf",
+}
+
+
+def _manual_url() -> str:
+    try:
+        from core.app_release import current_product
+        return _MANUAL_URL.get(current_product(), _MANUAL_URL["accgenie"])
+    except Exception:
+        return _MANUAL_URL["accgenie"]
 
 
 def _why_what(why: str, what: str) -> QFrame:
@@ -152,7 +170,7 @@ class WelcomePage(_Page):
     def __init__(self, wizard):
         super().__init__(wizard)
         plan = (getattr(wizard.lmgr, "plan", "") or "FREE")
-        self.setTitle("Welcome to Accounts HQ")
+        self.setTitle(f"Welcome to {branding.PRODUCT_NAME}")
         self.setSubTitle("A two-minute setup of the optional bits — skip anything you don't need.")
         intro = QLabel(
             f"You're on the <b>{plan}</b> plan. This wizard walks through the optional "
@@ -284,6 +302,36 @@ class TDSPage(_Page):
         self.wiz._update_company(tan=self._tan.text().strip().upper())
 
 
+class SalesTaxPage(_Page):
+    """US (Books HQ) default sales-tax rate — applied on sales as a single line."""
+    feature = "sales_tax"; tier = "Pro"
+
+    def __init__(self, wizard):
+        super().__init__(wizard)
+        self.setTitle("Sales tax")
+        self.setSubTitle("Your default sales-tax rate, applied on sales.")
+        self.add(_why_what(
+            "Books HQ adds this rate as a single Sales Tax line on every sale and "
+            "tracks it as tax you owe; use tax on purchases is recorded too.",
+            "Type the rate you charge (e.g. 8.25). You can change it per sale or "
+            "later. Leave 0 if you don't charge sales tax."))
+        if self.locked:
+            self.add_locked(); return
+        from PySide6.QtWidgets import QDoubleSpinBox
+        row = wizard._company_row()
+        self._rate = QDoubleSpinBox()
+        self._rate.setSuffix(" %"); self._rate.setDecimals(3); self._rate.setMaximum(30)
+        self._rate.setValue(float(row.get("sales_tax_rate") or 0))
+        self._rate.setFixedWidth(120)
+        r = QHBoxLayout(); r.addWidget(QLabel("Sales tax rate:"))
+        r.addWidget(self._rate); r.addStretch()
+        self._lay.addLayout(r)
+        self.add(_skip_note())
+
+    def save(self):
+        self.wiz._update_company(sales_tax_rate=self._rate.value())
+
+
 class BillWisePage(_Page):
     feature = "bill_wise_refs"; tier = "Pro"
 
@@ -365,7 +413,7 @@ class AIChoicePage(_Page):
 
 
 class EmailPage(_Page):
-    feature = "document_inbox"; tier = "Pro"
+    feature = "ai_document_reader"; tier = "Pro"
 
     def __init__(self, wizard):
         super().__init__(wizard)
@@ -406,7 +454,7 @@ class EmailPage(_Page):
 
 
 class ScannerPage(_Page):
-    feature = "document_inbox"; tier = "Pro"
+    feature = "ai_document_reader"; tier = "Pro"
 
     def __init__(self, wizard):
         super().__init__(wizard)
@@ -459,8 +507,16 @@ class FinishPage(_Page):
         self.setTitle("You're set up")
         self.setSubTitle("")
         self.add(QLabel(
-            "That's it — you're ready to use Accounts HQ.\n\nYou can run this wizard again "
-            "any time from the sidebar “Setup” button to add or change any of these settings."))
+            f"That's it — you're ready to use {branding.PRODUCT_NAME}.\n\nYou can run this wizard "
+            "again any time from the “Setup” button to add or change any of these settings."))
+        self.add(_why_what(
+            "The user manual walks through every screen with examples — handy while "
+            "you're finding your feet.",
+            "Opens the PDF in your browser; save it for offline reading."))
+        man = QPushButton("📘  Download the user manual")
+        man.setCursor(Qt.CursorShape.PointingHandCursor)
+        man.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(_manual_url())))
+        self.add(man)
 
     def save(self):
         prefs.set("setup_wizard_done", True)
@@ -566,7 +622,7 @@ class SetupWizard(QWizard):
         self.company_id = company_id
         self.slug = slug
         self.lmgr = lmgr
-        self.setWindowTitle("Accounts HQ — Quick Setup")
+        self.setWindowTitle(f"{branding.PRODUCT_NAME} — Quick Setup")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.resize(620, 520)
         self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage, True)
@@ -584,6 +640,14 @@ class SetupWizard(QWizard):
     def _page_set(self):
         """Middle pages between Welcome and Backup. Accounts HQ default; RWA HQ
         overrides with its own page set."""
+        try:
+            from core import country
+            if country.active_profile().tax_system == "US_SALES_TAX":
+                # Books HQ: swap India GST/TDS pages for the US sales-tax page.
+                return [BusinessProfilePage, SalesTaxPage, BillWisePage,
+                        AIChoicePage, EmailPage, ScannerPage, VoucherFormPage]
+        except Exception:
+            pass
         return [BusinessProfilePage, GSTPage, TDSPage, BillWisePage,
                 AIChoicePage, EmailPage, ScannerPage, VoucherFormPage]
 

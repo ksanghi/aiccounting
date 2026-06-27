@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QFrame, QStackedWidget, QStatusBar,
     QSizePolicy, QMessageBox, QSplitter, QScrollArea
 )
+from core.i18n import format_currency, currency_symbol
 from PySide6.QtCore  import Qt, QTimer, Signal, QSize
 from PySide6.QtGui   import QFont, QIcon, QPixmap, QKeySequence, QShortcut
 
@@ -130,6 +131,7 @@ class MainWindow(QMainWindow):
 
         self._pages: list[tuple[str, str, QWidget, NavButton]] = []
         self._current_idx = -1
+        self._nav_history: list[int] = []   # visited-page stack for the Back button
 
         self._launcher = None
 
@@ -302,6 +304,16 @@ class MainWindow(QMainWindow):
         # Navigation chrome (always visible, even when the sidebar is hidden):
         #   ☰ Menu     → opens the tile launcher (Mode B)
         #   ◧          → shows / hides the sidebar (Mode A auto-hide)
+        # ← Back — return to the screen you came from (e.g. after deep-diving
+        # from the dashboard into a report). Disabled until there's history.
+        self._back_btn = QPushButton("  ←  Back  ")
+        self._back_btn.setObjectName("nav_back_btn")
+        self._back_btn.setToolTip("Back to the previous screen  (Alt+←)")
+        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._back_btn.clicked.connect(self._go_back)
+        self._back_btn.setEnabled(False)
+        self.status.addWidget(self._back_btn)
+
         self._menu_btn = QPushButton("  ☰  Menu  ")
         self._menu_btn.setObjectName("nav_menu_btn")
         self._menu_btn.setToolTip("Open the menu launcher  (Ctrl+Q)")
@@ -325,11 +337,20 @@ class MainWindow(QMainWindow):
             lambda: self.select_page_by_label("AI Credits"))
         self.status.addWidget(self._credits_btn)
 
+        # Breadcrumb (company | current page) as its OWN label widget. It used
+        # to be a status.showMessage(), but a temporary message paints across
+        # the whole message area — on top of the nav buttons — so the text
+        # doubled ("S☰Menraders"). A real widget gets its own slot (stretch 1
+        # fills the gap before the permanent right-side label).
+        self._crumb_label = QLabel("")
+        self._crumb_label.setObjectName("nav_crumb")
+        self.status.addWidget(self._crumb_label, 1)
+
         self._all_co_label = QLabel("")
         self.status.addPermanentWidget(self._all_co_label)
         self._refresh_all_co_total()
         self._refresh_credits_chip()
-        self.status.showMessage(f"  {self._company_name}  |  Ready")
+        self._crumb_label.setText(f"  {self._company_name}  |  Ready")
 
         # Paint the inline-styled chrome for the current theme.
         self._apply_chrome_theme()
@@ -374,6 +395,11 @@ class MainWindow(QMainWindow):
         self._all_co_label.setStyleSheet(
             f"color:{THEME['text_dim']}; font-size:10px; padding-right:10px;"
         )
+        if hasattr(self, "_crumb_label"):
+            self._crumb_label.setStyleSheet(
+                f"color:{THEME['text_secondary']}; font-size:11px; "
+                "font-weight:bold; padding-left:6px;"
+            )
         # Status-bar nav chrome — themed pill buttons.
         nav_chrome_qss = f"""
             QPushButton {{
@@ -386,7 +412,8 @@ class MainWindow(QMainWindow):
                 border-color: {THEME['accent']}; color: {THEME['accent']};
             }}
         """
-        for b in (getattr(self, "_menu_btn", None),
+        for b in (getattr(self, "_back_btn", None),
+                  getattr(self, "_menu_btn", None),
                   getattr(self, "_sidebar_toggle_btn", None),
                   getattr(self, "_credits_btn", None)):
             if b is not None:
@@ -518,13 +545,18 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _wizard_class(self):
+        """The SetupWizard class to run. Accounts HQ uses the base wizard; RWA HQ
+        overrides this to return its society-aware subclass."""
+        from ui.setup_wizard import SetupWizard
+        return SetupWizard
+
     def open_setup_wizard(self) -> None:
         """Run the licence-aware Quick Setup wizard. Called on first launch and
         from the sidebar 'Setup' button."""
         try:
-            from ui.setup_wizard import SetupWizard
             slug = self.db.path.stem
-            SetupWizard(self.db, self.company_id, slug, self.license_mgr, self).exec()
+            self._wizard_class()(self.db, self.company_id, slug, self.license_mgr, self).exec()
         except Exception:
             import traceback
             print("setup wizard error:\n" + traceback.format_exc())
@@ -875,36 +907,58 @@ class MainWindow(QMainWindow):
                 self.register_page("TDS Register", "🧾",
                                     self._locked_page("tds", "PRO", "TDS Register"))
 
-        # ── AI Doc Reader — PRO+ ──
-        if lmgr.has_feature("ai_document_reader"):
-            from ui.document_reader_page import DocumentReaderPage
-            self.register_page(
-                "AI Doc Reader", "🤖",
-                DocumentReaderPage(ReportsEngine(self.db, self.company_id), self.tree),
-                section_above="AI",
-            )
-        else:
-            self.register_page(
-                "AI Doc Reader", "🤖",
-                self._locked_page(
-                    "ai_document_reader", "PRO", "AI Document Reader"
-                ),
-                section_above="AI",
-            )
+        # ── US tax screens (Books HQ) — country-gated (A13) AND tier-gated.
+        # 1099 + Schedule C are PRO; Mileage is STANDARD (see BOOKSHQ pricing).
+        if "1099" in _profile.tax_screens:
+            if lmgr.has_feature("form_1099"):
+                from ui.reports_page import Form1099Page
+                self.register_page(
+                    "1099 Contractors", "🧾",
+                    Form1099Page(ReportsEngine(self.db, self.company_id)),
+                    section_above="TAX")
+            else:
+                self.register_page(
+                    "1099 Contractors", "🧾",
+                    self._locked_page("form_1099", "PRO", "1099 Contractors"),
+                    section_above="TAX")
+        if "schedule_c" in _profile.tax_screens:
+            if lmgr.has_feature("schedule_c"):
+                from ui.reports_page import ScheduleCPage
+                self.register_page(
+                    "Schedule C", "📑",
+                    ScheduleCPage(ReportsEngine(self.db, self.company_id)))
+            else:
+                self.register_page(
+                    "Schedule C", "📑",
+                    self._locked_page("schedule_c", "PRO", "Schedule C"))
+            if lmgr.has_feature("mileage_tracking"):
+                from ui.reports_page import MileagePage
+                self.register_page(
+                    "Mileage Log", "🚗",
+                    MileagePage(self.db, self.company_id))
+            else:
+                self.register_page(
+                    "Mileage Log", "🚗",
+                    self._locked_page("mileage_tracking", "STANDARD", "Mileage Log"))
 
-        # ── Document Inbox — PRO+ (BYOK) ──
-        if lmgr.has_feature("document_inbox"):
+        # ── AI Documents Inbox — PRO+ ──
+        # The merged surface (was two pages: AI Doc Reader + Document Inbox).
+        # Reads/queues/drafts incoming docs; type-aware local-first processing;
+        # optional auto-post. The old Reader page is retired (its strengths are
+        # folded in here); `document_reader_page.py` stays only for its shared
+        # DropZone/_load_cfg helpers used by bank/ledger reco + migration.
+        if lmgr.has_feature("ai_document_reader"):
             from ui.document_inbox_page import DocumentInboxPage
             self.register_page(
-                "Document Inbox", "📥",
+                "AI Documents Inbox", "📥",
                 DocumentInboxPage(ReportsEngine(self.db, self.company_id), self.tree),
                 section_above="AI",
             )
         else:
             self.register_page(
-                "Document Inbox", "📥",
+                "AI Documents Inbox", "📥",
                 self._locked_page(
-                    "document_inbox", "PRO", "Document Inbox"
+                    "ai_document_reader", "PRO", "AI Documents Inbox"
                 ),
                 section_above="AI",
             )
@@ -966,6 +1020,10 @@ class MainWindow(QMainWindow):
             PeriodLocksPage(self.db, self.company_id),
             section_above="SETTINGS",
         )
+
+        # ── User Manual (Tools ▸ Help) — download + open the current PDF ──
+        from ui.manual_page import ManualPage
+        self.register_page("User Manual", "📖", ManualPage())
 
         settings_page = self._build_settings_page()
         self.register_page("Settings", "⚙", settings_page)
@@ -1487,16 +1545,23 @@ class MainWindow(QMainWindow):
                 except Exception:
                     self.done.emit(None)
 
+        self._update_manual = manual
         self._update_thread = QThread(self)
         self._update_worker = _Worker()
         self._update_worker.moveToThread(self._update_thread)
         self._update_thread.started.connect(self._update_worker.run)
-        self._update_worker.done.connect(
-            lambda res: self._on_update_result(res, manual))
+        # Connect to the BOUND METHOD (not a lambda). With a lambda, Qt can't
+        # tell the receiver lives on the main thread, so it runs the slot on
+        # the worker thread — and _on_update_result calls box.exec() (a modal
+        # GUI dialog), which DEADLOCKS Qt off the UI thread. A bound method of
+        # `self` (a main-thread QObject) forces a queued connection → the slot,
+        # and its dialog, run on the UI thread where they must.
+        self._update_worker.done.connect(self._on_update_result)
         self._update_worker.done.connect(self._update_thread.quit)
         self._update_thread.start()
 
-    def _on_update_result(self, res, manual: bool) -> None:
+    def _on_update_result(self, res) -> None:
+        manual = getattr(self, "_update_manual", False)
         from PySide6.QtWidgets import QMessageBox
         if hasattr(self, "_check_btn"):
             self._check_btn.setEnabled(True)
@@ -1790,10 +1855,19 @@ class MainWindow(QMainWindow):
 
     # ── Navigation ────────────────────────────────────────────────────────────
 
-    def _select_page(self, idx: int):
+    def _select_page(self, idx: int, record: bool = True):
         if not self._pages:
             return
         idx = max(0, min(idx, len(self._pages) - 1))
+
+        # Remember where we came from so the Back button can return there.
+        # `record=False` is used by Back itself so it doesn't re-stack.
+        if record and self._current_idx >= 0 and self._current_idx != idx:
+            self._nav_history.append(self._current_idx)
+            # Keep the stack from growing without bound on long sessions.
+            if len(self._nav_history) > 50:
+                self._nav_history = self._nav_history[-50:]
+        self._update_back_btn()
 
         # Deactivate ALL buttons first
         for _, _, _, btn in self._pages:
@@ -1809,7 +1883,7 @@ class MainWindow(QMainWindow):
 
         self._stack.setCurrentWidget(widget)
         self._current_idx = idx
-        self.status.showMessage(
+        self._crumb_label.setText(
             f"  {self._company_name}  |  {icon}  {label}"
         )
 
@@ -1819,6 +1893,27 @@ class MainWindow(QMainWindow):
 
         # AI usage may have changed the balance — keep the status-bar chip live.
         self._refresh_credits_chip()
+
+    def _go_back(self) -> None:
+        """Return to the previously-visited page (the screen you deep-dived
+        from). Wired to the ← button, the mouse Back button and Alt+Left."""
+        if not self._nav_history:
+            return
+        prev = self._nav_history.pop()
+        self._select_page(prev, record=False)
+        self._update_back_btn()
+
+    def _update_back_btn(self) -> None:
+        btn = getattr(self, "_back_btn", None)
+        if btn is not None:
+            btn.setEnabled(bool(self._nav_history))
+
+    def mousePressEvent(self, ev):
+        # The mouse 'Back' thumb button returns to the previous screen.
+        if ev.button() == Qt.MouseButton.BackButton:
+            self._go_back()
+            return
+        super().mousePressEvent(ev)
 
     def _refresh_credits_chip(self) -> None:
         btn = getattr(self, "_credits_btn", None)
@@ -1831,8 +1926,8 @@ class MainWindow(QMainWindow):
             btn.setText("💳  AI Credits")
 
     def _on_voucher_posted(self, vno: str, vtype: str, amount: float):
-        self.status.showMessage(
-            f"  ✓  {vno}  posted  |  ₹{amount:,.2f}  |  {self._company_name}"
+        self._crumb_label.setText(
+            f"  ✓  {vno}  posted  |  {format_currency(amount)}  |  {self._company_name}"
         )
         self._refresh_all_co_total()
 
@@ -1946,6 +2041,10 @@ class MainWindow(QMainWindow):
         menu_key_sc = QShortcut(QKeySequence(Qt.Key.Key_Menu), self)
         menu_key_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
         menu_key_sc.activated.connect(self._open_launcher)
+        # Back to the previous screen (deep-dive return): Alt+← .
+        back_sc = QShortcut(QKeySequence("Alt+Left"), self)
+        back_sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        back_sc.activated.connect(self._go_back)
         # Number keys 1-9 jump to nav pages
         for i in range(min(9, 9)):
             QShortcut(QKeySequence(f"Ctrl+{i+1}"), self).activated.connect(

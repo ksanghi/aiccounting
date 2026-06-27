@@ -1,0 +1,28 @@
+# STAGING — isolated payment test rig. SEPARATE app + volume + secrets from
+# production (accgenie-license-in). Used to test the AIC Razorpay account with
+# TEST keys end-to-end. Deploy:  fly deploy --config fly.staging.toml
+app = "accgenie-license-staging"
+primary_region = "sin"   # moved off bom 2026-06-12: Fly had no capacity in bom (ephemeral DB, no volume, so region is free to change)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Ephemeral in-container DB — test licences are disposable, so no volume
+  # needed (also sidesteps bom volume-zone limits). Resets on redeploy.
+  DATABASE_URL = "sqlite:////tmp/licenses.db"
+  MAX_MACHINES_PER_KEY = "3"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0          # scales to zero when idle → ~free
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/v1/health"

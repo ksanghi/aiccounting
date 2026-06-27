@@ -15,10 +15,10 @@ click away without scrolling.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QSizePolicy,
+    QScrollArea, QFrame, QSizePolicy, QLineEdit,
 )
 
 from ui.theme import THEME
@@ -64,15 +64,24 @@ class NavLauncher(QWidget):
     """Overlay launcher. One instance per MainWindow, shown/hidden."""
 
     def __init__(self, window):
-        # Parent to the central widget so the overlay covers sidebar + content.
-        parent = window.centralWidget() or window
+        # Parent to the MAIN WINDOW (not just the central widget) so the dim
+        # overlay covers EVERYTHING — sidebar, content AND the status bar —
+        # leaving no bright strip behind the launcher.
+        parent = window
         super().__init__(parent)
         self._window = window
+        self._query = ""              # current search text
+        self._first_match = None      # (idx, label) of first result, for Enter
         self.setObjectName("nav_launcher")
+        # A plain QWidget won't paint a stylesheet `background` unless this is
+        # set — without it the dim scrim never actually rendered (the screen
+        # behind stayed bright). This is what makes the overlay darken.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.hide()
 
-        # Full-area dim scrim.
-        self.setStyleSheet(f"#nav_launcher {{ background: rgba(5, 8, 16, 0.62); }}")
+        # Full-area dim scrim — strong, so the screen behind clearly recedes
+        # and the launcher reads as a focused, near-fullscreen modal.
+        self.setStyleSheet(f"#nav_launcher {{ background: rgba(5, 8, 16, 0.88); }}")
 
         scrim = QVBoxLayout(self)
         scrim.setContentsMargins(0, 0, 0, 0)
@@ -107,7 +116,7 @@ class NavLauncher(QWidget):
             " background: transparent; border: none;")
         hl.addWidget(title)
         hl.addStretch()
-        hint = QLabel("click a tile  ·  Esc to close")
+        hint = QLabel("type to search  ·  Esc to close")
         hint.setStyleSheet(
             f"color:{THEME['text_dim']}; font-size:12px;"
             " background: transparent; border: none;")
@@ -123,6 +132,28 @@ class NavLauncher(QWidget):
         close.clicked.connect(self.close_launcher)
         hl.addWidget(close)
         pv.addWidget(header)
+
+        # Search row — type to filter the tiles to matching menu items.
+        search_wrap = QFrame()
+        search_wrap.setStyleSheet("background: transparent; border: none;")
+        swl = QVBoxLayout(search_wrap)
+        swl.setContentsMargins(24, 14, 24, 2)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Search the menu — type a screen name…")
+        self._search.setClearButtonEnabled(True)
+        self._search.setStyleSheet(f"""
+            QLineEdit {{
+                background: {THEME['bg_hover']};
+                border: 1px solid {THEME['border']};
+                border-radius: 10px; padding: 9px 12px;
+                font-size: 13px; color: {THEME['text_primary']};
+            }}
+            QLineEdit:focus {{ border-color: {THEME['accent']}; }}
+        """)
+        self._search.textChanged.connect(self._on_search)
+        self._search.installEventFilter(self)
+        swl.addWidget(self._search)
+        pv.addWidget(search_wrap)
 
         # Scrollable body
         scroll = QScrollArea()
@@ -153,7 +184,8 @@ class NavLauncher(QWidget):
                 w.setParent(None)
 
     def _nav_items(self) -> list[tuple[int, str, str]]:
-        """(idx, label, icon) for every page except Home (logo-only)."""
+        """(idx, label, icon) for every page except Home (shown as a pinned
+        Dashboard tile, not grouped into the tree — see `_home_searchable`)."""
         items = []
         for idx, entry in enumerate(self._window._pages):
             label, icon = entry[0], entry[1]
@@ -161,6 +193,29 @@ class NavLauncher(QWidget):
                 continue
             items.append((idx, label, icon))
         return items
+
+    def _home_searchable(self) -> tuple[int, str, str] | None:
+        """The Home page presented as a 'Dashboard' launcher entry, or None if
+        the app has no Home page. The sidebar reaches Home via its logo, but the
+        tile launcher has no logo — without this the dashboard is unreachable
+        from the menu."""
+        for idx, entry in enumerate(self._window._pages):
+            if (entry[0] or "").strip().lower() == "home":
+                return idx, "Dashboard", (entry[1] or "🏠")
+        return None
+
+    def _build_pinned(self) -> None:
+        """A single always-on Dashboard tile at the very top of the launcher."""
+        home = self._home_searchable()
+        if home is None:
+            return
+        idx, label, icon = home
+        cap = QLabel("🏠  DASHBOARD")
+        cap.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; font-weight:700;"
+            " letter-spacing:1.4px; padding:4px 0 6px; background:transparent;")
+        self._body_layout.addWidget(cap)
+        self._add_grid([self._make_tile(idx, label, icon)])
 
     def _go(self, idx: int, label: str) -> None:
         record_recent(label)
@@ -196,6 +251,14 @@ class NavLauncher(QWidget):
         nm.setWordWrap(True)
         row.addWidget(nm, 1)
         btn.clicked.connect(lambda _=False, i=idx, l=label: self._go(i, l))
+        return btn
+
+    def _make_action_tile(self, label: str, icon: str, on_click) -> QPushButton:
+        """A tile that runs a callback (e.g. opens the Setup wizard) instead of
+        jumping to a registered page."""
+        btn = self._make_tile(-1, label, icon)
+        btn.clicked.disconnect()
+        btn.clicked.connect(lambda _=False: (self.close_launcher(), on_click()))
         return btn
 
     def _add_grid(self, tiles: list[QPushButton]) -> None:
@@ -273,17 +336,85 @@ class NavLauncher(QWidget):
         row.addStretch()
         self._body_layout.addWidget(wrap)
 
+    def _searchables(self, items):
+        """Flat list of (idx, label, icon) the search can match — every nav
+        item, the Dashboard, plus the Quick Setup action (idx -1)."""
+        out = list(items)
+        home = self._home_searchable()
+        if home is not None:
+            out.insert(0, home)
+        if hasattr(self._window, "open_setup_wizard"):
+            out.append((-1, "Quick Setup", "⚙"))
+        return out
+
+    def _populate_results(self, items, q: str) -> None:
+        """Flat, ungrouped grid of every menu item whose label contains `q`."""
+        matches = [(i, l, ic) for (i, l, ic) in self._searchables(items)
+                   if q in (l or "").lower()]
+        self._first_match = (matches[0][0], matches[0][1]) if matches else None
+        cap = QLabel(f"RESULTS · {len(matches)}")
+        cap.setStyleSheet(
+            f"color:{THEME['text_dim']}; font-size:10px; font-weight:700;"
+            " letter-spacing:1.4px; padding:4px 0 6px; background:transparent;")
+        self._body_layout.addWidget(cap)
+        if not matches:
+            empty = QLabel("No menu items match your search.")
+            empty.setStyleSheet(
+                f"color:{THEME['text_secondary']}; font-size:13px;"
+                " padding:8px 2px; background:transparent;")
+            self._body_layout.addWidget(empty)
+            return
+        tiles = []
+        for (i, l, ic) in matches:
+            if i == -1:     # the Quick Setup action
+                tiles.append(self._make_action_tile(
+                    l, ic, self._window.open_setup_wizard))
+            else:
+                tiles.append(self._make_tile(i, l, ic))
+        self._add_grid(tiles)
+
+    def _on_search(self, text: str) -> None:
+        self._query = text or ""
+        self._populate()
+
+    def _activate_first(self) -> None:
+        if self._first_match is not None:
+            idx, label = self._first_match
+            if idx == -1:
+                self.close_launcher()
+                self._window.open_setup_wizard()
+            else:
+                self._go(idx, label)
+
     def _populate(self) -> None:
         self._clear_body()
         items = self._nav_items()
+        q = (self._query or "").strip().lower()
+        if q:                              # search mode: flat results, no Recent
+            self._populate_results(items, q)
+            self._body_layout.addStretch()
+            return
+        self._first_match = None
+        self._build_pinned()
         self._build_recent(items)
         tree = menu_tree.build_tree(items, label_of=lambda t: t[1])
+        # Quick Setup lives as a tile under the "Settings" heading.
+        wants_setup = hasattr(self._window, "open_setup_wizard")
+        setup_added = False
         for section, groups in tree:
             self._section_header(section)
-            for group, group_items in groups:
+            for gi, (group, group_items) in enumerate(groups):
                 self._group_header(group)
                 tiles = [self._make_tile(i, l, ic) for (i, l, ic) in group_items]
+                if wants_setup and not setup_added and section == "Settings" and gi == 0:
+                    tiles.append(self._make_action_tile(
+                        "Quick Setup", "⚙", self._window.open_setup_wizard))
+                    setup_added = True
                 self._add_grid(tiles)
+        if wants_setup and not setup_added:        # no Settings section → give it one
+            self._section_header("Settings")
+            self._add_grid([self._make_action_tile(
+                "Quick Setup", "⚙", self._window.open_setup_wizard)])
         self._body_layout.addStretch()
 
     # ── Show / hide ──────────────────────────────────────────────────────────
@@ -292,14 +423,21 @@ class NavLauncher(QWidget):
         parent = self.parentWidget()
         if parent is not None:
             self.setGeometry(parent.rect())
-        # Size the panel to ~82% × ~84% of the available area.
+        # Size the panel to ~92% × ~90% of the window — near-fullscreen, with
+        # just a thin dimmed frame so it's clearly a modal over the app.
         if parent is not None:
-            self._panel.setFixedSize(int(parent.width() * 0.82),
-                                     int(parent.height() * 0.84))
+            self._panel.setFixedSize(int(parent.width() * 0.92),
+                                     int(parent.height() * 0.90))
+        # Start every open with a clear search box, focused so the user can
+        # just start typing to find a screen.
+        self._search.blockSignals(True)
+        self._search.clear()
+        self._search.blockSignals(False)
+        self._query = ""
         self._populate()
         self.show()
         self.raise_()
-        self.setFocus()
+        self._search.setFocus()
 
     def close_launcher(self) -> None:
         self.hide()
@@ -308,6 +446,22 @@ class NavLauncher(QWidget):
         self.close_launcher() if self.isVisible() else self.open_launcher()
 
     # ── Dismiss interactions ─────────────────────────────────────────────────
+
+    def eventFilter(self, obj, ev) -> bool:
+        # Keys typed inside the search box: Esc clears (then closes), Enter
+        # jumps to the first match.
+        if obj is self._search and ev.type() == QEvent.Type.KeyPress:
+            k = ev.key()
+            if k == Qt.Key.Key_Escape:
+                if self._search.text():
+                    self._search.clear()
+                else:
+                    self.close_launcher()
+                return True
+            if k in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._activate_first()
+                return True
+        return super().eventFilter(obj, ev)
 
     def keyPressEvent(self, ev) -> None:
         if ev.key() == Qt.Key.Key_Escape:

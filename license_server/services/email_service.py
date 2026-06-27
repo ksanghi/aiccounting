@@ -83,6 +83,86 @@ def send_email(
         return False
 
 
+def _mkt_cfg() -> dict:
+    """Marketing sender config — a SEPARATE relay/identity (Brevo + the
+    mail.<domain> subdomain) so a cold blast can't touch the transactional
+    sender. Falls back to the main smtp_* config if mkt_* is unset."""
+    s = settings
+    return {
+        "host":      s.mkt_smtp_host or s.smtp_host,
+        "port":      s.mkt_smtp_port or s.smtp_port,
+        "user":      s.mkt_smtp_user or s.smtp_user,
+        "password":  s.mkt_smtp_password or s.smtp_password,
+        "from":      s.mkt_smtp_from or s.smtp_from,
+        "from_name": s.mkt_smtp_from_name or s.smtp_from_name,
+        "use_tls":   s.mkt_smtp_use_tls,
+    }
+
+
+def _connect(cfg: dict):
+    """Open + authenticate one SMTP connection for the given config. Raises."""
+    if cfg["use_tls"]:
+        ctx = ssl.create_default_context()
+        srv = smtplib.SMTP(cfg["host"], cfg["port"], timeout=30)
+        srv.starttls(context=ctx)
+    else:
+        srv = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=30)
+    srv.login(cfg["user"], cfg["password"])
+    return srv
+
+
+def send_bulk(messages, reconnect_every: int = 50, throttle: float = 0.1):
+    """Send many emails over a REUSED SMTP connection (far more robust than a
+    fresh connect per message, which shared relays rate-limit).
+
+    `messages` is an iterable of (to_email, subject, body_text, body_html).
+    Reconnects every `reconnect_every` sends and after any error. Yields
+    (to_email, ok: bool) per message. Never raises — a single bad recipient
+    or a dropped connection doesn't abort the batch.
+    """
+    import time as _time
+    cfg = _mkt_cfg()                       # marketing relay (Brevo + subdomain)
+    if not (cfg["host"] and cfg["user"] and cfg["password"]):
+        for m in messages:
+            yield (m[0], False)
+        return
+    srv = None
+    on_conn = 0
+    for to_email, subject, body_text, body_html in messages:
+        if not to_email or "@" not in to_email:
+            yield (to_email, False)
+            continue
+        try:
+            if srv is None or on_conn >= reconnect_every:
+                if srv is not None:
+                    try: srv.quit()
+                    except Exception: pass
+                srv = _connect(cfg)
+                on_conn = 0
+            msg = EmailMessage()
+            msg["From"]    = formataddr((cfg["from_name"], cfg["from"]))
+            msg["To"]      = to_email
+            msg["Subject"] = subject
+            msg.set_content(body_text)
+            if body_html:
+                msg.add_alternative(body_html, subtype="html")
+            srv.send_message(msg)
+            on_conn += 1
+            if throttle:
+                _time.sleep(throttle)
+            yield (to_email, True)
+        except Exception:
+            log.exception("bulk send failed for %s", to_email)
+            try:
+                if srv: srv.quit()
+            except Exception: pass
+            srv = None          # force reconnect on the next message
+            yield (to_email, False)
+    if srv is not None:
+        try: srv.quit()
+        except Exception: pass
+
+
 # India display names for each internal product code. See
 # memory project-product-branding.md — country-driven branding; this
 # table is the email-side India view. When US pack ships, swap based
@@ -99,6 +179,7 @@ _PRODUCT_DISPLAY_IN = {
 # nudge until their installers land.
 _INSTALLER_URL = {
     "rwagenie": "https://apps.ai-consultants.in/downloads/RWAHQ-Setup.exe",
+    "accgenie": "https://apps.ai-consultants.in/downloads/AccountsHQ-Setup.exe",
 }
 
 

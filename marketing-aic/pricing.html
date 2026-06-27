@@ -48,6 +48,8 @@ a:hover { text-decoration:underline; }
 .price-feats { list-style:none; padding:0; margin:18px 0; flex-grow:1; }
 .price-feats li { padding:5px 0 5px 22px; font-size:13.5px; position:relative; }
 .price-feats li::before { content:"✓"; position:absolute; left:0; color:var(--accent-2); font-weight:700; }
+.price-feats li:first-child { font-weight:700; color:var(--ink); padding-left:28px; padding-right:8px; background:#FFF1C2; border-radius:6px; box-shadow:0 0 0 1px #F0D384 inset; }
+.price-feats li:first-child::before { left:8px; color:var(--accent-warm); }
 .price-btn { display:inline-block; text-align:center; padding:11px 16px; border-radius:8px; font-size:14px; font-weight:600; border:1.5px solid #94A3B8; background:white; color:var(--ink); transition:background .15s, border-color .15s; }
 .price-btn:hover { border-color:var(--accent); background:#F1F5F9; text-decoration:none; }
 .price-card.featured .price-btn { background:var(--accent); color:white; border-color:var(--accent); }
@@ -116,12 +118,14 @@ footer a:hover { color:white; text-decoration:none; }
         <div class="price-amt">Rs. 0</div>
         <div class="price-tag">5,000 transactions, 1 user</div>
         <ul class="price-feats">
-          <li>All 8 voucher types</li>
-          <li>Day book, ledger balances</li>
+          <li>AI auto-posts vouchers</li>
+          <li>All basic reports</li>
+          <li>Bank &amp; ledger reconciliation</li>
+          <li>Export to Excel and PDF</li>
           <li>Backup</li>
-          <li>1 company, 1 user</li>
+          <li>1 company</li>
         </ul>
-        <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=FREE">Get free</a>
+        <a class="price-btn" href="see-in-action.html">Get free</a>
       </div>
 
       <div class="price-card featured">
@@ -130,10 +134,9 @@ footer a:hover { color:white; text-decoration:none; }
         <div class="price-tag">20,000 transactions, 2 users</div>
         <ul class="price-feats">
           <li>Everything in Free</li>
-          <li>Trial Balance, P &amp; L, Balance Sheet</li>
-          <li>Bank &amp; ledger reconciliation</li>
-          <li>Excel / PDF / print / email exports</li>
-          <li>Tally / Busy book migration</li>
+          <li>A/R-A/P aging, cash flow reporting</li>
+          <li>Print &amp; email reports</li>
+          <li>Unlimited companies</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=STANDARD">Buy Standard</a>
       </div>
@@ -144,10 +147,8 @@ footer a:hover { color:white; text-decoration:none; }
         <div class="price-tag">50,000 transactions, 5 users</div>
         <ul class="price-feats">
           <li>Everything in Standard</li>
-          <li>GST returns (CGST / SGST / IGST)</li>
-          <li>TDS with section-aware rates</li>
-          <li>AI document reader (bills, statements)</li>
-          <li>Verbal entry, auto-billing</li>
+          <li>GST &amp; TDS — return-ready reports</li>
+          <li>Voice  entry</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=PRO">Buy Pro</a>
       </div>
@@ -161,7 +162,6 @@ footer a:hover { color:white; text-decoration:none; }
           <li>WhatsApp notifications</li>
           <li>Audit export</li>
           <li>API access</li>
-          <li>Verticals (RWA management)</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=accgenie&amp;plan=PREMIUM">Buy Premium</a>
       </div>
@@ -186,13 +186,17 @@ footer a:hover { color:white; text-decoration:none; }
       <div class="price-card">
         <div class="price-name">Free</div>
         <div class="price-amt">Rs. 0</div>
-        <div class="price-tag">Up to 300 flats</div>
+        <div class="price-tag">Up to 300 flats, 5,000 transactions, 1 user</div>
         <ul class="price-feats">
           <li>Member directory</li>
           <li>Receipt tracking</li>
           <li>Notice board, polls</li>
           <li>Visitor passes</li>
-          <li>Basic reports</li>
+          <li>AI auto-posts vouchers</li>
+          <li>All basic reports</li>
+          <li>Bank &amp; ledger reconciliation</li>
+          <li>Export to Excel and PDF</li>
+          <li>Backup</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=rwagenie&amp;plan=FREE">Get free</a>
       </div>
@@ -200,13 +204,15 @@ footer a:hover { color:white; text-decoration:none; }
       <div class="price-card featured">
         <div class="price-name">Standard</div>
         <div class="price-amt">Rs. 2,999<span class="small">/yr</span></div>
-        <div class="price-tag">Up to 1,000 flats</div>
+        <div class="price-tag">Up to 1,000 flats, 20,000 transactions, 2 users</div>
         <ul class="price-feats">
           <li>Everything in Free</li>
           <li>Auto-billing &amp; late fees</li>
           <li>Facilities booking</li>
           <li>Asset register</li>
           <li>Advanced reports</li>
+          <li>A/R-A/P aging, cash flow reporting</li>
+          <li>Print &amp; email reports</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=rwagenie&amp;plan=STANDARD">Buy Standard</a>
       </div>
@@ -214,12 +220,14 @@ footer a:hover { color:white; text-decoration:none; }
       <div class="price-card">
         <div class="price-name">Pro</div>
         <div class="price-amt">Rs. 5,999<span class="small">/yr</span></div>
-        <div class="price-tag">Up to 2,500 flats</div>
+        <div class="price-tag">Up to 2,500 flats, 50,000 transactions, 5 users</div>
         <ul class="price-feats">
           <li>Everything in Standard</li>
           <li>WhatsApp invoices</li>
           <li>Document storage</li>
           <li>Vendor management</li>
+          <li>GST &amp; TDS — return-ready reports</li>
+          <li>Voice  entry</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=rwagenie&amp;plan=PRO">Buy Pro</a>
       </div>
@@ -227,12 +235,15 @@ footer a:hover { color:white; text-decoration:none; }
       <div class="price-card">
         <div class="price-name">Premium</div>
         <div class="price-amt">Rs. 14,999<span class="small">/yr</span></div>
-        <div class="price-tag">Unlimited flats, large societies</div>
+        <div class="price-tag">Unlimited flats, large societies, 100,000 transactions, 10 users</div>
         <ul class="price-feats">
           <li>Everything in Pro</li>
           <li>Unlimited flats</li>
           <li>Multi-block / phase</li>
           <li>Priority email support</li>
+          <li>WhatsApp notifications</li>
+          <li>Audit export</li>
+          <li>API access</li>
         </ul>
         <a class="price-btn" href="checkout.html?product=rwagenie&amp;plan=PREMIUM">Buy Premium</a>
       </div>

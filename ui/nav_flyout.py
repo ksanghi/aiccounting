@@ -89,6 +89,11 @@ class SectionFlyout(QWidget):
             return
         self._hide_timer.stop()
         self._stack.setCurrentIndex(self._panels[section])
+        # Size the stack to THIS section's panel, so a short menu isn't
+        # stretched to the tallest section's height (what spread the items).
+        cur = self._stack.currentWidget()
+        if cur is not None:
+            self._stack.setFixedHeight(cur.sizeHint().height())
         self._title.setText(section.upper())
         self.adjustSize()
         cw = self.parentWidget()
@@ -196,6 +201,7 @@ def build_flyout_rail(window) -> None:
                 pv.addWidget(btn)
                 # Auto-collapse on selection: picking a page hides the flyout.
                 btn.clicked.connect(lambda *_: flyout.hide())
+        pv.addStretch(1)   # top-align: absorb any extra height at the bottom
         flyout.add_panel(section, panel)
 
         header.hovered.connect(lambda s=section, h=header: flyout.show_for(s, h))

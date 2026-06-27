@@ -55,6 +55,85 @@ class MachineBinding(Base):
     license: Mapped["License"] = relationship(back_populates="machines")
 
 
+class EmailSuppression(Base):
+    """Unsubscribe / suppression list. An email here is NEVER sent a blast."""
+    __tablename__ = "email_suppressions"
+
+    id:         Mapped[int]      = mapped_column(primary_key=True)
+    email:      Mapped[str]      = mapped_column(String(256), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CaPartnerLead(Base):
+    """A CA / bookkeeping firm that submitted the Founding-Partner interest
+    form on ca-partners.html — a captured lead, not a licence holder."""
+    __tablename__ = "ca_partner_leads"
+
+    id:         Mapped[int]      = mapped_column(primary_key=True)
+    name:       Mapped[str]      = mapped_column(String(160), default="")
+    firm:       Mapped[str]      = mapped_column(String(200), default="")
+    email:      Mapped[str]      = mapped_column(String(256), index=True)
+    phone:      Mapped[str]      = mapped_column(String(40), default="")
+    city:       Mapped[str]      = mapped_column(String(120), default="")
+    about:      Mapped[str]      = mapped_column(String(2000), default="")
+    consent:    Mapped[bool]     = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class RwaPartnerLead(Base):
+    """A prospective RWA HQ Media Network Partner who submitted the
+    Founding-Partner form on rwahq/partners.html — a captured lead."""
+    __tablename__ = "rwa_partner_leads"
+
+    id:            Mapped[int]      = mapped_column(primary_key=True)
+    name:          Mapped[str]      = mapped_column(String(160), default="")
+    company:       Mapped[str]      = mapped_column(String(200), default="")
+    email:         Mapped[str]      = mapped_column(String(256), index=True)
+    mobile:        Mapped[str]      = mapped_column(String(40), default="")
+    city:          Mapped[str]      = mapped_column(String(120), default="")
+    societies:     Mapped[int]      = mapped_column(Integer, default=0)
+    relationships: Mapped[str]      = mapped_column(String(2000), default="")
+    comments:      Mapped[str]      = mapped_column(String(2000), default="")
+    consent:       Mapped[bool]     = mapped_column(Boolean, default=False)
+    created_at:    Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class EmailBlast(Base):
+    """One sent announcement — kept as a record of what went out."""
+    __tablename__ = "email_blasts"
+
+    id:           Mapped[int]      = mapped_column(primary_key=True)
+    subject:      Mapped[str]      = mapped_column(String(256), default="")
+    filters:      Mapped[str]      = mapped_column(String(256), default="")
+    sent_count:   Mapped[int]      = mapped_column(Integer, default=0)
+    failed_count: Mapped[int]      = mapped_column(Integer, default=0)
+    created_at:   Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class EmailSend(Base):
+    """One row per recipient of a blast — the actual sent list, auditable."""
+    __tablename__ = "email_sends"
+
+    id:         Mapped[int]      = mapped_column(primary_key=True)
+    blast_id:   Mapped[int]      = mapped_column(ForeignKey("email_blasts.id"), index=True)
+    email:      Mapped[str]      = mapped_column(String(256), index=True)
+    ok:         Mapped[bool]     = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PageView(Base):
+    """One row per marketing-page hit — our own lightweight analytics, so we
+    can see traffic (and where it comes from) without a third-party tracker."""
+    __tablename__ = "page_views"
+
+    id:         Mapped[int]      = mapped_column(primary_key=True)
+    path:       Mapped[str]      = mapped_column(String(256), index=True)
+    referrer:   Mapped[str]      = mapped_column(String(512), default="")
+    ua:         Mapped[str]      = mapped_column(String(256), default="")
+    host:       Mapped[str]      = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
 class Install(Base):
     """
     Anonymous install tracking. One row per (install_id) — generated locally

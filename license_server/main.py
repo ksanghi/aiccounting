@@ -23,13 +23,13 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Header, HTTPException, Request, status
+from fastapi import FastAPI, Depends, Header, HTTPException, Request, status, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete as sa_delete, update as sa_update
 from sqlalchemy.orm import Session
 
 import asyncio
@@ -69,10 +69,32 @@ from license_server.services.pricing_lookup import (
 
 # ── App lifecycle ─────────────────────────────────────────────────────────
 
+async def _health_scheduler():
+    """Run the health self-test every 12h; emails ops on any failure. Catches
+    silent breakages (dead webhook, download 404, bounce spike) within 12h."""
+    await asyncio.sleep(120)                    # let startup settle
+    while True:
+        try:
+            from license_server import health
+            from license_server.db import SessionLocal
+            db = SessionLocal()
+            try:
+                health.run_and_alert(db)
+            finally:
+                db.close()
+        except Exception:
+            pass
+        await asyncio.sleep(12 * 3600)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    yield
+    task = asyncio.create_task(_health_scheduler())
+    try:
+        yield
+    finally:
+        task.cancel()
 
 
 app = FastAPI(
@@ -420,15 +442,19 @@ def health():
 # offers the download. `url` should point at the current installer/download.
 LATEST_RELEASE = {
     "accgenie": {
-        "latest": "1.0",
-        # TODO: confirm the exact Accounts HQ installer URL.
-        "url":    "https://apps.ai-consultants.in/",
-        "notes":  "",
+        "latest": "1.2",
+        "url":    "https://aic.ai-consultants.in/downloads/AccountsHQ-Setup.exe",
+        "notes":  "New AI Documents Inbox - drop, email or scan bills and the AI drafts the voucher; bank & ledger statements read locally with one-click hand-off to Reconciliation; optional auto-post for the confident ones; and a redesigned dashboard.",
     },
     "rwagenie": {
         "latest": "1.0",
         "url":    "https://apps.ai-consultants.in/downloads/RWAHQ-Setup.exe",
-        "notes":  "",
+        "notes":  "AI on every plan (including Free), searchable menu, and an in-app user manual.",
+    },
+    "tradehq": {
+        "latest": "0.2",
+        "url":    "https://apps.ai-consultants.in/downloads/tradeHQ-Setup.exe",
+        "notes":  "Consolidation cockpit with multi-account pull, profit histogram, and the two-level AI screener.",
     },
 }
 
@@ -747,11 +773,13 @@ _MINT_HTML = """<!doctype html>
  .row{display:flex;gap:12px} .row>div{flex:1}
  button{margin-top:16px;background:#0a7a55;color:#fff;border:0;border-radius:8px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer}
  button.sec{background:#eee;color:#333}
+ button.del{margin:0;padding:4px 10px;font-size:12px;font-weight:600;background:#c0392b}
  #key{margin-top:16px;padding:14px;border-radius:8px;background:#e7f7ee;display:none;word-break:break-all}
  #key b{font-size:20px;letter-spacing:1px} #err{color:#c00;margin-top:12px;display:none}
  #recent{margin-top:24px;font-size:13px} table{border-collapse:collapse;width:100%} td,th{border-bottom:1px solid #eee;padding:6px;text-align:left;font-size:12px}
 </style></head><body>
 <h1>Mint a license key</h1>
+<p style="margin:4px 0 10px"><a href="/admin/dashboard" style="font-weight:600">📊 Daily Dashboard</a> &nbsp;·&nbsp; <a href="/admin/chat-review">💬 Chat review</a> &nbsp;·&nbsp; <a href="/admin/announce">📧 Email blast</a> <small>(append <code>?token=ADMIN_TOKEN</code>)</small></p>
 <small>For friends &amp; beta testers. Enter your admin token once (saved in this browser only).</small>
 <label>Admin token</label>
 <input id="tok" type="password" placeholder="server ADMIN_TOKEN">
@@ -804,8 +832,18 @@ async function listKeys(){
     var r=await fetch('/admin/keys',{headers:{'Authorization':'Bearer '+t}});
     var j=await r.json();
     if(!Array.isArray(j)){show('err','Error: '+(j.detail||JSON.stringify(j)));return;}
-    var rows=j.slice(-15).reverse().map(function(k){return '<tr><td>'+k.license_key+'</td><td>'+k.product+'</td><td>'+k.plan+'</td><td>'+(k.customer_email||'')+'</td><td>'+(k.expires_at||'')+'</td></tr>';}).join('');
-    document.getElementById('recent').innerHTML='<h3>Recent keys</h3><table><tr><th>Key</th><th>Product</th><th>Plan</th><th>Email</th><th>Expires</th></tr>'+rows+'</table>';
+    var rows=j.slice(-15).reverse().map(function(k){return '<tr><td>'+k.license_key+'</td><td>'+k.product+'</td><td>'+k.plan+'</td><td>'+(k.customer_email||'')+'</td><td>'+(k.expires_at||'')+'</td><td><button class="del" onclick="delKey(\\''+k.license_key+'\\')">Delete</button></td></tr>';}).join('');
+    document.getElementById('recent').innerHTML='<h3>Recent keys</h3><table><tr><th>Key</th><th>Product</th><th>Plan</th><th>Email</th><th>Expires</th><th></th></tr>'+rows+'</table>';
+  }catch(e){show('err','Failed: '+e);}
+}
+async function delKey(k){
+  hide('err'); var t=tok(); if(!t){show('err','Enter the admin token.');return;}
+  if(!confirm('Delete '+k+' permanently? This removes the key and its credits/usage. Payment records are kept. This cannot be undone.'))return;
+  try{
+    var r=await fetch('/admin/keys/'+encodeURIComponent(k)+'/delete',{method:'POST',headers:{'Authorization':'Bearer '+t}});
+    var j=await r.json();
+    if(r.ok&&j.ok){listKeys();}
+    else{show('err','Error: '+(j.detail||JSON.stringify(j)));}
   }catch(e){show('err','Failed: '+e);}
 }
 </script></body></html>"""
@@ -928,6 +966,42 @@ def set_seats(key: str, body: SeatsRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(lic)
     return _to_keyout(lic, db)
+
+
+@app.post("/admin/keys/{key}/delete", dependencies=[Depends(require_admin)])
+def delete_key(key: str, db: Session = Depends(get_db)):
+    """
+    Hard-delete a license key and its dependent rows. Unlike /revoke (which
+    keeps the row but flips the revoked flag), this removes the key entirely
+    — for keys minted by mistake while testing.
+
+    Payment Orders are NOT deleted (they're a financial audit trail); their
+    license_id / wallet_license_id links are nulled so no row dangles onto a
+    gone license. Machine bindings + validation logs cascade via the ORM
+    relationship; the credits / usage / SMS-ledger rows (no ORM cascade) are
+    deleted explicitly.
+    """
+    lic = db.scalar(select(License).where(License.license_key == key.upper()))
+    if not lic:
+        raise HTTPException(404, "Not found")
+
+    deleted_key = lic.license_key
+    lid = lic.id
+
+    # Preserve payment history — just detach it from the license being removed.
+    db.execute(sa_update(Order).where(Order.license_id == lid)
+               .values(license_id=None))
+    db.execute(sa_update(Order).where(Order.wallet_license_id == lid)
+               .values(wallet_license_id=None))
+
+    # Dependent ledgers with no ORM cascade — remove by license_id.
+    for model in (Credit, CreditTopup, AIUsageLog, SMSWallet, SMSWalletTxn):
+        db.execute(sa_delete(model).where(model.license_id == lid))
+
+    # machine_bindings + validation_logs cascade via License relationships.
+    db.delete(lic)
+    db.commit()
+    return {"ok": True, "deleted": deleted_key}
 
 
 # ── AI proxy + credits (Phase 2b) ────────────────────────────────────────────
@@ -1539,9 +1613,6 @@ def checkout_create_order(
         )
 
     # Paid tiers from here on need Razorpay configured.
-    if not razorpay_client.is_enabled():
-        raise HTTPException(503, "Payments are not configured on this server.")
-
     # ── Pricing ──
     # AG uses the baked pricing.xlsx via resolve_price().
     # RWAGenie + tradeHQ use the inline price_for() tables in plans.py
@@ -2002,16 +2073,21 @@ CHAT_FALLBACK_BUSY  = ("I'm getting a lot of questions right now. Please email "
                        "info@ai-consultants.in and we'll get back to you.")
 
 CHAT_SYSTEM = (
-    "You are the friendly help assistant for Accounts HQ (by AI Consultants) on the "
-    "company website. Answer the user's question using ONLY the knowledge base "
-    "between <kb> and </kb>. If the answer is not in the knowledge base, say you're "
-    "not sure and suggest emailing info@ai-consultants.in — never guess or make up "
-    "steps, prices, or tax figures. Keep answers concise and friendly: 2-5 sentences "
-    "or a few short steps, plain text (no markdown headings). Accounts HQ records "
-    "transactions and computes GST/TDS from the rates set on each ledger; it is NOT a "
-    "tax-filing or compliance engine and you must not give tax or legal advice — for "
-    "'should I' tax questions, tell the user to confirm with their CA. Only discuss "
-    "Accounts HQ and AI Consultants; politely decline anything unrelated.\n\n"
+    "You are the friendly help assistant for AI Consultants' apps on the company "
+    "website. There are three products: Accounts HQ (Windows accounting app), "
+    "RWA HQ (society / resident-welfare-association management, with a free resident "
+    "mobile app), and tradeHQ (a Windows trading & investment consolidation cockpit "
+    "that auto-pulls and consolidates holdings, P&L and cash from multiple broker "
+    "accounts). Answer using ONLY the knowledge base between <kb> and </kb>, and use "
+    "the article that matches the product the user is asking about. If the answer is "
+    "not in the knowledge base, say you're not sure and suggest emailing "
+    "info@ai-consultants.in — never guess or make up steps, prices, or tax figures. "
+    "Keep answers concise and friendly: 2-5 sentences or a few short steps, plain text "
+    "(no markdown headings). Accounts HQ and RWA HQ record transactions and compute "
+    "GST/TDS from the rates set on each ledger; none of the apps are tax-filing or "
+    "compliance engines and you must not give tax or legal advice — for 'should I' tax "
+    "questions, tell the user to confirm with their CA. Only discuss Accounts HQ, "
+    "RWA HQ, tradeHQ and AI Consultants; politely decline anything unrelated.\n\n"
     "<kb>\n" + KB_TEXT + "\n</kb>"
 )
 
@@ -2133,6 +2209,389 @@ def chat_review_action(row_id: int, body: ChatReviewAction,
     return {"ok": True, "id": row.id, "status": row.status}
 
 
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+def admin_dashboard(token: str = "", days: int = 30, view: str = "",
+                    format: str = "", db: Session = Depends(get_db)):
+    """Daily-progress dashboard — Sales / Marketing / Operations.
+    days = period preset; view = drill-down table; format=csv exports contacts."""
+    if token != settings.admin_token:
+        return HTMLResponse(
+            "<h2>Daily Dashboard</h2><p>Append <code>?token=YOUR_ADMIN_TOKEN</code> "
+            "to the URL.</p>", status_code=403)
+    try:
+        from license_server.dashboard import render_dashboard, contacts_csv
+        if view == "contacts" and format == "csv":
+            from fastapi.responses import PlainTextResponse
+            return PlainTextResponse(
+                contacts_csv(db, days), media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=contacts.csv"})
+        from license_server import announce
+        _page = render_dashboard(db, days=days, view=view)
+        _page = _page.replace("</head><body>",
+                              "</head><body>" + announce.nav_bar(token, "dash"), 1)
+        return HTMLResponse(_page)
+    except Exception:
+        import traceback
+        return HTMLResponse(
+            "<pre>Dashboard error:\n" + _html.escape(traceback.format_exc()) + "</pre>",
+            status_code=500)
+
+
+@app.get("/admin/announce", response_class=HTMLResponse)
+def announce_page(token: str = "", product: str = "", plan: str = "",
+                  status: str = "", days: int = 0, subject: str = "",
+                  body: str = "", db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse("<h2>Email blast</h2><p>Append "
+                            "<code>?token=YOUR_ADMIN_TOKEN</code> to the URL.</p>",
+                            status_code=403)
+    from license_server import announce
+    return HTMLResponse(announce.render_announce_page(
+        db, token, product, plan, status, days, subject, body))
+
+
+@app.post("/admin/announce/send", response_class=HTMLResponse)
+def announce_send(background: BackgroundTasks, token: str = Form(""),
+                  product: str = Form(""), plan: str = Form(""),
+                  status: str = Form(""), days: int = Form(0),
+                  subject: str = Form(""), body: str = Form(""),
+                  test_email: str = Form(""),
+                  campaign: str = Form(""),
+                  recipient: list[str] = Form(default=[]),
+                  recipients_blob: str = Form(""),
+                  db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Forbidden.</p>", status_code=403)
+    from license_server import announce
+    if not subject.strip() or not body.strip():
+        return HTMLResponse(announce.render_announce_page(
+            db, token, product, plan, status, days, subject, body,
+            notice="Subject and message are both required."))
+    if test_email.strip():
+        te = test_email.strip()
+        text, html = announce._wrap(body, te, campaign)
+        # Route the test through the MARKETING sender (send_bulk → Brevo +
+        # subdomain) so it actually verifies the campaign path.
+        ok = False
+        for _addr, _ok in email_service.send_bulk(
+                [(te, "[TEST] " + subject, text, html)]):
+            ok = _ok
+        return HTMLResponse(announce.render_announce_page(
+            db, token, product, plan, status, days, subject, body,
+            notice=(f"Test sent to {test_email}." if ok
+                    else "Test FAILED — check SMTP settings.")))
+    # Honour the ticked checkboxes if any came through; otherwise fall back to
+    # the full filter match. Suppressed addresses are dropped either way.
+    selected = [e for e in (recipient or []) if e and "@" in e]
+    # Large batches come as one blob field (whitespace/comma/semicolon
+    # separated) to avoid Starlette's per-request form-field cap.
+    if recipients_blob.strip():
+        selected += [e for e in re.split(r"[\s,;]+", recipients_blob)
+                     if "@" in e]
+    recips = (announce.filter_suppressed(db, selected) if selected
+              else announce.recipients(db, product, plan, status, days))
+    if not recips:
+        return HTMLResponse(announce.render_announce_page(
+            db, token, product, plan, status, days, subject, body,
+            notice="No recipients selected — nothing sent."))
+    filt = (f"product={product or 'any'} plan={plan or 'any'} "
+            f"status={status or 'any'} days={days}")
+    background.add_task(announce.send_blast_bg, subject, body, recips, filt,
+                        campaign)
+    return HTMLResponse(announce.render_announce_page(
+        db, token, product, plan, status, days, "", "",
+        notice=f"Sending to {len(recips)} recipient(s) in the background. "
+               f"Refresh in a minute to see it under 'Recent blasts'."))
+
+
+@app.get("/admin/announce/blast/{blast_id}", response_class=HTMLResponse)
+def announce_blast_detail(blast_id: int, token: str = "",
+                          db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Append <code>?token=YOUR_ADMIN_TOKEN</code>.</p>",
+                            status_code=403)
+    from license_server import announce
+    return HTMLResponse(announce.render_blast_detail(db, token, blast_id))
+
+
+# Events from Brevo that mean "never email this address again".
+_BREVO_SUPPRESS_EVENTS = {"hard_bounce", "blocked", "spam",
+                          "invalid_email", "unsubscribed"}
+
+
+@app.post("/webhooks/brevo")
+async def brevo_webhook(request: Request, db: Session = Depends(get_db)):
+    """Brevo event webhook — auto-suppress hard bounces / blocked / spam /
+    invalid / unsubscribes the moment Brevo reports them, so the list cleans
+    itself and the bounce rate stops climbing. Soft bounces are ignored."""
+    from license_server import announce
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"ok": False}
+    event = (payload.get("event") or "").strip().lower()
+    email = (payload.get("email") or "").strip().lower()
+    if email and event in _BREVO_SUPPRESS_EVENTS:
+        announce.suppress(db, email)
+    return {"ok": True}
+
+
+@app.get("/admin/announce/import-bounces", response_class=HTMLResponse)
+def import_bounces(token: str = "", db: Session = Depends(get_db)):
+    """One-time / re-runnable: pull every blocked + hard-bounced contact from
+    Brevo and add them to suppression, so they're dropped from every future
+    blast. Idempotent."""
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Append <code>?token=YOUR_ADMIN_TOKEN</code>.</p>",
+                            status_code=403)
+    from license_server import announce
+    key = (settings.brevo_api_key or "").strip()
+    if not key:
+        return HTMLResponse("<p>BREVO_API_KEY not set.</p>", status_code=400)
+    scanned = 0
+    offset = 0
+    while True:
+        url = ("https://api.brevo.com/v3/smtp/blockedContacts"
+               f"?limit=100&offset={offset}")
+        req = urllib.request.Request(
+            url, headers={"api-key": key, "accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.loads(r.read().decode())
+        except Exception as e:
+            return HTMLResponse(
+                f"<p>Brevo API error after {scanned} scanned: "
+                f"{_html.escape(str(e))}</p>", status_code=502)
+        contacts = data.get("contacts") or []
+        if not contacts:
+            break
+        for c in contacts:
+            email = (c.get("email") or "").strip().lower()
+            if email:
+                announce.suppress(db, email)   # idempotent
+                scanned += 1
+        offset += 100
+        if len(contacts) < 100:
+            break
+    return HTMLResponse(f"<p>Suppressed {scanned} blocked/bounced contact(s) "
+                        f"from Brevo.</p>")
+
+
+@app.get("/admin/health", response_class=HTMLResponse)
+def admin_health(token: str = "", db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Append <code>?token=YOUR_ADMIN_TOKEN</code>.</p>",
+                            status_code=403)
+    from license_server import health
+    return HTMLResponse(health.render_health_page(token, health.run_checks(db)))
+
+
+@app.get("/admin/health/run", response_class=HTMLResponse)
+def admin_health_run(token: str = "", db: Session = Depends(get_db)):
+    """Same as /admin/health but ALSO emails ops on any failure (what the 12h
+    scheduler calls)."""
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Forbidden.</p>", status_code=403)
+    from license_server import health
+    return HTMLResponse(health.render_health_page(token, health.run_and_alert(db)))
+
+
+class CaPartnerInterest(BaseModel):
+    name:    str = ""
+    firm:    str = ""
+    email:   str = ""
+    phone:   str = ""
+    city:    str = ""
+    about:   str = ""
+    consent: bool = False
+
+
+@app.post("/api/v1/ca-partner/interest")
+def ca_partner_interest(body: CaPartnerInterest, db: Session = Depends(get_db)):
+    """Capture a Founding-CA-Partner interest-form submission from the
+    marketing site (CORS-safe, no auth). Stores the lead, notifies ops, and
+    emails a confirmation back to the firm."""
+    from license_server.models import CaPartnerLead
+    email = (body.email or "").strip().lower()
+    firm = (body.firm or "").strip()
+    name = (body.name or "").strip()
+    if not email or "@" not in email:
+        return {"ok": False, "error": "A valid email is required."}
+    if not (firm or name):
+        return {"ok": False, "error": "Please tell us your firm or your name."}
+    if not body.consent:
+        return {"ok": False, "error": "Please tick the consent box to continue."}
+    db.add(CaPartnerLead(
+        name=name[:160], firm=firm[:200], email=email[:256],
+        phone=(body.phone or "").strip()[:40],
+        city=(body.city or "").strip()[:120],
+        about=(body.about or "").strip()[:2000], consent=True))
+    db.commit()
+    # Notify ops (best-effort).
+    try:
+        for addr in [a.strip() for a in (settings.ops_alert_email or "").split(",")
+                     if a.strip()]:
+            email_service.send_email(
+                to_email=addr,
+                subject=f"[CA Partner] interest — {firm or name}",
+                body_text=(f"Firm: {firm}\nName: {name}\nEmail: {email}\n"
+                           f"Phone: {body.phone}\nCity: {body.city}\n\n"
+                           f"About:\n{body.about}\n"))
+    except Exception:
+        pass
+    # Confirm to the firm (best-effort).
+    try:
+        email_service.send_email(
+            to_email=email,
+            subject="Thanks for your interest — Accounts HQ Founding CA Partner Program",
+            body_text=("Hi,\n\nThank you for your interest in the Accounts HQ "
+                       "Founding CA Partner Program. We've received your details "
+                       "and will reach out shortly with the next steps and "
+                       "partner terms.\n\nRegards,\nMonika Sanghi\n"
+                       "Founder, Accounts HQ"))
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@app.get("/admin/ca-leads", response_class=HTMLResponse)
+def admin_ca_leads(token: str = "", db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Append <code>?token=YOUR_ADMIN_TOKEN</code>.</p>",
+                            status_code=403)
+    from license_server.models import CaPartnerLead
+    from license_server.announce import nav_bar
+    leads = db.execute(select(CaPartnerLead).order_by(
+        CaPartnerLead.created_at.desc())).scalars().all()
+    rows = "".join(
+        f"<tr><td>{l.created_at:%Y-%m-%d %H:%M}</td>"
+        f"<td>{_html.escape(l.firm or '—')}</td><td>{_html.escape(l.name or '—')}</td>"
+        f"<td><a href='mailto:{_html.escape(l.email)}'>{_html.escape(l.email)}</a></td>"
+        f"<td>{_html.escape(l.phone or '')}</td><td>{_html.escape(l.city or '')}</td>"
+        f"<td style='max-width:300px;white-space:pre-wrap'>{_html.escape(l.about or '')}</td></tr>"
+        for l in leads) or ("<tr><td colspan=7 style='color:#94a3b8;padding:10px'>"
+                            "No interest submissions yet.</td></tr>")
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>CA leads</title>
+<style>body{{font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;max-width:1000px;margin:0 auto;padding:24px}}
+table{{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}}
+td,th{{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top}} th{{background:#f1f5f9;font-size:12px;color:#475569}} a{{color:#0ea5a5}}</style></head><body>
+{nav_bar(token, "caleads")}
+<h1 style="font-size:21px">📝 CA Partner interest ({len(leads)})</h1>
+<table><tr><th>When</th><th>Firm</th><th>Name</th><th>Email</th><th>Phone</th><th>City</th><th>About</th></tr>{rows}</table>
+</body></html>""")
+
+
+class RwaPartnerInterest(BaseModel):
+    name:          str = ""
+    company:       str = ""
+    email:         str = ""
+    mobile:        str = ""
+    city:          str = ""
+    societies:     str = ""           # arrives as a string from the form
+    relationships: str = ""
+    comments:      str = ""
+    consent:       bool = False
+
+
+@app.post("/api/v1/rwahq-partner/interest")
+def rwahq_partner_interest(body: RwaPartnerInterest, db: Session = Depends(get_db)):
+    """Capture an RWA HQ Media Network Partner application from
+    rwahq/partners.html (CORS-safe, no auth). Stores the lead, notifies ops,
+    and emails a confirmation back to the applicant."""
+    from license_server.models import RwaPartnerLead
+    email = (body.email or "").strip().lower()
+    name = (body.name or "").strip()
+    if not email or "@" not in email:
+        return {"ok": False, "error": "A valid email is required."}
+    if not name:
+        return {"ok": False, "error": "Please tell us your name."}
+    if not (body.mobile or "").strip():
+        return {"ok": False, "error": "A mobile number is required."}
+    if not body.consent:
+        return {"ok": False, "error": "Please tick the consent box to continue."}
+    try:
+        soc = max(0, int(float(str(body.societies).strip() or 0)))
+    except (ValueError, TypeError):
+        soc = 0
+    db.add(RwaPartnerLead(
+        name=name[:160], company=(body.company or "").strip()[:200],
+        email=email[:256], mobile=(body.mobile or "").strip()[:40],
+        city=(body.city or "").strip()[:120], societies=soc,
+        relationships=(body.relationships or "").strip()[:2000],
+        comments=(body.comments or "").strip()[:2000], consent=True))
+    db.commit()
+    try:
+        for addr in [a.strip() for a in (settings.ops_alert_email or "").split(",")
+                     if a.strip()]:
+            email_service.send_email(
+                to_email=addr,
+                subject=f"[RWA Partner] interest — {body.company or name}",
+                body_text=(f"Name: {name}\nCompany: {body.company}\n"
+                           f"Mobile: {body.mobile}\nEmail: {email}\n"
+                           f"City: {body.city}\nSocieties accessible: {soc}\n\n"
+                           f"Current relationships:\n{body.relationships}\n\n"
+                           f"Comments:\n{body.comments}\n"))
+    except Exception:
+        pass
+    try:
+        email_service.send_email(
+            to_email=email,
+            subject="Thanks for your interest — RWA HQ Media Network Partner Program",
+            body_text=("Hi,\n\nThank you for your interest in the RWA HQ Media "
+                       "Network Partner Program. We've received your details and "
+                       "will reach out shortly with your territory map and the "
+                       "partner terms.\n\nRegards,\nMonika Sanghi\nRWA HQ"))
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@app.get("/admin/rwahq-leads", response_class=HTMLResponse)
+def admin_rwahq_leads(token: str = "", db: Session = Depends(get_db)):
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Append <code>?token=YOUR_ADMIN_TOKEN</code>.</p>",
+                            status_code=403)
+    from license_server.models import RwaPartnerLead
+    from license_server.announce import nav_bar
+    leads = db.execute(select(RwaPartnerLead).order_by(
+        RwaPartnerLead.created_at.desc())).scalars().all()
+    rows = "".join(
+        f"<tr><td>{l.created_at:%Y-%m-%d %H:%M}</td>"
+        f"<td>{_html.escape(l.name or '—')}</td><td>{_html.escape(l.company or '')}</td>"
+        f"<td><a href='mailto:{_html.escape(l.email)}'>{_html.escape(l.email)}</a></td>"
+        f"<td>{_html.escape(l.mobile or '')}</td><td>{_html.escape(l.city or '')}</td>"
+        f"<td>{l.societies or 0}</td>"
+        f"<td style='max-width:240px;white-space:pre-wrap'>{_html.escape(l.relationships or '')}</td>"
+        f"<td style='max-width:240px;white-space:pre-wrap'>{_html.escape(l.comments or '')}</td></tr>"
+        for l in leads) or ("<tr><td colspan=9 style='color:#94a3b8;padding:10px'>"
+                            "No interest submissions yet.</td></tr>")
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>RWA Partner leads</title>
+<style>body{{font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;max-width:1100px;margin:0 auto;padding:24px}}
+table{{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}}
+td,th{{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top}} th{{background:#f1f5f9;font-size:12px;color:#475569}} a{{color:#4F46E5}}</style></head><body>
+{nav_bar(token, "rwaleads")}
+<h1 style="font-size:21px">🏙️ RWA Partner interest ({len(leads)})</h1>
+<table><tr><th>When</th><th>Name</th><th>Company</th><th>Email</th><th>Mobile</th><th>City</th><th>Societies</th><th>Relationships</th><th>Comments</th></tr>{rows}</table>
+</body></html>""")
+
+
+@app.get("/unsubscribe", response_class=HTMLResponse)
+def unsubscribe(e: str = "", s: str = "", db: Session = Depends(get_db)):
+    from license_server import announce
+    if e and announce.verify_unsub(e, s):
+        announce.suppress(db, e)
+        msg = ("You've been unsubscribed. You won't receive any more "
+               "Accounts HQ / RWA HQ announcement emails.")
+    else:
+        msg = "Invalid or expired unsubscribe link."
+    return HTMLResponse(
+        "<div style='font-family:sans-serif;max-width:520px;margin:60px auto;"
+        "text-align:center;color:#0f172a'><h2>Unsubscribe</h2><p>"
+        + _html.escape(msg) + "</p></div>")
+
+
 @app.get("/admin/chat-review", response_class=HTMLResponse)
 def chat_review_page(token: str = "", db: Session = Depends(get_db)):
     if token != settings.admin_token:
@@ -2154,9 +2613,12 @@ def chat_review_page(token: str = "", db: Session = Depends(get_db)):
           <button onclick="act({r.id},'save')">Save edit</button>
           <button class="ok" onclick="act({r.id},'approve')">Approve</button>
           <button class="no" onclick="act({r.id},'discard')">Discard</button>
+          <span class="note" id="note-{r.id}"></span>
         </div>
       </div>""")
     body_html = "\n".join(cards) or "<p>No learned answers yet — the bot hasn't been asked anything new.</p>"
+    from license_server import announce
+    nav = announce.nav_bar(token, "chat")
     page = f"""<!doctype html><html><head><meta charset="utf-8"><title>Chat review</title>
 <style>
  body{{font-family:system-ui,Arial,sans-serif;max-width:860px;margin:24px auto;padding:0 16px;color:#0f172a}}
@@ -2167,28 +2629,110 @@ def chat_review_page(token: str = "", db: Session = Depends(get_db)):
  .meta{{font-size:12.5px;color:#64748b;margin-bottom:6px}} .st{{text-transform:uppercase;font-weight:700}}
  .q{{font-weight:700;margin-bottom:8px}}
  textarea{{width:100%;min-height:78px;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit}}
- .btns{{margin-top:8px;display:flex;gap:8px}}
+ .btns{{margin-top:8px;display:flex;gap:8px;align-items:center}}
  button{{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:600}}
+ button:disabled{{opacity:.5;cursor:default}}
  button.ok{{background:#16a34a;color:#fff;border-color:#16a34a}}
  button.no{{background:#fff;color:#b91c1c;border-color:#fca5a5}}
+ .note{{font-size:13px;font-weight:700}}
 </style></head><body>
+{nav}
 <h2>Support bot — learned answers</h2>
 <div class="sub">Pending first, then most-asked. <b>Approve</b> keeps serving it; edit the text then <b>Save edit</b> to fix it; <b>Discard</b> stops serving it and never re-learns it. (Folding into the canonical KB docs is a separate rebake.)</div>
 {body_html}
 <script>
 const TOKEN={json.dumps(token)};
 async function act(id, action){{
-  const ans = document.getElementById('a-'+id).value;
-  const r = await fetch('/admin/chat-review/'+id, {{
-    method:'POST',
-    headers:{{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}},
-    body: JSON.stringify({{action: action, answer: ans}})
-  }});
-  if(r.ok){{ const d = await r.json(); const card = document.getElementById('row-'+id);
-    card.className = 'card s-'+d.status; card.querySelector('.st').textContent = d.status; }}
-  else {{ alert('Failed: '+r.status); }}
+  const card = document.getElementById('row-'+id);
+  const note = document.getElementById('note-'+id);
+  const btns = card.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  note.style.color = '#64748b'; note.textContent = 'Working…';
+  try {{
+    const ans = document.getElementById('a-'+id).value;
+    const r = await fetch('/admin/chat-review/'+id, {{
+      method:'POST',
+      headers:{{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}},
+      body: JSON.stringify({{action: action, answer: ans}})
+    }});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    card.className = 'card s-'+d.status;
+    card.querySelector('.st').textContent = d.status;
+    note.style.color = '#16a34a';
+    note.textContent = action==='approve' ? '✓ Approved'
+                     : action==='discard' ? '✓ Discarded' : '✓ Saved';
+  }} catch(e) {{
+    note.style.color = '#b91c1c';
+    note.textContent = '✗ Failed: ' + e.message;
+  }} finally {{
+    btns.forEach(b => b.disabled = false);
+  }}
 }}
 </script></body></html>"""
+    return HTMLResponse(page)
+
+
+@app.get("/admin/traffic", response_class=HTMLResponse)
+def admin_traffic(token: str = "", days: int = 30,
+                  db: Session = Depends(get_db)):
+    """Built-in marketing-traffic dashboard — page hits, days, referrers.
+    Our own analytics; no third-party tracker needed."""
+    if token != settings.admin_token:
+        return HTMLResponse("<p>Forbidden.</p>", status_code=403)
+    from license_server.models import PageView
+    from datetime import datetime, timedelta
+    from urllib.parse import urlparse
+    since = datetime.utcnow() - timedelta(days=max(1, days))
+    rows = db.execute(
+        select(PageView).where(PageView.created_at >= since)).scalars().all()
+    total = len(rows)
+    by_path: dict = {}
+    by_day: dict = {}
+    by_ref: dict = {}
+    for r in rows:
+        by_path[r.path] = by_path.get(r.path, 0) + 1
+        d = r.created_at.strftime("%Y-%m-%d") if r.created_at else "?"
+        by_day[d] = by_day.get(d, 0) + 1
+        ref = (r.referrer or "").strip()
+        if not ref:
+            label = "(direct / none)"
+        else:
+            try:
+                host = urlparse(ref).netloc or ref
+            except Exception:
+                host = ref
+            label = host or "(direct / none)"
+        by_ref[label] = by_ref.get(label, 0) + 1
+
+    esc = _html.escape
+
+    def _table(title, data, k1, reverse=True, limit=40):
+        items = sorted(data.items(), key=lambda x: -x[1] if reverse else x[0])
+        body = "".join(
+            f"<tr><td>{esc(str(k))}</td><td style='text-align:right'>{v}</td></tr>"
+            for k, v in items[:limit]) or (
+            "<tr><td colspan=2 style='color:#94a3b8;padding:8px'>No data yet.</td></tr>")
+        return (f"<h3>{title}</h3><table><tr><th>{k1}</th>"
+                f"<th style='text-align:right'>Views</th></tr>{body}</table>")
+
+    from license_server import announce
+    nav = announce.nav_bar(token, "traffic")
+    page = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Traffic</title><style>
+body{{font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;max-width:760px;margin:0 auto;padding:24px}}
+table{{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:22px}}
+th,td{{text-align:left;padding:7px 10px;border-bottom:1px solid #f1f5f9}}
+th{{background:#f1f5f9;font-size:12px;color:#475569}}
+h3{{font-size:15px;margin:6px 0 8px}} a{{color:#0ea5a5}}
+.big{{font-size:30px;font-weight:800}} .sub{{color:#64748b;font-size:13px;margin-bottom:18px}}
+</style></head><body>{nav}
+<div class="big">{total} <span style="font-size:15px;font-weight:500;color:#64748b">page views (last {days} days)</span></div>
+<div class="sub">Real visits to aic.* / apps.* marketing pages — bots filtered out. Search-engine traffic shows up under Referrers (e.g. google.com, bing.com).</div>
+{_table("Top pages", by_path, "Page")}
+{_table("By day", by_day, "Day", reverse=False)}
+{_table("Referrers (where visitors came from)", by_ref, "Source")}
+</body></html>"""
     return HTMLResponse(page)
 
 
@@ -2204,25 +2748,76 @@ _AIC_INTERNAL_PREFIX = "/_aic-static"
 _AIC_HOSTNAME        = "aic.ai-consultants.in"
 
 
+_PV_SKIP_EXT = (".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg",
+                ".ico", ".webp", ".woff", ".woff2", ".ttf", ".xml", ".txt",
+                ".map", ".pdf", ".json")
+_PV_MARKETING_HOSTS = ("aic.ai-consultants.in", "apps.ai-consultants.in")
+
+
+def _log_pageview(host: str, path: str, referrer: str, ua: str) -> None:
+    """Record one marketing-page hit (our own lightweight analytics). Best
+    effort — never raises into request handling."""
+    low = (ua or "").lower()
+    if any(b in low for b in ("bot", "spider", "crawl", "slurp",
+                              "bingpreview", "facebookexternal", "headless",
+                              "preview", "monitor", "uptime",
+                              # programmatic clients — our own deploy-verification
+                              # checks + API tooling, not human visitors
+                              "curl", "wget", "python", "urllib", "go-http",
+                              "httpx", "okhttp", "libwww", "java/", "scrapy",
+                              "axios", "node-fetch", "postman", "insomnia")):
+        return
+    if not low:                     # no user-agent at all = almost never a human
+        return
+    if (path.startswith(("/api/", "/admin/", _AIC_INTERNAL_PREFIX))
+            or path.lower().endswith(_PV_SKIP_EXT)):
+        return
+    # Vulnerability-scanner probes (/.env, /.git/config, /wp-config.php,
+    # /xmlrpc.php, /phpinfo.php, *.yml/.bak/.sql…) — bots fishing for secrets,
+    # not real visitors. Drop them so the traffic numbers reflect humans.
+    low = path.lower()
+    if ("/." in low or "wp-" in low or "xmlrpc" in low or "phpinfo" in low
+            or low.endswith((".php", ".yml", ".yaml", ".bak", ".sql", ".ini",
+                             ".sh", ".cfg", ".config")) or low.endswith("/feed/")):
+        return
+    try:
+        from license_server.db import SessionLocal
+        from license_server.models import PageView
+        db = SessionLocal()
+        try:
+            db.add(PageView(path=path[:256], referrer=(referrer or "")[:512],
+                            ua=(ua or "")[:256], host=host[:128]))
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+
 @app.middleware("http")
 async def _aic_host_rewrite(request, call_next):
     """For requests on the AIC hostname, internally re-route to the
     AIC static mount. User-visible URL is unchanged. Requests on any
     other hostname (apps.*, license.*, raw fly.dev, etc.) pass through
-    untouched and serve the existing marketing/ folder."""
+    untouched and serve the existing marketing/ folder. Also logs marketing
+    page views for the built-in traffic dashboard."""
     host = (request.headers.get("host") or "").split(":", 1)[0].lower()
+    orig_path = request.scope["path"]
     if host == _AIC_HOSTNAME:
         # Don't double-prefix if for some reason the path is already
         # under the internal prefix (shouldn't happen via the public
         # hostname, but defensive). Also leave real API/admin routes alone —
         # otherwise the chat widget's /api/chat (and /admin/*) on the AIC host
         # would get rewritten into the static mount and 404.
-        path = request.scope["path"]
-        if (not path.startswith(_AIC_INTERNAL_PREFIX)
-                and not path.startswith("/api/")
-                and not path.startswith("/admin/")):
-            request.scope["path"] = _AIC_INTERNAL_PREFIX + path
+        if (not orig_path.startswith(_AIC_INTERNAL_PREFIX)
+                and not orig_path.startswith("/api/")
+                and not orig_path.startswith("/admin/")):
+            request.scope["path"] = _AIC_INTERNAL_PREFIX + orig_path
             request.scope["raw_path"] = request.scope["path"].encode("utf-8")
+    if (request.scope.get("method", "GET") == "GET"
+            and host in _PV_MARKETING_HOSTS):
+        _log_pageview(host, orig_path, request.headers.get("referer", ""),
+                      request.headers.get("user-agent", ""))
     return await call_next(request)
 
 
