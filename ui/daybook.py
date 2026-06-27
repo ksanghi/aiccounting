@@ -285,7 +285,7 @@ class LedgerBalancePage(QWidget):
         title = QLabel("Ledger Balances")
         title.setObjectName("page_title")
         layout.addWidget(title)
-        sub = QLabel("Current balance of all accounts. Click a ledger to see its transactions.")
+        sub = QLabel("Closing balance of all accounts as of the selected date. Click a ledger to see its transactions.")
         sub.setObjectName("page_subtitle")
         layout.addWidget(sub)
 
@@ -301,6 +301,14 @@ class LedgerBalancePage(QWidget):
         self.search.setFixedHeight(30)
         self.search.textChanged.connect(self._filter)
         frow.addWidget(self.search, 2)
+
+        frow.addWidget(make_label("As of"))
+        self.as_of_date = SmartDateEdit(QDate.currentDate())
+        self.as_of_date.setDisplayFormat("dd-MMM-yyyy")
+        self.as_of_date.setFixedHeight(30)
+        self.as_of_date.setToolTip("Show each ledger's closing balance as of this date")
+        self.as_of_date.dateChanged.connect(self.refresh)
+        frow.addWidget(self.as_of_date)
 
         frow.addWidget(make_label("Group"))
         self.group_filter = QComboBox()
@@ -370,7 +378,8 @@ class LedgerBalancePage(QWidget):
         # Compute balances in ONE query (was N+1 in earlier versions —
         # caused "Not Responding" on 100+ ledger books, especially after
         # Tally migration imports).
-        balances = self.tree.get_all_ledger_balances()
+        as_of = self.as_of_date.date().toString("yyyy-MM-dd")
+        balances = self.tree.get_all_ledger_balances(as_of=as_of)
         self._all_data = []
         for l in ledgers:
             b = balances.get(l["id"], {"balance": 0.0, "type": "Dr"})
@@ -421,8 +430,9 @@ class LedgerBalancePage(QWidget):
             else:
                 total_cr += d["balance"]
 
+        as_of_str = self.as_of_date.date().toString("dd-MMM-yyyy")
         self.summary_label.setText(
-            f"{len(rows)} ledgers  |  "
+            f"As of {as_of_str}  |  {len(rows)} ledgers  |  "
             f"Total Dr ₹{total_dr:,.2f}  |  Total Cr ₹{total_cr:,.2f}"
         )
 
