@@ -31,7 +31,10 @@ from pathlib import Path
 
 from core.models import Database
 from core.account_tree import AccountTree
-from .payload import MigrationPayload, GroupSpec, LedgerSpec, VoucherSpec
+from .payload import (
+    MigrationPayload, GroupSpec, LedgerSpec, VoucherSpec,
+    nature_for_group_name, group_dedup_key,
+)
 
 
 # ── Public exception type ────────────────────────────────────────────────────
@@ -245,6 +248,13 @@ class Migrator:
                         (self.company_id,),
                     ).fetchall()
                 }
+                # Canonical index so an imported group equal to an existing/seed
+                # one under a near-duplicate spelling ('Direct Incomes' vs the
+                # seed 'Direct Income') is folded onto it, not inserted as a twin.
+                existing_by_canon = {
+                    group_dedup_key(name): name for name in existing_groups
+                }
+                group_alias: dict[str, str] = {}
                 # Topologically sort: parents before children. Skip
                 # nameless rows (validator already warned).
                 seen_payload_groups: set[str] = set()
@@ -257,12 +267,21 @@ class Migrator:
                     seen_payload_groups.add(g.name)
                     if g.name in existing_groups:
                         continue
+                    canon = group_dedup_key(g.name)
+                    twin = existing_by_canon.get(canon)
+                    if twin and twin != g.name:
+                        group_alias[g.name] = twin
+                        skipped.append(
+                            f"group '{g.name}' (already present as '{twin}')"
+                        )
+                        continue
                     parent_id = None
                     if g.parent_name:
+                        parent_name = group_alias.get(g.parent_name, g.parent_name)
                         prow = self.db.execute(
                             "SELECT id FROM account_groups "
                             " WHERE company_id=? AND name=?",
-                            (self.company_id, g.parent_name),
+                            (self.company_id, parent_name),
                         ).fetchone()
                         if prow:
                             parent_id = prow["id"]
@@ -282,6 +301,7 @@ class Migrator:
                         ),
                     )
                     existing_groups.add(g.name)
+                    existing_by_canon[canon] = g.name
                     groups_added += 1
 
                 # 2. Ledger master
@@ -298,7 +318,9 @@ class Migrator:
                     if not ld.group_name:
                         skipped.append(f"{ld.name} (no parent group in source)")
                         continue
-                    if ld.group_name not in existing_groups:
+                    # Fold a near-duplicate source group onto the real one.
+                    grp = group_alias.get(ld.group_name, ld.group_name)
+                    if grp not in existing_groups:
                         skipped.append(
                             f"{ld.name} (unknown group {ld.group_name})"
                         )
@@ -308,7 +330,7 @@ class Migrator:
                     is_bank      = ld.is_bank
                     is_cash      = ld.is_cash
                     is_gst       = ld.is_gst_ledger
-                    glower = ld.group_name.lower()
+                    glower = grp.lower()
                     if not is_bank and "bank accounts" in glower:
                         is_bank = True
                     if not is_cash and "cash-in-hand" in glower:
@@ -318,7 +340,7 @@ class Migrator:
 
                     try:
                         self.tree.add_ledger(
-                            ld.name, ld.group_name,
+                            ld.name, grp,
                             opening_balance   = ld.opening_balance or 0.0,
                             opening_type      = ld.opening_type or "Dr",
                             is_bank           = is_bank,
@@ -604,12 +626,20 @@ class Migrator:
 
     @staticmethod
     def _guess_nature(payload: MigrationPayload, g: GroupSpec) -> str:
-        """Default nature when the parser doesn't supply one."""
+        """Resolve a group's nature when the parser supplied none: inherit from
+        parent → recognise this group's own standard name → ASSET only when
+        genuinely unknown (so 'Direct Incomes' becomes INCOME, not ASSET)."""
         if g.parent_name:
             for other in payload.groups:
-                if other.name == g.parent_name and other.nature:
-                    return other.nature
-        return "ASSET"   # safest fallback
+                if other.name == g.parent_name:
+                    inherited = other.nature or nature_for_group_name(other.name)
+                    if inherited:
+                        return inherited
+                    break
+        own = nature_for_group_name(g.name)
+        if own:
+            return own
+        return "ASSET"   # genuinely unknown group — last-resort fallback
 
     def _fill_company_metadata(self, cspec) -> None:
         row = self.db.execute(
