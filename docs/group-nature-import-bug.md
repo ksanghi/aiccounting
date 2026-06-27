@@ -171,3 +171,16 @@ UPDATE account_groups SET nature='EXPENSE' WHERE id IN (35,39) AND company_id=1;
 - Implement parent-nature inheritance for sub-groups (§3.1–3.3).
 - Ship the migration + startup integrity check (§3.4, §6).
 - Decide on unique-name enforcement to kill the duplicate-group class of bug (§3.5).
+
+---
+
+## Resolution (branch `fix/migration-group-nature`, 2026-06-27)
+
+Fixed the **migration/import** path (the manual sub-group-creation hypothesis in §3.1–3.3 is a separate UI fix, still open).
+
+- **`core/migration/payload.py`** — new shared resolver: `nature_for_group_name()` maps standard Tally/CoA primary group names (Direct/Indirect Incomes, Sales/Purchase Accounts, Capital, Current Liabilities, Fixed/Current Assets, Misc. Expenses (ASSET), …) to the correct nature; `group_dedup_key()` gives a case/space/plural-tolerant key so "Direct Income**s**" == "Direct Income".
+- **`migrator.py::_guess_nature`** — no longer returns `ASSET` blindly: resolves via parent nature → parent's standard name → the group's own standard name → ASSET only for genuinely unknown names.
+- **`migrator.py` group insert** — canonical-name **dedup**: an imported group equal to an existing/seed group under a near-duplicate spelling is **folded onto the existing group** (ledgers + child groups re-attached via an alias map) instead of inserting a twin.
+- **`tally_xml.py` / `excel_coa.py`** — when the parser yields a blank nature, derive it from the standard group name instead of leaving `""` (which became ASSET downstream).
+
+Verified end-to-end: importing "Direct Incomes" (blank nature) + a ledger folds onto the seed "Direct Income", a sub-group resolves to INCOME, an unknown group still falls back to ASSET, and the ledger becomes selectable in the Sales/income picker. Existing data already mis-tagged needs a one-off correction (set the affected groups' `nature`); this fix prevents recurrence on future imports.

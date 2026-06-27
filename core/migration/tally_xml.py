@@ -44,6 +44,7 @@ from typing import Optional
 
 from .payload import (
     MigrationPayload, GroupSpec, LedgerSpec, CompanySpec,
+    nature_for_group_name,
 )
 
 
@@ -192,7 +193,12 @@ def parse_tally_xml(file_path: str) -> MigrationPayload:
         payload.groups.append(GroupSpec(
             name        = name,
             parent_name = _txt(gel, "PARENT") or None,
-            nature      = _NATURE_MAP.get(primary.lower(), ""),
+            # Tally's generic PRIMARYGROUP word first; then recognise standard
+            # primary-group names (e.g. "Direct Incomes") so the nature isn't
+            # left blank and defaulted to ASSET downstream.
+            nature      = (_NATURE_MAP.get(primary.lower(), "")
+                           or nature_for_group_name(primary)
+                           or nature_for_group_name(name)),
             affects_gross_profit=_truthy(_txt(gel, "AFFECTSGROSSPROFIT", "ISTRADINGITEM")),
         ))
 
