@@ -172,6 +172,7 @@ class HeaderSchema:
     ledger:       tuple[str, ...] = ()    # trial balance / ledger reco
     opening:      tuple[str, ...] = ()    # trial balance
     closing:      tuple[str, ...] = ()    # trial balance
+    balance:      tuple[str, ...] = ()    # bank: per-row running balance
     voucher_no:   tuple[str, ...] = ()    # ledger reco
     voucher_type: tuple[str, ...] = ()    # ledger reco
 
@@ -200,6 +201,10 @@ _BANK_SCHEMA = HeaderSchema(
         "chq.no", "chqno", "chequeno", "cheque number",
         "instrument no", "utr", "utr no", "transaction id",
         "txn id", "ref/cheque", "ref/cheque no",
+    ),
+    balance=(
+        "running balance", "closing balance", "balance amount",
+        "available balance", "balance (inr)", "balance", "bal",
     ),
 )
 
@@ -264,14 +269,27 @@ class LocalDocumentParser:
         bank_name      = self._detect_bank_name(text)
         account_number = self._detect_account_number(text)
         period_from, period_to = self._detect_period(text)
-        opening = self._detect_balance(text, _OPENING_RE)
-        closing = self._detect_balance(text, _CLOSING_RE)
 
         lines = self._extract_lines(
             tables,
             schema=_BANK_SCHEMA,
             row_to_line=self._bank_row_to_line,
         )
+
+        # Opening / closing balance — the figures the tie-out check verifies
+        # against. Prefer the most reliable source available:
+        #   1. an explicit "Statement Summary" table (label row + value row),
+        #   2. the per-row running-balance column (first/last dated rows),
+        #   3. an inline-text regex (legacy fallback).
+        sum_open, sum_close = self._detect_summary_balances(tables)
+        run_open, run_close = self._derive_running_balances(lines)
+        opening = (sum_open if sum_open is not None
+                   else run_open if run_open is not None
+                   else self._detect_balance(text, _OPENING_RE))
+        closing = (sum_close if sum_close is not None
+                   else run_close if run_close is not None
+                   else self._detect_balance(text, _CLOSING_RE))
+
         if not lines:
             return ParseResult(
                 success=False,
@@ -488,6 +506,65 @@ class LocalDocumentParser:
             val = -val
         return val
 
+    @staticmethod
+    def _detect_summary_balances(tables) -> tuple[Optional[float], Optional[float]]:
+        """Read opening/closing from a 'Statement Summary' block where labels
+        and values sit on separate rows (common in Excel/CSV exports):
+            Opening Balance | Total Withdrawal | Total Deposits | Closing Balance
+            10093           | 5050000          | 5064313.53     | 24406.53
+        Requires BOTH labels in the same row, so a transaction-table header that
+        merely has a 'Closing Balance' column is not mistaken for the summary.
+        """
+        for tbl in tables:
+            for i, row in enumerate(tbl):
+                cells = [str(c).strip().lower() for c in row]
+                op_col = next((j for j, c in enumerate(cells)
+                               if "opening balance" in c), None)
+                cl_col = next((j for j, c in enumerate(cells)
+                               if "closing balance" in c), None)
+                if op_col is None or cl_col is None:
+                    continue
+                for vrow in tbl[i + 1:i + 4]:
+                    op = (_parse_amount(vrow[op_col])
+                          if op_col < len(vrow) else None)
+                    cl = (_parse_amount(vrow[cl_col])
+                          if cl_col < len(vrow) else None)
+                    if op is not None or cl is not None:
+                        return op, cl
+        return None, None
+
+    @staticmethod
+    def _derive_running_balances(lines) -> tuple[Optional[float], Optional[float]]:
+        """Derive opening/closing from the per-row running-balance column:
+        closing = balance after the chronologically last txn; opening = balance
+        after the first txn minus that txn's signed amount. Returns None when
+        the earliest/latest date is shared by multiple rows (ambiguous order),
+        so an uncertain guess never produces a false balance gap."""
+        cand = [l for l in lines
+                if l.get("balance") is not None and l.get("txn_date")]
+        if len(cand) < 2:
+            return None, None
+        dates = [l["txn_date"] for l in cand]
+        first, last = min(dates), max(dates)
+        if first == last:
+            return None, None
+        first_rows = [l for l in cand if l["txn_date"] == first]
+        last_rows  = [l for l in cand if l["txn_date"] == last]
+        # Resolve same-date ties using print order: detect ascending vs
+        # descending from where the extreme dates sit, then take the
+        # chronologically-first and -last rows.
+        ascending = (min(l["line_index"] for l in first_rows)
+                     < min(l["line_index"] for l in last_rows))
+        if ascending:
+            start_row = min(first_rows, key=lambda l: l["line_index"])
+            end_row   = max(last_rows,  key=lambda l: l["line_index"])
+        else:
+            start_row = max(first_rows, key=lambda l: l["line_index"])
+            end_row   = min(last_rows,  key=lambda l: l["line_index"])
+        signed = (start_row["amount"] if start_row["sign"] == "CR"
+                  else -start_row["amount"])
+        return round(start_row["balance"] - signed, 2), round(end_row["balance"], 2)
+
     # ── Generic line extraction ─────────────────────────────────────────────
 
     def _extract_lines(
@@ -577,6 +654,7 @@ class LocalDocumentParser:
                 "ledger":       _pick_header(headers, schema.ledger),
                 "opening":      _pick_header(headers, schema.opening),
                 "closing":      _pick_header(headers, schema.closing),
+                "balance":      _pick_header(headers, schema.balance),
                 "voucher_no":   _pick_header(headers, schema.voucher_no),
                 "voucher_type": _pick_header(headers, schema.voucher_type),
             }
@@ -634,6 +712,11 @@ class LocalDocumentParser:
             if col_idx["reference"] is not None and col_idx["reference"] < len(row)
             else ""
         )
+        bidx = col_idx.get("balance")
+        running_balance = (
+            _parse_amount(row[bidx])
+            if bidx is not None and bidx < len(row) else None
+        )
         return {
             "line_index": line_index,
             "txn_date":   txn_date,
@@ -641,6 +724,7 @@ class LocalDocumentParser:
             "sign":       sign,
             "narration":  narration,
             "reference":  reference,
+            "balance":    running_balance,
             "raw_row":    list(row),
         }
 
