@@ -185,6 +185,7 @@ class HeaderSchema:
     ledger:       tuple[str, ...] = ()    # trial balance / ledger reco
     opening:      tuple[str, ...] = ()    # trial balance
     closing:      tuple[str, ...] = ()    # trial balance
+    balance:      tuple[str, ...] = ()    # bank: per-row running balance
     voucher_no:   tuple[str, ...] = ()    # ledger reco
     voucher_type: tuple[str, ...] = ()    # ledger reco
 
@@ -213,6 +214,10 @@ _BANK_SCHEMA = HeaderSchema(
         "chq.no", "chqno", "chequeno", "cheque number",
         "instrument no", "utr", "utr no", "transaction id",
         "txn id", "ref/cheque", "ref/cheque no",
+    ),
+    balance=(
+        "running balance", "closing balance", "balance amount",
+        "available balance", "balance (inr)", "balance", "bal",
     ),
 )
 
@@ -304,14 +309,25 @@ class LocalDocumentParser:
         bank_name      = self._detect_bank_name(text)
         account_number = self._detect_account_number(text)
         period_from, period_to = self._detect_period(text)
-        opening = self._detect_balance(text, _OPENING_RE)
-        closing = self._detect_balance(text, _CLOSING_RE)
 
         lines = self._extract_lines(
             tables,
             schema=_BANK_SCHEMA,
             row_to_line=self._bank_row_to_line,
         )
+
+        # Opening / closing balance — what the tie-out check verifies against.
+        # Prefer the most reliable source: a 'Statement Summary' block, then the
+        # per-row running-balance column, then the legacy inline-text regex.
+        sum_open, sum_close = self._detect_summary_balances(tables)
+        run_open, run_close = self._derive_running_balances(lines)
+        opening = (sum_open if sum_open is not None
+                   else run_open if run_open is not None
+                   else self._detect_balance(text, _OPENING_RE))
+        closing = (sum_close if sum_close is not None
+                   else run_close if run_close is not None
+                   else self._detect_balance(text, _CLOSING_RE))
+
         if not lines:
             return ParseResult(
                 success=False,
@@ -636,6 +652,58 @@ class LocalDocumentParser:
             val = -val
         return val
 
+    @staticmethod
+    def _detect_summary_balances(tables) -> tuple[Optional[float], Optional[float]]:
+        """Read opening/closing from a 'Statement Summary' block where labels
+        and values sit on separate rows (common in Excel/CSV exports). Requires
+        BOTH labels in one row so a transaction header's 'Closing Balance'
+        column isn't mistaken for the summary."""
+        for tbl in tables:
+            for i, row in enumerate(tbl):
+                cells = [str(c).strip().lower() for c in row]
+                op_col = next((j for j, c in enumerate(cells)
+                               if "opening balance" in c), None)
+                cl_col = next((j for j, c in enumerate(cells)
+                               if "closing balance" in c), None)
+                if op_col is None or cl_col is None:
+                    continue
+                for vrow in tbl[i + 1:i + 4]:
+                    op = (_parse_amount(vrow[op_col])
+                          if op_col < len(vrow) else None)
+                    cl = (_parse_amount(vrow[cl_col])
+                          if cl_col < len(vrow) else None)
+                    if op is not None or cl is not None:
+                        return op, cl
+        return None, None
+
+    @staticmethod
+    def _derive_running_balances(lines) -> tuple[Optional[float], Optional[float]]:
+        """Derive opening/closing from the per-row running-balance column:
+        closing = last dated row's balance; opening = first dated row's balance
+        minus its signed amount. Same-date ties at the extremes resolved by
+        print order, so an uncertain guess never produces a false gap."""
+        cand = [l for l in lines
+                if l.get("balance") is not None and l.get("txn_date")]
+        if len(cand) < 2:
+            return None, None
+        dates = [l["txn_date"] for l in cand]
+        first, last = min(dates), max(dates)
+        if first == last:
+            return None, None
+        first_rows = [l for l in cand if l["txn_date"] == first]
+        last_rows  = [l for l in cand if l["txn_date"] == last]
+        ascending = (min(l["line_index"] for l in first_rows)
+                     < min(l["line_index"] for l in last_rows))
+        if ascending:
+            start_row = min(first_rows, key=lambda l: l["line_index"])
+            end_row   = max(last_rows,  key=lambda l: l["line_index"])
+        else:
+            start_row = max(first_rows, key=lambda l: l["line_index"])
+            end_row   = min(last_rows,  key=lambda l: l["line_index"])
+        signed = (start_row["amount"] if start_row["sign"] == "CR"
+                  else -start_row["amount"])
+        return round(start_row["balance"] - signed, 2), round(end_row["balance"], 2)
+
     # ── Generic line extraction ─────────────────────────────────────────────
 
     def _extract_lines(
@@ -645,23 +713,45 @@ class LocalDocumentParser:
         row_to_line,
     ) -> list[dict]:
         """
-        Iterate tables, find the first that looks like a transaction layout
-        (matches the schema), and yield lines via the row_to_line callable.
+        Build lines from EVERY matching table, not just the first. A multi-page
+        PDF yields one table per page, so transactions span several tables; the
+        old code returned after the first page and silently dropped pages 2, 3…
+        Continuation pages without a repeated header reuse the previous page's
+        column layout (guarded by column count). Byte-identical duplicate tables
+        are skipped (a pdfplumber artifact).
         """
+        all_lines: list[dict] = []
+        last_col_idx = None
+        last_ncols = None
+        seen_tables: set = set()
         for tbl in tables:
-            lines = self._lines_from_table(tbl, schema, row_to_line)
-            if lines:
-                return lines
-        return []
+            sig = tuple(tuple(str(c) for c in r) for r in tbl)
+            if sig in seen_tables:
+                continue
+            seen_tables.add(sig)
+            lines, col_idx, ncols = self._lines_from_table(
+                tbl, schema, row_to_line,
+                fallback_col_idx=last_col_idx, fallback_ncols=last_ncols,
+            )
+            if col_idx is not None:
+                last_col_idx, last_ncols = col_idx, ncols
+            all_lines.extend(lines)
+        for i, ln in enumerate(all_lines):
+            ln["line_index"] = i
+        return all_lines
 
     def _lines_from_table(
         self,
         rows: list[list[str]],
         schema: HeaderSchema,
         row_to_line,
-    ) -> list[dict]:
+        fallback_col_idx: Optional[dict] = None,
+        fallback_ncols: Optional[int] = None,
+    ) -> tuple[list[dict], Optional[dict], Optional[int]]:
+        """Parse one table. Returns (lines, col_idx, ncols); col_idx is None
+        when not a transaction table, so the caller won't adopt its layout."""
         if not rows:
-            return []
+            return [], None, None
 
         # A row is a header if it has the date column AND at least one of the
         # numeric columns the schema cares about (debit / credit / amount /
@@ -679,25 +769,36 @@ class LocalDocumentParser:
             ):
                 header_idx = i
                 break
-        if header_idx is None:
-            return []
 
-        headers = rows[header_idx]
-        body    = rows[header_idx + 1:]
-
-        col_idx = {
-            "date":         _pick_header(headers, schema.date),
-            "debit":        _pick_header(headers, schema.debit),
-            "credit":       _pick_header(headers, schema.credit),
-            "amount":       _pick_header(headers, schema.amount),
-            "narration":    _pick_header(headers, schema.narration),
-            "reference":    _pick_header(headers, schema.reference),
-            "ledger":       _pick_header(headers, schema.ledger),
-            "opening":      _pick_header(headers, schema.opening),
-            "closing":      _pick_header(headers, schema.closing),
-            "voucher_no":   _pick_header(headers, schema.voucher_no),
-            "voucher_type": _pick_header(headers, schema.voucher_type),
-        }
+        if header_idx is not None:
+            headers = rows[header_idx]
+            body    = rows[header_idx + 1:]
+            col_idx = {
+                "date":         _pick_header(headers, schema.date),
+                "debit":        _pick_header(headers, schema.debit),
+                "credit":       _pick_header(headers, schema.credit),
+                "amount":       _pick_header(headers, schema.amount),
+                "narration":    _pick_header(headers, schema.narration),
+                "reference":    _pick_header(headers, schema.reference),
+                "ledger":       _pick_header(headers, schema.ledger),
+                "opening":      _pick_header(headers, schema.opening),
+                "closing":      _pick_header(headers, schema.closing),
+                "balance":      _pick_header(headers, schema.balance),
+                "voucher_no":   _pick_header(headers, schema.voucher_no),
+                "voucher_type": _pick_header(headers, schema.voucher_type),
+            }
+            ncols = len(headers)
+        elif fallback_col_idx is not None and fallback_ncols:
+            # Headerless continuation page — reuse the previous layout when the
+            # shape matches (row_to_line still validates each row).
+            sample_ncols = max((len(r) for r in rows), default=0)
+            if abs(sample_ncols - fallback_ncols) > 1:
+                return [], None, None
+            col_idx = fallback_col_idx
+            body    = rows
+            ncols   = fallback_ncols
+        else:
+            return [], None, None
 
         lines: list[dict] = []
         for line_index, row in enumerate(body):
@@ -706,7 +807,7 @@ class LocalDocumentParser:
             ln = row_to_line(row, col_idx, line_index)
             if ln is not None:
                 lines.append(ln)
-        return lines
+        return lines, col_idx, ncols
 
     # ── Bank-statement row mapper ───────────────────────────────────────────
 
@@ -739,6 +840,11 @@ class LocalDocumentParser:
             if col_idx["reference"] is not None and col_idx["reference"] < len(row)
             else ""
         )
+        bidx = col_idx.get("balance")
+        running_balance = (
+            _parse_amount(row[bidx])
+            if bidx is not None and bidx < len(row) else None
+        )
         return {
             "line_index": line_index,
             "txn_date":   txn_date,
@@ -746,6 +852,7 @@ class LocalDocumentParser:
             "sign":       sign,
             "narration":  narration,
             "reference":  reference,
+            "balance":    running_balance,
             "raw_row":    list(row),
         }
 
@@ -766,10 +873,13 @@ class LocalDocumentParser:
             if idx_credit is not None and idx_credit < len(row)
             else None
         )
-        if debit and debit > 0:
-            return "DR", debit
-        if credit and credit > 0:
-            return "CR", credit
+        # A negative value in the debit/credit column is a reversal/refund of
+        # that side (e.g. HDFC posts a withdrawal reversal as a negative), so it
+        # flips sign — NOT a row to drop.
+        if debit:
+            return ("DR", debit) if debit > 0 else ("CR", abs(debit))
+        if credit:
+            return ("CR", credit) if credit > 0 else ("DR", abs(credit))
         if idx_amount is not None and idx_amount < len(row):
             amt = _parse_amount(row[idx_amount])
             if amt is not None and amt != 0:
