@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=Accounts HQ
-set VERSION=1.0.36
+set VERSION=1.0.37
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
@@ -42,6 +42,7 @@ python -m nuitka ^
     --include-package=ui ^
     --include-package=ai ^
     --include-package=core.migration ^
+    --include-package=xlrd ^
     --include-data-files="ui/accountshq-logo.png=ui/accountshq-logo.png" ^
     --include-data-files="ui/accountshq.ico=ui/accountshq.ico" ^
     --windows-icon-from-ico="ui\accountshq.ico" ^

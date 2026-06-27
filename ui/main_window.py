@@ -162,7 +162,10 @@ class MainWindow(QMainWindow):
         self._company_name = row["name"] if row else "Company"
         self._company_gstin = row["gstin"] if row else ""
 
-        self.setWindowTitle(f"{branding.PRODUCT_NAME} — {self._company_name}")
+        from core.app_release import BUILD_VERSION
+        self.setWindowTitle(
+            f"{branding.PRODUCT_NAME} {BUILD_VERSION} — {self._company_name}"
+        )
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
         # Style at the APPLICATION level only — a window-level stylesheet would
@@ -281,7 +284,9 @@ class MainWindow(QMainWindow):
         self._calc_btn = calc_btn
 
         # Version label
-        ver = QLabel("v1.0  |  Python + SQLite")
+        from core import branding as _br
+        from core.app_release import BUILD_VERSION
+        ver = QLabel(f"{_br.PRODUCT_NAME} v{BUILD_VERSION}  |  Python + SQLite")
         nav_outer.addWidget(ver)
         self._ver_lbl = ver
 
