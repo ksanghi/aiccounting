@@ -19,7 +19,7 @@ REM ─────────────────────────�
 setlocal enabledelayedexpansion
 
 set APP_NAME=AccGenie
-set VERSION=1.0.10
+set VERSION=1.0.37
 set OUTPUT_DIR=build\output
 set DIST_DIR=build\dist
 
@@ -40,11 +40,6 @@ python -m nuitka ^
     --output-filename=%APP_NAME%.exe ^
     --remove-output ^
     --assume-yes-for-downloads ^
-    --product-name=%APP_NAME% ^
-    --product-version=%VERSION% ^
-    --file-version=%VERSION% ^
-    --file-description="AccGenie - Indian Accounting Software" ^
-    --copyright="(c) 2026 Aiccounting" ^
     main.py
 
 if errorlevel 1 (
