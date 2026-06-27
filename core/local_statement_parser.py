@@ -745,10 +745,13 @@ class LocalDocumentParser:
             if idx_credit is not None and idx_credit < len(row)
             else None
         )
-        if debit and debit > 0:
-            return "DR", debit
-        if credit and credit > 0:
-            return "CR", credit
+        # A negative value in the debit/credit column is a reversal/refund of
+        # that side (e.g. HDFC posts a withdrawal reversal as a negative in the
+        # Withdrawal column), so it flips sign — NOT a row to drop.
+        if debit:
+            return ("DR", debit) if debit > 0 else ("CR", abs(debit))
+        if credit:
+            return ("CR", credit) if credit > 0 else ("DR", abs(credit))
         if idx_amount is not None and idx_amount < len(row):
             amt = _parse_amount(row[idx_amount])
             if amt is not None and amt != 0:
