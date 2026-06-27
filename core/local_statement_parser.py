@@ -497,23 +497,55 @@ class LocalDocumentParser:
         row_to_line,
     ) -> list[dict]:
         """
-        Iterate tables, find the first that looks like a transaction layout
-        (matches the schema), and yield lines via the row_to_line callable.
+        Build transaction lines from EVERY table that matches the schema — not
+        just the first. A multi-page PDF yields one table per page (pdfplumber
+        splits per page), so a statement's transactions span several tables;
+        the previous code returned after the first matching page and silently
+        dropped every row on pages 2, 3, 4 …
+
+        Each page that repeats the column header is parsed on its own.
+        Continuation pages WITHOUT a header reuse the column layout of the most
+        recent header we saw (guarded by matching column count) so their rows
+        are captured rather than lost.
         """
+        all_lines: list[dict] = []
+        last_col_idx = None
+        last_ncols = None
+        seen_tables: set = set()
         for tbl in tables:
-            lines = self._lines_from_table(tbl, schema, row_to_line)
-            if lines:
-                return lines
-        return []
+            # Skip a byte-identical duplicate table (pdfplumber can extract the
+            # same table twice). This is safe — it never drops a genuinely
+            # distinct page, whose rows differ by date/amount.
+            sig = tuple(tuple(str(c) for c in r) for r in tbl)
+            if sig in seen_tables:
+                continue
+            seen_tables.add(sig)
+            lines, col_idx, ncols = self._lines_from_table(
+                tbl, schema, row_to_line,
+                fallback_col_idx=last_col_idx,
+                fallback_ncols=last_ncols,
+            )
+            if col_idx is not None:
+                last_col_idx, last_ncols = col_idx, ncols
+            all_lines.extend(lines)
+        # Re-index so line_index is unique and ordered across all pages.
+        for i, ln in enumerate(all_lines):
+            ln["line_index"] = i
+        return all_lines
 
     def _lines_from_table(
         self,
         rows: list[list[str]],
         schema: HeaderSchema,
         row_to_line,
-    ) -> list[dict]:
+        fallback_col_idx: Optional[dict] = None,
+        fallback_ncols: Optional[int] = None,
+    ) -> tuple[list[dict], Optional[dict], Optional[int]]:
+        """Parse one table into lines. Returns (lines, col_idx, ncols); col_idx
+        is None when the table is not a transaction table, so the caller knows
+        not to adopt its layout for later headerless pages."""
         if not rows:
-            return []
+            return [], None, None
 
         # A row is a header if it has the date column AND at least one of the
         # numeric columns the schema cares about (debit / credit / amount /
@@ -531,25 +563,36 @@ class LocalDocumentParser:
             ):
                 header_idx = i
                 break
-        if header_idx is None:
-            return []
 
-        headers = rows[header_idx]
-        body    = rows[header_idx + 1:]
-
-        col_idx = {
-            "date":         _pick_header(headers, schema.date),
-            "debit":        _pick_header(headers, schema.debit),
-            "credit":       _pick_header(headers, schema.credit),
-            "amount":       _pick_header(headers, schema.amount),
-            "narration":    _pick_header(headers, schema.narration),
-            "reference":    _pick_header(headers, schema.reference),
-            "ledger":       _pick_header(headers, schema.ledger),
-            "opening":      _pick_header(headers, schema.opening),
-            "closing":      _pick_header(headers, schema.closing),
-            "voucher_no":   _pick_header(headers, schema.voucher_no),
-            "voucher_type": _pick_header(headers, schema.voucher_type),
-        }
+        if header_idx is not None:
+            headers = rows[header_idx]
+            body    = rows[header_idx + 1:]
+            col_idx = {
+                "date":         _pick_header(headers, schema.date),
+                "debit":        _pick_header(headers, schema.debit),
+                "credit":       _pick_header(headers, schema.credit),
+                "amount":       _pick_header(headers, schema.amount),
+                "narration":    _pick_header(headers, schema.narration),
+                "reference":    _pick_header(headers, schema.reference),
+                "ledger":       _pick_header(headers, schema.ledger),
+                "opening":      _pick_header(headers, schema.opening),
+                "closing":      _pick_header(headers, schema.closing),
+                "voucher_no":   _pick_header(headers, schema.voucher_no),
+                "voucher_type": _pick_header(headers, schema.voucher_type),
+            }
+            ncols = len(headers)
+        elif fallback_col_idx is not None and fallback_ncols:
+            # Headerless continuation page — reuse the previous page's column
+            # layout, but only when the shape matches (avoids misreading an
+            # unrelated table). row_to_line still validates every row.
+            sample_ncols = max((len(r) for r in rows), default=0)
+            if abs(sample_ncols - fallback_ncols) > 1:
+                return [], None, None
+            col_idx = fallback_col_idx
+            body    = rows
+            ncols   = fallback_ncols
+        else:
+            return [], None, None
 
         lines: list[dict] = []
         for line_index, row in enumerate(body):
@@ -558,7 +601,7 @@ class LocalDocumentParser:
             ln = row_to_line(row, col_idx, line_index)
             if ln is not None:
                 lines.append(ln)
-        return lines
+        return lines, col_idx, ncols
 
     # ── Bank-statement row mapper ───────────────────────────────────────────
 
