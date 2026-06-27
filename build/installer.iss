@@ -19,7 +19,7 @@
   #define AppVersion "1.0.0"
 #endif
 #define AppPublisher "Aiccounting"
-#define AppExeName  "AccGenie.exe"
+#define AppExeName  AppName + ".exe"
 
 [Setup]
 AppId={{A1CC5E22-1234-4E78-9ABC-AICCOUNTING001}
