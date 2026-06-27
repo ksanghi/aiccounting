@@ -30,6 +30,7 @@ from core.bank_reconciliation import (
     AccountUnsetWithFileNumber,
     BankNameMismatch,
     UnverifiedStatement,
+    BalanceMismatch,
 )
 from core.voucher_engine import VoucherDraft, VoucherLine
 
@@ -49,6 +50,7 @@ class _ImportThread(QThread):
     account_unset      = Signal(str)                 # file_acct
     bank_name_mismatch = Signal(str, str)            # ledger_name, file_bank_name
     unverified         = Signal(str)                 # ledger_name
+    balance_mismatch   = Signal(object)              # BalanceCheck
     error              = Signal(str)                 # generic fallback
 
     def __init__(
@@ -63,6 +65,7 @@ class _ImportThread(QThread):
         confirm_account_population: bool = False,
         force_mismatch_override: bool = False,
         confirm_unverified: bool = False,
+        confirm_balance_mismatch: bool = False,
     ):
         super().__init__()
         self.reconciler     = reconciler
@@ -75,6 +78,7 @@ class _ImportThread(QThread):
         self.confirm_account_population = confirm_account_population
         self.force_mismatch_override    = force_mismatch_override
         self.confirm_unverified         = confirm_unverified
+        self.confirm_balance_mismatch   = confirm_balance_mismatch
 
     def run(self):
         try:
@@ -91,6 +95,7 @@ class _ImportThread(QThread):
                 confirm_account_population=self.confirm_account_population,
                 force_mismatch_override=self.force_mismatch_override,
                 confirm_unverified=self.confirm_unverified,
+                confirm_balance_mismatch=self.confirm_balance_mismatch,
             )
             self.progress.emit("Matching against ledger entries…")
             result = self.reconciler.auto_match(stmt_id)
@@ -105,6 +110,8 @@ class _ImportThread(QThread):
             self.bank_name_mismatch.emit(e.ledger_name, e.file_bank_name)
         except UnverifiedStatement as e:
             self.unverified.emit(e.ledger_name)
+        except BalanceMismatch as e:
+            self.balance_mismatch.emit(e.check)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -946,6 +953,7 @@ class BankReconciliationPage(QWidget):
         confirm_account_population: bool = False,
         force_mismatch_override: bool = False,
         confirm_unverified: bool = False,
+        confirm_balance_mismatch: bool = False,
     ):
         """Spawn the import worker. Re-callable with adjusted flags."""
         api_key = ""
@@ -978,6 +986,7 @@ class BankReconciliationPage(QWidget):
             confirm_account_population=confirm_account_population,
             force_mismatch_override=force_mismatch_override,
             confirm_unverified=confirm_unverified,
+            confirm_balance_mismatch=confirm_balance_mismatch,
         )
         self._import_thread.progress.connect(self._status_lbl.setText)
         self._import_thread.finished.connect(self._on_import_done)
@@ -986,6 +995,7 @@ class BankReconciliationPage(QWidget):
         self._import_thread.account_mismatch.connect(self._on_account_mismatch)
         self._import_thread.bank_name_mismatch.connect(self._on_bank_name_mismatch)
         self._import_thread.unverified.connect(self._on_unverified)
+        self._import_thread.balance_mismatch.connect(self._on_balance_mismatch)
         self._import_thread.error.connect(self._on_import_error)
         self._import_thread.start()
 
@@ -1075,13 +1085,71 @@ class BankReconciliationPage(QWidget):
         if msg.clickedButton() is proceed:
             self._fire_import(confirm_unverified=True)
 
+    @staticmethod
+    def _balance_summary_text(check) -> str:
+        def m(v):
+            return f"₹{v:,.2f}" if v is not None else "—"
+        lines = [
+            f"Transactions read:  {check.txn_count}",
+            f"Opening balance:    {m(check.opening)}",
+            f"+ Credits:          ₹{check.total_credits:,.2f}",
+            f"− Debits:           ₹{check.total_debits:,.2f}",
+            f"= Computed closing: {m(check.computed_closing)}",
+            f"Statement closing:  {m(check.stated_closing)}",
+        ]
+        if check.gap is not None:
+            lines.append(f"Difference:         ₹{check.gap:,.2f}")
+        return "\n".join(lines)
+
+    def _on_balance_mismatch(self, check):
+        """Opening + credits − debits ≠ stated closing — block and let the
+        user re-import (recommended) or override."""
+        self._status_lbl.setText("")
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle("Statement doesn't balance")
+        msg.setText(
+            "The transactions read don't add up to the statement's closing "
+            f"balance — off by ₹{abs(check.gap or 0):,.2f}."
+        )
+        msg.setInformativeText(
+            self._balance_summary_text(check) +
+            "\n\nThis usually means some rows weren't read (often a multi-page "
+            "PDF). Recommended: Cancel and import a CSV/Excel export instead. "
+            "Import anyway only if you will add the missing entries yourself."
+        )
+        proceed = msg.addButton("Import anyway", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        if msg.clickedButton() is proceed:
+            self._fire_import(confirm_balance_mismatch=True)
+
     def _on_import_done(self, statement_id: int, result):
         self._statement_id = statement_id
-        self._status_lbl.setText(
+        status = (
             f"Imported. Matched {result.matched}, "
             f"{result.unmatched_stmt} stmt unmatched, "
             f"{result.unmatched_book} book unmatched."
         )
+        # Append the balance-verification result so the user always sees it.
+        check = getattr(self.reconciler, "last_balance_check", None)
+        if check is not None:
+            if check.balanced:
+                status += (
+                    f"  |  ✓ Balanced — {check.txn_count} txns, "
+                    f"closing ₹{check.stated_closing:,.2f}."
+                )
+            elif not check.checkable:
+                status += (
+                    f"  |  ⚠ {check.txn_count} txns read — balance not verified "
+                    "(no opening/closing on the file)."
+                )
+            else:
+                status += (
+                    f"  |  ⚠ Imported with a balance gap of "
+                    f"₹{abs(check.gap or 0):,.2f}."
+                )
+        self._status_lbl.setText(status)
         self._populate_review()
         self._stack.setCurrentWidget(self._review_page)
 
