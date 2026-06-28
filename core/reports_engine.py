@@ -113,7 +113,7 @@ class ReportsEngine:
         rows: list[dict] = []
         prior_pnl = 0.0   # net profit of all FYs before the current one
         for l in ledger_rows:
-            ob = l["opening_balance"] or 0.0
+            ob = abs(l["opening_balance"] or 0.0)
             ot = l["opening_type"]
             ob_dr  = ob if ot == "Dr" else 0.0
             ob_cr  = ob if ot == "Cr" else 0.0
@@ -326,7 +326,10 @@ class ReportsEngine:
             ).fetchall()
             result = []
             for l in rows:
-                ob = l["opening_balance"] or 0.0
+                # opening_balance is a MAGNITUDE; opening_type carries the
+                # sign. abs() guards against a value that got stored negative
+                # (e.g. a bad import) double-negating into the wrong side.
+                ob = abs(l["opening_balance"] or 0.0)
                 ot = l["opening_type"]
                 ob_dr = ob if ot == "Dr" else 0.0
                 ob_cr = ob if ot == "Cr" else 0.0
@@ -451,7 +454,7 @@ class ReportsEngine:
             # opening balance).
             charges: list[list] = []
             receipts = 0.0
-            ob = l["opening_balance"] or 0.0
+            ob = abs(l["opening_balance"] or 0.0)
             if l["opening_type"] == "Dr" and ob > 0:
                 charges.append([None, ob])
             elif l["opening_type"] == "Cr" and ob > 0:
@@ -541,7 +544,7 @@ class ReportsEngine:
             # oldest). Payments = Dr postings (+ a Dr opening pool).
             charges: list[list] = []
             payments = 0.0
-            ob = l["opening_balance"] or 0.0
+            ob = abs(l["opening_balance"] or 0.0)
             if l["opening_type"] == "Cr" and ob > 0:
                 charges.append([None, ob])
             elif l["opening_type"] == "Dr" and ob > 0:
@@ -601,7 +604,7 @@ class ReportsEngine:
         """Current cash + bank balance as of a date (Dr positive)."""
         row = self.db.execute(
             """SELECT COALESCE(SUM(
-                   COALESCE(l.opening_balance,0) *
+                   ABS(COALESCE(l.opening_balance,0)) *
                      (CASE l.opening_type WHEN 'Dr' THEN 1 ELSE -1 END)
                    + COALESCE(t.net, 0)), 0) AS cash
                FROM ledgers l
@@ -653,7 +656,7 @@ class ReportsEngine:
         ).fetchall()
         inc, out = [], []
         for r in rows:
-            ob = (r["opening_balance"] or 0.0) * (1 if r["opening_type"] == "Dr" else -1)
+            ob = abs(r["opening_balance"] or 0.0) * (1 if r["opening_type"] == "Dr" else -1)
             net = round(ob + (r["moved"] or 0.0), 2)
             if r["grp"] == "Sundry Debtors" and net > 0.01:
                 inc.append({"ledger_id": r["id"], "party": r["name"], "amount": net})
@@ -778,7 +781,7 @@ class ReportsEngine:
             l_info = self.db.execute(
                 "SELECT opening_balance, opening_type FROM ledgers WHERE id=?", (ldg["id"],)
             ).fetchone()
-            ob = l_info["opening_balance"] if l_info else 0.0
+            ob = abs(l_info["opening_balance"] if l_info else 0.0)
             ot = l_info["opening_type"]    if l_info else "Dr"
             ob_dr = ob if ot == "Dr" else 0.0
             ob_cr = ob if ot == "Cr" else 0.0
@@ -865,7 +868,7 @@ class ReportsEngine:
                  AND v.company_id=? AND v.voucher_date < ?""",
             (ledger_id, self.company_id, from_date)
         ).fetchone()
-        ob = ldg["opening_balance"]
+        ob = abs(ldg["opening_balance"] or 0.0)
         ot = ldg["opening_type"]
         ob_dr = ob if ot == "Dr" else 0.0
         ob_cr = ob if ot == "Cr" else 0.0

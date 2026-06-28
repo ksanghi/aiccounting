@@ -183,7 +183,7 @@ class AccountTree:
 
         out: dict[int, dict] = {}
         for r in rows:
-            ob       = r["opening_balance"] or 0.0
+            ob       = abs(r["opening_balance"] or 0.0)
             ob_type  = r["opening_type"] or "Dr"
             net_ob   = ob if ob_type == "Dr" else -ob
             net      = net_ob + (r["total_dr"] or 0.0) - (r["total_cr"] or 0.0)
@@ -206,7 +206,7 @@ class AccountTree:
             "SELECT opening_balance, opening_type FROM ledgers WHERE id=?",
             (ledger_id,)
         ).fetchone()
-        ob = row["opening_balance"] if row else 0.0
+        ob = abs(row["opening_balance"] if row else 0.0)
         ob_type = row["opening_type"] if row else "Dr"
 
         # Sum of voucher lines
