@@ -20,7 +20,7 @@ RELEASE_VERSIONS = {
 # Internal build number — bump in lockstep with build/build.bat's VERSION on
 # every compile. Shown in the window title + sidebar so the running app can be
 # told apart from any other build the user has installed.
-BUILD_VERSION = "1.0.37"
+BUILD_VERSION = "1.0.39"
 
 DEFAULT_PRODUCT = "accgenie"
 

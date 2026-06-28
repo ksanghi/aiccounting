@@ -106,9 +106,14 @@ class ExcelExporter:
         for i in range(max(len(assets), len(liabs))):
             a = assets[i] if i < len(assets) else {}
             l = liabs[i]  if i < len(liabs)  else {}
+            # A balance on the side opposite its column's natural side (e.g. a
+            # Cr balance sitting under Assets) is shown NEGATIVE so the column
+            # visibly reconciles with the signed total below.
+            a_amt = (a["balance"] if a["side"] == "Dr" else -a["balance"]) if a else ""
+            l_amt = (l["balance"] if l["side"] == "Cr" else -l["balance"]) if l else ""
             ws.append([
-                a.get("ledger",""), a["balance"] if a else "",
-                l.get("ledger",""), l["balance"] if l else "",
+                a.get("ledger",""), a_amt,
+                l.get("ledger",""), l_amt,
             ])
         ws.append(["Total Assets", data["total_assets"], "Total Liabilities", data["total_liabilities"]])
         self._set_widths(ws, [30,14,30,14])
@@ -408,9 +413,13 @@ class PDFExporter:
         for i in range(max(len(a_list), len(l_list))):
             a = a_list[i] if i < len(a_list) else {}
             l = l_list[i] if i < len(l_list) else {}
+            # Contra-side balance (e.g. a Cr under Assets) shown negative so the
+            # column reconciles with the signed total.
+            a_amt = (a["balance"] if a["side"] == "Dr" else -a["balance"]) if a else None
+            l_amt = (l["balance"] if l["side"] == "Cr" else -l["balance"]) if l else None
             rows.append([
-                a.get("ledger","")[:30], _fmt(a["balance"]) if a else "",
-                l.get("ledger","")[:30], _fmt(l["balance"]) if l else "",
+                a.get("ledger","")[:30], _fmt(a_amt) if a else "",
+                l.get("ledger","")[:30], _fmt(l_amt) if l else "",
             ])
         rows.append(["Total Assets", _fmt(data["total_assets"]),
                      "Total Liabilities", _fmt(data["total_liabilities"])])
