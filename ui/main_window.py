@@ -1472,20 +1472,8 @@ class MainWindow(QMainWindow):
         g_row.addWidget(self._gstin_edit)
         card.addLayout(g_row)
 
-        # GST portal username — enables the one-tap GSTR-2B pull (sent with
-        # the GSTIN; only the OTP is entered per pull).
-        gu_row = QHBoxLayout()
-        gu_lbl = QLabel("GST User")
-        gu_lbl.setFixedWidth(70)
-        gu_row.addWidget(gu_lbl)
-        self._gst_user_edit = QLineEdit(gst_user)
-        self._gst_user_edit.setFixedHeight(30)
-        self._gst_user_edit.setPlaceholderText("GST portal login username — for the 2B pull")
-        self._gst_user_edit.editingFinished.connect(
-            lambda: self._save_company_field("gst_username", self._gst_user_edit.text())
-        )
-        gu_row.addWidget(self._gst_user_edit)
-        card.addLayout(gu_row)
+        # (GST portal username field removed — it only fed the direct GSTR-2B
+        # portal pull, which has been dropped. Manual 2B reconciliation stays.)
 
         t_row = QHBoxLayout()
         t_lbl = QLabel("TAN")
