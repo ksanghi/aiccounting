@@ -121,6 +121,26 @@ class EmailSend(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class Feedback(Base):
+    """A bug report / feature request submitted from the desktop app's Feedback
+    screen, POSTed to /api/v1/feedback so reports reach us directly instead of
+    via a manual relay. `status` lets us triage (new → seen → done)."""
+    __tablename__ = "feedback"
+
+    id:          Mapped[int]      = mapped_column(primary_key=True)
+    kind:        Mapped[str]      = mapped_column(String(40), default="Bug Report", index=True)
+    subject:     Mapped[str]      = mapped_column(String(300), default="")
+    description: Mapped[str]      = mapped_column(String(8000), default="")
+    steps:       Mapped[str]      = mapped_column(String(4000), default="")
+    product:     Mapped[str]      = mapped_column(String(40), default="", index=True)
+    app_version: Mapped[str]      = mapped_column(String(40), default="")
+    plan:        Mapped[str]      = mapped_column(String(40), default="")
+    license_key: Mapped[str]      = mapped_column(String(80), default="")
+    os:          Mapped[str]      = mapped_column(String(120), default="")
+    status:      Mapped[str]      = mapped_column(String(20), default="new", index=True)
+    created_at:  Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
 class PageView(Base):
     """One row per marketing-page hit — our own lightweight analytics, so we
     can see traffic (and where it comes from) without a third-party tracker."""

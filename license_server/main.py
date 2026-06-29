@@ -45,7 +45,7 @@ from license_server.db import init_db, get_db
 from license_server.models import (
     License, MachineBinding, ValidationLog, Install,
     Credit, CreditTopup, AIUsageLog, Order,
-    SMSWallet, SMSWalletTxn, ChatLearned,
+    SMSWallet, SMSWalletTxn, ChatLearned, Feedback,
 )
 
 # Baked support-bot knowledge base (build/bake_kb.py → license_server/_kb.py).
@@ -240,6 +240,18 @@ class HeartbeatRequest(BaseModel):
 
 class HeartbeatResponse(BaseModel):
     ok: bool
+
+
+class FeedbackRequest(BaseModel):
+    kind:        str = "Bug Report"
+    subject:     str = ""
+    description: str = ""
+    steps:       str = ""
+    product:     str = ""
+    app_version: str = ""
+    plan:        str = ""
+    license_key: str = ""
+    os:          str = ""
 
 
 # ── Checkout / Razorpay schemas ──────────────────────────────────────────────
@@ -536,6 +548,65 @@ def install_stats(db: Session = Depends(get_db)):
         new_last_30d=new_30,
         active_last_7d=active_7,
     )
+
+
+@app.post("/api/v1/feedback")
+def submit_feedback(body: FeedbackRequest, db: Session = Depends(get_db)):
+    """Receive a bug report / feature request from the desktop app's Feedback
+    screen, store it so the developer can read it directly (GET /admin/feedback)
+    — no manual relay. Returns the new row id."""
+    if not (body.subject.strip() or body.description.strip()):
+        return {"ok": False}
+    row = Feedback(
+        kind=(body.kind or "Bug Report")[:40],
+        subject=(body.subject or "")[:300],
+        description=(body.description or "")[:8000],
+        steps=(body.steps or "")[:4000],
+        product=(body.product or "")[:40],
+        app_version=(body.app_version or "")[:40],
+        plan=(body.plan or "")[:40],
+        license_key=(body.license_key or "")[:80],
+        os=(body.os or "")[:120],
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": row.id}
+
+
+@app.get("/admin/feedback", dependencies=[Depends(require_admin)])
+def list_feedback(status: str = "", limit: int = 100,
+                  db: Session = Depends(get_db)):
+    """Read submitted feedback, newest first. Optional ?status=new filter."""
+    q = select(Feedback).order_by(Feedback.created_at.desc())
+    if status:
+        q = q.where(Feedback.status == status)
+    rows = db.scalars(q.limit(min(limit, 500))).all()
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "id": r.id, "kind": r.kind, "subject": r.subject,
+                "description": r.description, "steps": r.steps,
+                "product": r.product, "app_version": r.app_version,
+                "plan": r.plan, "license_key": r.license_key, "os": r.os,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.post("/admin/feedback/{fid}/status", dependencies=[Depends(require_admin)])
+def set_feedback_status(fid: int, value: str = "seen",
+                        db: Session = Depends(get_db)):
+    """Mark a report new → seen → done so the queue stays triageable."""
+    row = db.get(Feedback, fid)
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    row.status = (value or "seen")[:20]
+    db.commit()
+    return {"ok": True, "id": fid, "status": row.status}
 
 
 @app.post("/api/v1/license/validate", response_model=ValidateResponse)
