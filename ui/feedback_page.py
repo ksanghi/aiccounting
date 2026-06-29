@@ -337,6 +337,39 @@ class FeedbackPage(QWidget):
         if steps:
             full_desc += f"\n\nSteps to reproduce:\n{steps}"
 
+        # Send straight to our server so the report reaches the developer
+        # directly (no manual relay). If that fails (offline / server down),
+        # fall back to the pre-filled Google Form so nothing is lost.
+        from PySide6.QtWidgets import QMessageBox
+        try:
+            import json as _json, urllib.request as _ur
+            from core.license_manager import SERVER_URL
+            from core.app_release import current_product
+            body = _json.dumps({
+                "kind":        ftype,
+                "subject":     subject,
+                "description": full_desc,
+                "steps":       steps,
+                "product":     current_product(),
+                "app_version": APP_VERSION,
+                "plan":        self._sys_plan,
+                "license_key": self._sys_key,
+                "os":          _get_os_info(),
+            }).encode()
+            req = _ur.Request(SERVER_URL.rstrip("/") + "/feedback", data=body,
+                              headers={"Content-Type": "application/json"},
+                              method="POST")
+            with _ur.urlopen(req, timeout=8) as r:
+                if r.status == 200:
+                    QMessageBox.information(
+                        self, "Thank you!",
+                        "Your feedback was sent — thank you. It helps shape the product.")
+                    self._clear()
+                    return
+        except Exception:
+            pass
+
+        # Fallback: pre-filled Google Form in the browser.
         params = {
             ENTRY_TYPE:        ftype,
             ENTRY_SUBJECT:     subject,
@@ -347,7 +380,6 @@ class FeedbackPage(QWidget):
             ENTRY_VERSION:     APP_VERSION,
             ENTRY_OS:          _get_os_info(),
         }
-
         url = FORM_BASE_URL + "?" + urllib.parse.urlencode(params)
         webbrowser.open(url)
 
