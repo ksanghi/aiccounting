@@ -30,7 +30,8 @@ ENTRY_LICENSE     = "entry.978684963"
 ENTRY_PLAN        = "entry.1634516875"
 ENTRY_VERSION     = "entry.523822359"
 ENTRY_OS          = "entry.700692895"
-APP_VERSION = "1.0.0"
+from core.app_release import current_release, BUILD_VERSION
+APP_VERSION = f"{current_release()} (build {BUILD_VERSION})"
 
 
 def _get_os_info() -> str:

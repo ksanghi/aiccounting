@@ -13,14 +13,14 @@ import os
 # Current released versions. Update on each blessed release (e.g. 1.0 -> 1.0.1
 # for a fix, 1.0 -> 1.1 for features).
 RELEASE_VERSIONS = {
-    "accgenie": "1.2",   # Accounts HQ
+    "accgenie": "1.2.0", # Accounts HQ
     "rwagenie": "1.2",   # RWA HQ
 }
 
 # Internal build number — bump in lockstep with build/build.bat's VERSION on
 # every compile. Shown in the window title + sidebar so the running app can be
 # told apart from any other build the user has installed.
-BUILD_VERSION = "1.0.39"
+BUILD_VERSION = "40"   # plain running build counter (version is RELEASE_VERSIONS)
 
 DEFAULT_PRODUCT = "accgenie"
 

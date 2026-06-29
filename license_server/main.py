@@ -442,9 +442,9 @@ def health():
 # offers the download. `url` should point at the current installer/download.
 LATEST_RELEASE = {
     "accgenie": {
-        "latest": "1.2",
+        "latest": "1.2.0",
         "url":    "https://aic.ai-consultants.in/downloads/AccountsHQ-Setup.exe",
-        "notes":  "New AI Documents Inbox - drop, email or scan bills and the AI drafts the voucher; bank & ledger statements read locally with one-click hand-off to Reconciliation; optional auto-post for the confident ones; and a redesigned dashboard.",
+        "notes":  "Reliability update: bank statement import now reads every page of multi-page PDFs and Excel/.xls files correctly; the Balance Sheet handles credit-balance ledgers (and the Excel export shows them as deductions); the version now shows in the title bar so you always know your build. (The unsupported direct GSTR-2B portal pull was removed — GSTR-2B reconciliation by loading the portal's file stays.)",
     },
     "rwagenie": {
         "latest": "1.0",

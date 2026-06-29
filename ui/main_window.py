@@ -162,9 +162,10 @@ class MainWindow(QMainWindow):
         self._company_name = row["name"] if row else "Company"
         self._company_gstin = row["gstin"] if row else ""
 
-        from core.app_release import BUILD_VERSION
+        from core.app_release import BUILD_VERSION, current_release
         self.setWindowTitle(
-            f"{branding.PRODUCT_NAME} {BUILD_VERSION} — {self._company_name}"
+            f"{branding.PRODUCT_NAME} {current_release()} (build {BUILD_VERSION})"
+            f" — {self._company_name}"
         )
         self.resize(1280, 780)
         self.setMinimumSize(900, 600)
@@ -285,8 +286,9 @@ class MainWindow(QMainWindow):
 
         # Version label
         from core import branding as _br
-        from core.app_release import BUILD_VERSION
-        ver = QLabel(f"{_br.PRODUCT_NAME} v{BUILD_VERSION}  |  Python + SQLite")
+        from core.app_release import BUILD_VERSION, current_release
+        ver = QLabel(f"{_br.PRODUCT_NAME} {current_release()} (build {BUILD_VERSION})"
+                     f"  |  Python + SQLite")
         nav_outer.addWidget(ver)
         self._ver_lbl = ver
 
@@ -1506,9 +1508,10 @@ class MainWindow(QMainWindow):
     # ── Self-update ───────────────────────────────────────────────────────
     def _build_updates_card(self, layout: QVBoxLayout) -> None:
         from PySide6.QtWidgets import QPushButton
-        from core.app_release import current_release
+        from core.app_release import current_release, BUILD_VERSION
         card_l = self._pref_card("Updates", layout)
-        self._version_lbl = QLabel(f"You're on version {current_release()}.")
+        self._version_lbl = QLabel(
+            f"You're on version {current_release()} (build {BUILD_VERSION}).")
         self._version_lbl.setStyleSheet(f"color:{THEME['text_dim']}; font-size:11px;")
         card_l.addWidget(self._version_lbl)
         self._check_btn = QPushButton("Check for updates")
