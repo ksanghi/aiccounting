@@ -17,7 +17,8 @@ from pathlib import Path
 import openpyxl
 
 ROOT = Path(__file__).resolve().parent.parent
-XLSX = ROOT / "config" / "pricing.xlsx"
+_SHARED_SPEC = ROOT.parent / "HQ-Shared" / "product-spec" / "HQ-Product-Spec.xlsx"
+XLSX = _SHARED_SPEC if _SHARED_SPEC.exists() else ROOT / "config" / "pricing.xlsx"
 PRICING = ROOT / "marketing-aic" / "pricing.html"
 CHECKOUT = ROOT / "marketing-aic" / "checkout.html"
 

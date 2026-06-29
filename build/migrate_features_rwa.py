@@ -22,7 +22,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-XLSX = REPO_ROOT / "config" / "pricing.xlsx"
+_SHARED = REPO_ROOT.parent / "HQ-Shared" / "product-spec" / "HQ-Product-Spec.xlsx"
+XLSX = _SHARED if _SHARED.exists() else REPO_ROOT / "config" / "pricing.xlsx"
 
 
 # Cleaned + deduplicated from File exchange/RWA features.xlsx. Each row:

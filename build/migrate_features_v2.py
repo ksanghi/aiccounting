@@ -25,7 +25,8 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-XLSX = REPO_ROOT / "config" / "pricing.xlsx"
+_SHARED = REPO_ROOT.parent / "HQ-Shared" / "product-spec" / "HQ-Product-Spec.xlsx"
+XLSX = _SHARED if _SHARED.exists() else REPO_ROOT / "config" / "pricing.xlsx"
 
 
 # v2 feature list — (category, feature_id, default upgrade_to)

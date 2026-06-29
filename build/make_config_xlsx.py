@@ -424,7 +424,8 @@ def make_pricing_xlsx(path: Path):
 def main():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     ai_path = CONFIG_DIR / "ai_features.xlsx"
-    pricing_path = CONFIG_DIR / "pricing.xlsx"
+    _shared = REPO_ROOT.parent / "HQ-Shared" / "product-spec" / "HQ-Product-Spec.xlsx"
+    pricing_path = _shared if _shared.parent.exists() else CONFIG_DIR / "pricing.xlsx"
     make_ai_features_xlsx(ai_path)
     make_pricing_xlsx(pricing_path)
     print(f"Wrote {ai_path}")

@@ -377,7 +377,8 @@ def render_module(ai_features: dict, pricing: dict, rwa: dict) -> str:
 
 def main():
     ai_path = CONFIG_DIR / "ai_features.xlsx"
-    pr_path = CONFIG_DIR / "pricing.xlsx"
+    _shared = REPO_ROOT.parent / "HQ-Shared" / "product-spec" / "HQ-Product-Spec.xlsx"
+    pr_path = _shared if _shared.exists() else CONFIG_DIR / "pricing.xlsx"
     if not ai_path.exists():
         sys.exit(f"Missing {ai_path}. Run build/make_config_xlsx.py first.")
     if not pr_path.exists():
