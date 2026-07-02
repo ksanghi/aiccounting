@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Platform context:** the top-level architecture (one accounting engine + verticals + country profiles, and the move to a shared web platform) lives in `../HQ-Shared/architecture/HQ_PLATFORM_VISION.md`. Read it before any cross-product / web-platform structural work.
+
 ## Running the app
 
 Two entry points; both wire the same core: `Database` → `AccountTree` → `VoucherEngine`.
